@@ -129,8 +129,18 @@ export interface MuscleSection {
  * (`muscleGroups: []` — everything created before this screen existed) are
  * returned separately rather than dropped: an exercise you cannot find is worse
  * than one filed under nothing.
+ *
+ * `within` narrows to one cluster AND changes the filing rule for the rows that
+ * survive: an exercise is filed under its first muscle IN THAT CLUSTER rather
+ * than under its overall primary. Without that, filtering to Push and then
+ * seeing a `PULL · TRAPS` header — face pulls are `['traps', 'shoulders']`, so
+ * they touch push — would make the filter look broken. The filter is generous
+ * (see `touchesCluster`); the headers must agree with it.
  */
-export function groupByCluster(exercises: Exercise[]): {
+export function groupByCluster(
+  exercises: Exercise[],
+  within?: MuscleCluster | null,
+): {
   sections: MuscleSection[];
   unfiled: Exercise[];
 } {
@@ -139,14 +149,16 @@ export function groupByCluster(exercises: Exercise[]): {
   const byMuscle = new Map<MuscleGroup, Exercise[]>();
 
   for (const exercise of exercises) {
-    const primary = primaryMuscle(exercise);
-    if (!primary) {
+    const filedUnder = within
+      ? (exercise.muscleGroups.find((m) => MUSCLE_CLUSTER[m] === within) ?? null)
+      : primaryMuscle(exercise);
+    if (!filedUnder) {
       unfiled.push(exercise);
       continue;
     }
-    const bucket = byMuscle.get(primary);
+    const bucket = byMuscle.get(filedUnder);
     if (bucket) bucket.push(exercise);
-    else byMuscle.set(primary, [exercise]);
+    else byMuscle.set(filedUnder, [exercise]);
   }
 
   for (const muscle of MUSCLE_GROUPS) {

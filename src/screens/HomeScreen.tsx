@@ -37,6 +37,11 @@ import type { RecentSessionSummary, SplitDay, WorkoutSplit } from '../types/mode
 export interface TodayPlan {
   routineId: string;
   name: string;
+  /**
+   * "Pull · back, biceps" — which movement family today is, derived from the
+   * exercises rather than from the routine's name. Null when nothing is filed.
+   */
+  focus: string | null;
   exerciseCount: number;
   setCount: number;
   /** Exercises with a stale weight the overload engine wants to report. */
@@ -75,7 +80,9 @@ export function HomeScreen({
 
         {today ? (
           <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
-            <Kicker>Today</Kicker>
+            {/* The kicker names the day rather than repeating the word "today"
+                twice: `TODAY · PULL · BACK, BICEPS`. */}
+            <Kicker>Today{today.focus ? ` · ${today.focus}` : ''}</Kicker>
             <Text className="mt-sm text-title font-medium text-ink">{today.name}</Text>
             <Text className="mt-xs text-label tabular-nums text-ink-muted">
               {today.exerciseCount} exercises · {today.setCount} sets

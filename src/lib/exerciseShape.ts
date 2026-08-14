@@ -10,12 +10,15 @@
  * about what an exercise is.
  */
 
-import type { CountUnit, Exercise, LoadMode } from '../types/models';
+import type { CountUnit, Exercise, LoadMode, TimerMode } from '../types/models';
+import { resolveTimerMode } from './setTimer';
 
 export interface ShapeInput {
   requiresWeight: boolean;
   countUnit: CountUnit;
   loadMode: LoadMode;
+  /** Absent = the number is typed. See `lib/setTimer.ts`. */
+  timerMode?: TimerMode;
 }
 
 /** The count axis as a noun: "reps" / "time" / "metres" / "rounds". */
@@ -33,15 +36,25 @@ function countNoun(countUnit: CountUnit): string {
 }
 
 /**
- * The library list's micro line: `KG · REPS · ADDED BODYWEIGHT` / `REPS ONLY`.
+ * The library list's micro line: `KG · REPS · ADDED BODYWEIGHT` / `REPS ONLY` /
+ * `TIME · COUNTDOWN`.
  *
  * Load mode is stated only when there IS a load — an exercise with no weight
- * cell has no load mode worth naming. Rendered uppercase by the caller's style;
- * uppercased here too so the string is correct in an accessibility label.
+ * cell has no load mode worth naming. In its place, unweighted work states how
+ * the number is produced: whether picking this gives you a clock that runs down,
+ * one that runs up, or a field you type into. That is the thing you actually
+ * want to know before adding a plank to a routine. Rendered uppercase by the
+ * caller's style; uppercased here too so the string is correct in an
+ * accessibility label.
  */
 export function describeShape(exercise: ShapeInput | Exercise): string {
   const noun = countNoun(exercise.countUnit);
-  if (!exercise.requiresWeight) return `${noun} only`.toUpperCase();
+  if (!exercise.requiresWeight) {
+    const timer = resolveTimerMode(exercise);
+    if (timer === 'countdown') return `${noun} · countdown`.toUpperCase();
+    if (timer === 'countup') return `${noun} · count up`.toUpperCase();
+    return `${noun} only`.toUpperCase();
+  }
   return `kg · ${noun} · ${exercise.loadMode.replace(/_/g, ' ')}`.toUpperCase();
 }
 

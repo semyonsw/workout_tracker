@@ -8,8 +8,11 @@ that repeats last session costs one tap.**
   five type sizes, two radii, and exactly one shadow. Colour means one thing:
   progressive overload.
 - **Features** — customizable routines, a rolling split timeline, weighted and
-  unweighted exercises, background-safe rest timers, and overload nudges derived
-  from real set history
+  unweighted exercises, background-safe rest timers, overload nudges derived from
+  real set history, **timed sets** (a get-ready count, then a countdown or an
+  open hold — planks, dead hangs, boxing rounds), and a **muscle → cluster
+  library** where `back` lives under `pull`, so a routine can say what day it
+  actually is
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the stack rationale, data model,
 design system and overload rules.
@@ -17,7 +20,7 @@ design system and overload rules.
 ```bash
 npx expo install --fix   # align deps with the installed Expo SDK
 npx expo start           # dev server
-npm test                 # overload engine + display shorthand
+npm test                 # overload engine, set timer, muscle clusters, shorthand
 npm run typecheck
 ```
 
@@ -48,14 +51,22 @@ Fourteen states, implemented from the design handoff in
 | 12–13 | Create exercise — `Requires weight` on and off, which changes which inputs exist |
 | 14 | Exercise history — top working weight per session |
 
+Built on top of those, in the same system:
+
+| | |
+| --- | --- |
+| Timed sets | ▶ on the set row, a get-ready count, then a countdown that logs itself at the bell or an open hold you stop — one floating pill shared with the rest timer |
+| Muscle clusters | the library browses as `PULL · BACK`, filters by movement family, and every routine leads with the day it actually is |
+
 ## Layout
 
 ```
 App.tsx                     providers + the notification handler
 src/navigation/AppShell     three tabs and a stack; no tab bar during a session
 src/screens/                one file per screen, all plain props-and-callbacks
-src/components/             SetRow, ExerciseCard, RestTimerPill, primitives…
-src/lib/                    the decisions: overload, draft, history, shape, units
+src/components/             SetRow, ExerciseCard, the timer pills, primitives…
+src/lib/                    the decisions: overload, set timer, muscles, draft,
+                            history, shape, units — all pure, all tested
 src/state/                  the live session (zustand + AsyncStorage)
 src/data/seed.ts            real logged sessions, used until SQLite is wired
 src/theme/tokens.ts         the values className can't reach

@@ -3,21 +3,36 @@
  *
  *   ┌──────────────────────────────────────────────┐
  *   │ ‹  ADD EXERCISE                              │
- *   │ ╭ pull|                                    ╮ │
- *   │ 4 MATCHES                                    │
+ *   │ ╭ Search exercises                         ╮ │
+ *   │ ( All )( Push )( Pull )( Legs )( Core )      │  ← cluster filter
+ *   │ PULL · BACK · 3                              │
  *   │ ┌──────────────────────────────────────────┐ │
  *   │ │ Weighted 90° pull-ups                 +  │ │
  *   │ │ KG · REPS · ADDED BODYWEIGHT             │ │
  *   │ └──────────────────────────────────────────┘ │
- *   │ ╭ +  Create "pull"                         ╮ │
- *   │ RECENTLY USED                                │
+ *   │ PULL · BICEPS · 2                            │
+ *   │ ╭ +  New exercise      (+ Create "pull")   ╮ │
  *   └──────────────────────────────────────────────┘
+ *
+ * TWO MODES, ONE RULE: BROWSING IS GROUPED, SEARCHING IS FLAT.
+ *
+ * With no query the library is a hierarchy — cluster, then muscle — because the
+ * question being asked is "what have I got for back day", and the answer is a
+ * shape, not a list. The moment a query exists the question changes to "where is
+ * the plank", which has one answer, and section headers between two rows are
+ * furniture. Same data, two questions, two layouts.
+ *
+ * The cluster filter is chips rather than a `Segmented`: six options don't fit in
+ * equal segments, and unlike load mode this control is a lens on a list rather
+ * than a fact about a thing.
  *
  * The micro line under each name is the exercise's SHAPE — which inputs it will
  * render when you log it. `KG · REPS · ADDED BODYWEIGHT` tells you you'll get a
  * weight cell and a reps cell, and that the weight is what's on the belt rather
- * than the whole load. That is the only thing worth saying about an exercise in
- * a list, and it is the thing people actually get wrong when they pick one.
+ * than the whole load; `TIME · COUNTDOWN` tells you picking this gets you a clock
+ * that runs to zero. That is the only thing worth saying about an exercise in a
+ * list, and it is the thing people actually get wrong when they pick one. The
+ * muscles are said by the section header instead of being repeated on every row.
  *
  * Creating from the query is a ROW IN THE SAME LIST, not a separate screen: the
  * moment you learn the thing you want doesn't exist is the moment you're looking
@@ -28,18 +43,23 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Icon } from '../components/Icon';
-import { FieldWell, Kicker, ListCard, Separator } from '../components/primitives';
+import { AddRow, FieldWell, Kicker, ListCard, SelectChip, Separator } from '../components/primitives';
 import { describeShape } from '../lib/exerciseShape';
+import { CLUSTERS, clusterLabel, groupByCluster, sectionLabel } from '../lib/muscles';
 import { palette } from '../theme/tokens';
-import type { Exercise, ID } from '../types/models';
+import type { Exercise, ID, MuscleCluster } from '../types/models';
 
 interface ExerciseLibraryScreenProps {
   query: string;
+  /** Already filtered by `query` and by `cluster` — the screen only renders. */
   matches: Exercise[];
   recentlyUsed: Exercise[];
+  /** null = no filter, the `All` chip. */
+  cluster: MuscleCluster | null;
   /** Absent when the library is a tab root rather than a pushed picker. */
   onBack?: () => void;
   onChangeQuery: (query: string) => void;
+  onChangeCluster: (cluster: MuscleCluster | null) => void;
   onPick: (exerciseId: ID) => void;
   onCreate: (name: string) => void;
 }
@@ -48,12 +68,15 @@ export function ExerciseLibraryScreen({
   query,
   matches,
   recentlyUsed,
+  cluster,
   onBack,
   onChangeQuery,
+  onChangeCluster,
   onPick,
   onCreate,
 }: ExerciseLibraryScreenProps) {
   const trimmed = query.trim();
+  const { sections, unfiled } = groupByCluster(matches, cluster);
 
   return (
     <View className="flex-1 bg-bg">
@@ -65,15 +88,37 @@ export function ExerciseLibraryScreen({
         bordered={false}
       />
 
-      <View className="mx-lg mb-lg">
+      <View className="mx-lg mb-md">
         <FieldWell
           value={query}
           size="body"
           shape="pill"
-          placeholder="Search exercises"
+          placeholder="Search exercises, muscles, days"
           onChangeText={onChangeQuery}
           accessibilityLabel="Search exercises"
         />
+      </View>
+
+      {/* Horizontal so the filter never costs two lines, and so a sixth cluster
+          is a scroll rather than a redesign. The 44-high box is fixed: a bare
+          horizontal ScrollView in a column would fight the list below it for
+          height. */}
+      <View className="h-hit">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+        >
+          <SelectChip label="All" selected={cluster == null} onPress={() => onChangeCluster(null)} />
+          {CLUSTERS.map((option) => (
+            <SelectChip
+              key={option}
+              label={clusterLabel(option)}
+              selected={cluster === option}
+              onPress={() => onChangeCluster(cluster === option ? null : option)}
+            />
+          ))}
+        </ScrollView>
       </View>
 
       <ScrollView
@@ -82,21 +127,50 @@ export function ExerciseLibraryScreen({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Kicker className="mx-lg mb-sm">
-          {matches.length} {matches.length === 1 ? 'match' : 'matches'}
-        </Kicker>
-
-        {matches.length > 0 ? (
-          <ListCard className="mx-lg">
-            {matches.map((exercise, index) => (
-              <View key={exercise.id}>
-                {index > 0 ? <Separator /> : null}
-                <ResultRow exercise={exercise} onPress={() => onPick(exercise.id)} />
+        {trimmed ? (
+          /* Searching: one flat, ranked list. */
+          <>
+            <Kicker className="mx-lg mb-sm mt-sm">
+              {matches.length} {matches.length === 1 ? 'match' : 'matches'}
+            </Kicker>
+            {matches.length > 0 ? <ResultCard exercises={matches} onPick={onPick} /> : null}
+          </>
+        ) : (
+          /* Browsing: the hierarchy, cluster by cluster. */
+          <>
+            {sections.map((section) => (
+              <View key={section.muscle}>
+                {/* With a cluster chip active the header drops the cluster: the
+                    chip above already says `Pull`, and saying it twice on every
+                    header is the app talking to itself. */}
+                <Kicker className="mx-lg mb-sm mt-lg">
+                  {cluster ? section.muscle : sectionLabel(section)} · {section.exercises.length}
+                </Kicker>
+                <ResultCard exercises={section.exercises} onPick={onPick} />
               </View>
             ))}
-          </ListCard>
-        ) : null}
 
+            {/* Exercises with no muscles set — every one created before the
+                library had a hierarchy. Listed, not hidden: an exercise you
+                cannot find is worse than one filed under nothing. */}
+            {unfiled.length > 0 ? (
+              <>
+                <Kicker className="mx-lg mb-sm mt-lg">Unfiled · {unfiled.length}</Kicker>
+                <ResultCard exercises={unfiled} onPick={onPick} />
+              </>
+            ) : null}
+
+            {sections.length === 0 && unfiled.length === 0 ? (
+              <Text className="mx-lg mt-lg text-body text-ink-muted">
+                Nothing in {cluster ? clusterLabel(cluster).toLowerCase() : 'the library'} yet.
+              </Text>
+            ) : null}
+          </>
+        )}
+
+        {/* Creating from the query names the exercise from what you typed. With
+            no query there is nothing to name it after, so the same door is a
+            plain `New exercise` row — browsing must not be a dead end. */}
         {trimmed ? (
           <Pressable
             onPress={() => onCreate(trimmed)}
@@ -107,7 +181,11 @@ export function ExerciseLibraryScreen({
             <Icon name="plus" size={14} color={palette.greenBright} />
             <Text className="ml-md text-body font-medium text-ink">Create “{trimmed}”</Text>
           </Pressable>
-        ) : null}
+        ) : (
+          <View className="mx-lg mt-xl overflow-hidden rounded-surface border border-hairline bg-surface-alt">
+            <AddRow label="New exercise" onPress={() => onCreate('')} />
+          </View>
+        )}
 
         {recentlyUsed.length > 0 ? (
           <>
@@ -136,6 +214,26 @@ export function ExerciseLibraryScreen({
   );
 }
 
+/** One card of result rows — the same card whether it's a section or a search. */
+function ResultCard({
+  exercises,
+  onPick,
+}: {
+  exercises: Exercise[];
+  onPick: (exerciseId: ID) => void;
+}) {
+  return (
+    <ListCard className="mx-lg">
+      {exercises.map((exercise, index) => (
+        <View key={exercise.id}>
+          {index > 0 ? <Separator /> : null}
+          <ResultRow exercise={exercise} onPress={() => onPick(exercise.id)} />
+        </View>
+      ))}
+    </ListCard>
+  );
+}
+
 function ResultRow({ exercise, onPress }: { exercise: Exercise; onPress: () => void }) {
   const shape = describeShape(exercise);
   return (
@@ -159,4 +257,3 @@ function ResultRow({ exercise, onPress }: { exercise: Exercise; onPress: () => v
     </Pressable>
   );
 }
-

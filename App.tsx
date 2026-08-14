@@ -15,8 +15,9 @@ import * as Notifications from 'expo-notifications';
 import './global.css';
 import { AppShell } from './src/navigation/AppShell';
 
-// Rest-timer alerts must show even with the app foregrounded — the phone is
-// usually face-up on a bench, not in the user's hand.
+// Timer alerts — rest ending, and the bell on a timed hold — must show even with
+// the app foregrounded: the phone is usually face-up on a bench or on the floor
+// under a plank, not in the user's hand.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,

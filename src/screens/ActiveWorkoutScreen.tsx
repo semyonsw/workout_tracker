@@ -12,9 +12,11 @@
  *   │  3   +40 KG   ×   4 REPS                 ( ) │   ← primed, surface-alt
  *   │  + Add set                                   │
  *   │ Wide pull-ups machine                  0/4 ● │   ← collapsed
+ *   │ Plank                                  0/3   │
+ *   │  1      2:00 MIN                   ( ▶ )( ) │   ← timed: run the clock
  *   └──────────────────────────────────────────────┘
  *              ╭──────────────────────╮
- *              │ 1:28      +15   Skip │                 ← floating timer
+ *              │ 1:28      +15   Skip │                 ← rest, or the set clock
  *              ╰──────────────────────╯
  *
  * NO TAB BAR. The session owns the screen: there is nothing else worth doing
@@ -34,6 +36,7 @@ import { ExerciseCard } from '../components/ExerciseCard';
 import { FinishSheet } from '../components/FinishSheet';
 import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { SetTimerPill } from '../components/SetTimerPill';
 import { draftToSetHistory, totalVolumeKg, type DraftSet } from '../lib/draft';
 import { useActiveWorkout, selectProgress } from '../state/activeWorkoutStore';
 import type { ID, OverloadPolicy, UnitSystem } from '../types/models';
@@ -65,6 +68,12 @@ export function ActiveWorkoutScreen({
   const session = useActiveWorkout((s) => s.session);
   const activeEntryId = useActiveWorkout((s) => s.activeEntryId);
   const progress = useActiveWorkout(selectProgress);
+  /*
+   * The timer object, not its ticking clock: this identity changes only when a
+   * timer starts, is adjusted, or ends. The 4 Hz tick lives inside the pill, so
+   * a running plank does not re-render eighteen set rows four times a second.
+   */
+  const setTimer = useActiveWorkout((s) => s.setTimer);
 
   const setActiveEntry = useActiveWorkout((s) => s.setActiveEntry);
   const completeSet = useActiveWorkout((s) => s.completeSet);
@@ -75,6 +84,8 @@ export function ActiveWorkoutScreen({
   const acceptOverload = useActiveWorkout((s) => s.acceptOverload);
   const dismissOverload = useActiveWorkout((s) => s.dismissOverload);
   const finishSession = useActiveWorkout((s) => s.finishSession);
+  const startSetTimer = useActiveWorkout((s) => s.startSetTimer);
+  const commitSetTimer = useActiveWorkout((s) => s.commitSetTimer);
 
   const elapsedMinutes = useElapsedMinutes(session?.startedAt);
 
@@ -94,6 +105,15 @@ export function ActiveWorkoutScreen({
       else completeSet(entryId, setId); // also starts rest + advances the cursor
     },
     [completeSet, uncompleteSet],
+  );
+
+  /** ▶ starts the clock; ▶ again on the running set stops it and logs the time. */
+  const handlePressTimer = useCallback(
+    (entryId: ID, setId: ID) => {
+      if (setTimer?.setId === setId) commitSetTimer();
+      else startSetTimer(entryId, setId);
+    },
+    [commitSetTimer, setTimer?.setId, startSetTimer],
   );
 
   const commitFinish = useCallback(async () => {
@@ -164,7 +184,9 @@ export function ActiveWorkoutScreen({
                 isActive={entry.localId === activeEntryId}
                 unitSystem={unitSystem}
                 policyIncrementKg={policy.incrementKg}
+                timingSetId={setTimer?.entryId === entry.localId ? setTimer.setId : null}
                 onActivate={() => setActiveEntry(entry.localId)}
+                onPressTimer={(setId) => handlePressTimer(entry.localId, setId)}
                 onToggleSet={(setId) => {
                   const target = entry.sets.find((s) => s.localId === setId);
                   handleToggleSet(entry.localId, setId, target?.isCompleted ?? false);
@@ -182,8 +204,12 @@ export function ActiveWorkoutScreen({
         </ScrollView>
       </View>
 
-      {/* The timer hides behind the sheet: rest is not what's being decided. */}
-      {confirmingFinish ? null : <RestTimerPill />}
+      {/*
+        One pill, two instruments. A set timer outranks rest — you cannot be
+        holding and resting, and `startSetTimer` clears rest for that reason.
+        Both hide behind the finish sheet: neither is what's being decided there.
+      */}
+      {confirmingFinish ? null : setTimer ? <SetTimerPill /> : <RestTimerPill />}
 
       {confirmingFinish ? (
         <FinishSheet

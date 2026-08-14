@@ -13,8 +13,9 @@ compiled into the APK, so it runs with the laptop switched off.
 3. Play Protect will warn that the developer is unknown, because the APK is
    signed with a personal key rather than one Google has seen. **More details →
    Install anyway.**
-4. On first launch, allow notifications — that's how the rest timer reaches you
-   with the phone in a pocket. The timer also works without it, just silently.
+4. On first launch, allow notifications — that's how both timers reach you with
+   the phone in a pocket or on the floor under a plank: rest ending, and the bell
+   at the end of a timed hold. They also work without it, just silently.
 
 Minimum Android 24 (7.0); the S24 ships far newer.
 
@@ -107,15 +108,18 @@ reanimated-vs-react-native peer conflict.
 
 ## What is not wired yet
 
-The UI is complete for all 14 designed screens, but the app is still running on
+The UI is complete for all 14 designed screens — plus timed sets and the muscle
+cluster library added in 0.2.0 — but the app is still running on
 `src/data/seed.ts` rather than a database:
 
 - Finishing a session logs the payload to the console instead of writing to
   SQLite, so **workouts do not persist across a force-quit after finishing**. An
   in-progress session *does* survive being killed — that is `AsyncStorage` via
-  the zustand `persist` middleware.
+  the zustand `persist` middleware, and it now covers a running set timer too: a
+  plank keeps counting across a relaunch, because what is stored is the instant
+  start was pressed rather than a number ticking down.
 - Creating an exercise or editing a routine holds the change in memory for the
-  session only.
+  session only. Muscles picked on the create screen therefore last one session.
 - The split cursor does not advance when a workout completes.
 
 `src/db/schema.ts` already has the Drizzle schema; the shapes returned by

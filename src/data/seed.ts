@@ -15,6 +15,11 @@
  *    collapsed-card nudge dot and the home screen's "nudges waiting" count are
  *    reachable states rather than dead code.
  *
+ * The library also carries movements that were never logged — squats, shrugs, a
+ * hollow hold — because the library is a hierarchy now: every movement cluster
+ * has to have something in it for its filter chip and its section to be a real
+ * state rather than an empty one.
+ *
  * Replace with SQLite reads; the shapes are identical.
  */
 
@@ -155,6 +160,10 @@ export const seedExercises: Exercise[] = [
     // One row per round; `count` holds the round LENGTH in seconds.
     countUnit: 'rounds',
     loadMode: 'none',
+    // A round has a bell. The app rings it, and there is no get-ready count —
+    // the round starts when you say go.
+    timerMode: 'countdown',
+    prepareSeconds: 0,
     isUnilateral: false,
     defaultRestSeconds: 60,
   },
@@ -166,8 +175,177 @@ export const seedExercises: Exercise[] = [
     requiresWeight: false,
     countUnit: 'seconds',
     loadMode: 'none',
+    // Deliberately manual: the phone is in a locker for fifty minutes.
+    timerMode: 'manual',
     isUnilateral: false,
     defaultRestSeconds: 0,
+  },
+
+  /* --- timed holds: the reason the set timer exists ------------------- */
+  {
+    ...base,
+    id: 'ex_plank',
+    name: 'Plank',
+    aliases: ['abs plank', 'front hold'],
+    muscleGroups: ['core'],
+    requiresWeight: false,
+    countUnit: 'seconds',
+    loadMode: 'none',
+    // A prescribed hold: the clock runs down to the target and logs it.
+    timerMode: 'countdown',
+    prepareSeconds: 5,
+    isUnilateral: false,
+    defaultRestSeconds: 60,
+  },
+  {
+    ...base,
+    id: 'ex_dead_hang',
+    name: 'Dead hang',
+    aliases: ['hanging', 'bar hang', 'grip hang'],
+    // Grip work first: a dead hang files under pull, where it is trained.
+    muscleGroups: ['forearms', 'back'],
+    requiresWeight: false,
+    countUnit: 'seconds',
+    loadMode: 'none',
+    // An open hold — you cannot prescribe the moment your hands give out, so the
+    // clock runs UP and logs whatever you managed.
+    timerMode: 'countup',
+    prepareSeconds: 5,
+    isUnilateral: false,
+    defaultRestSeconds: 90,
+  },
+  {
+    ...base,
+    id: 'ex_hollow_hold',
+    name: 'Hollow hold',
+    muscleGroups: ['core'],
+    requiresWeight: false,
+    countUnit: 'seconds',
+    loadMode: 'none',
+    timerMode: 'countdown',
+    prepareSeconds: 5,
+    isUnilateral: false,
+    defaultRestSeconds: 60,
+  },
+  {
+    ...base,
+    id: 'ex_hanging_leg_raise',
+    name: 'Hanging leg raises',
+    muscleGroups: ['core'],
+    requiresWeight: false,
+    // Counted in reps, so no clock — `resolveTimerMode` would refuse one anyway.
+    countUnit: 'reps',
+    loadMode: 'none',
+    isUnilateral: false,
+    defaultRestSeconds: 90,
+  },
+
+  /* --- more back and arm work, so the pull cluster has a shape -------- */
+  {
+    ...base,
+    id: 'ex_deadlift',
+    name: 'Deadlift',
+    muscleGroups: ['back', 'hamstrings', 'glutes'],
+    requiresWeight: true,
+    countUnit: 'reps',
+    loadMode: 'external',
+    isUnilateral: false,
+    incrementKg: 5,
+    defaultRestSeconds: 180,
+    equipment: 'barbell',
+  },
+  {
+    ...base,
+    id: 'ex_row_barbell',
+    name: 'Barbell row',
+    aliases: ['bent-over row'],
+    muscleGroups: ['back', 'biceps'],
+    requiresWeight: true,
+    countUnit: 'reps',
+    loadMode: 'external',
+    isUnilateral: false,
+    incrementKg: 2.5,
+    defaultRestSeconds: 120,
+    equipment: 'barbell',
+  },
+  {
+    ...base,
+    id: 'ex_face_pull',
+    name: 'Face pulls',
+    // Traps lead, so this files under pull. The same two muscles listed the other
+    // way round would be a lateral raise on push day — see `lib/muscles.ts`.
+    muscleGroups: ['traps', 'shoulders'],
+    requiresWeight: true,
+    countUnit: 'reps',
+    loadMode: 'external',
+    isUnilateral: false,
+    incrementKg: 2.5,
+    defaultRestSeconds: 90,
+    equipment: 'cable',
+  },
+  {
+    ...base,
+    id: 'ex_shrug',
+    name: 'Shrugs',
+    muscleGroups: ['traps'],
+    requiresWeight: true,
+    countUnit: 'reps',
+    loadMode: 'external',
+    isUnilateral: false,
+    incrementKg: 2.5,
+    defaultRestSeconds: 90,
+    equipment: 'dumbbells',
+  },
+  {
+    ...base,
+    id: 'ex_hammer_curl',
+    name: 'Hammer curls',
+    muscleGroups: ['biceps', 'forearms'],
+    requiresWeight: true,
+    countUnit: 'reps',
+    loadMode: 'external',
+    isUnilateral: true,
+    incrementKg: 2.5,
+    defaultRestSeconds: 90,
+    equipment: 'dumbbells',
+  },
+  {
+    ...base,
+    id: 'ex_ohp',
+    name: 'Overhead press',
+    muscleGroups: ['shoulders', 'triceps'],
+    requiresWeight: true,
+    countUnit: 'reps',
+    loadMode: 'external',
+    isUnilateral: false,
+    incrementKg: 2.5,
+    defaultRestSeconds: 150,
+    equipment: 'barbell',
+  },
+  {
+    ...base,
+    id: 'ex_squat',
+    name: 'Back squat',
+    muscleGroups: ['quads', 'glutes'],
+    requiresWeight: true,
+    countUnit: 'reps',
+    loadMode: 'external',
+    isUnilateral: false,
+    incrementKg: 5,
+    defaultRestSeconds: 180,
+    equipment: 'barbell',
+  },
+  {
+    ...base,
+    id: 'ex_calf_raise',
+    name: 'Calf raises',
+    muscleGroups: ['calves'],
+    requiresWeight: true,
+    countUnit: 'reps',
+    loadMode: 'external',
+    isUnilateral: false,
+    incrementKg: 5,
+    defaultRestSeconds: 60,
   },
 ];
 
@@ -176,7 +354,7 @@ export const seedExercisesById: Record<string, Exercise> = Object.fromEntries(
 );
 
 /** Most-recently-logged first — the library's `RECENTLY USED` card. */
-export const seedRecentlyUsedExerciseIds = ['ex_dips_weighted', 'ex_boxing_bag'];
+export const seedRecentlyUsedExerciseIds = ['ex_plank', 'ex_dips_weighted', 'ex_boxing_bag'];
 
 /* ------------------------------------------------------------------ */
 /* Routines + split                                                    */
@@ -211,8 +389,16 @@ export const seedRoutine: Routine = {
     { id: 'ri3', exerciseId: 'ex_row_stomach', order: 2, targetSets: 4, targetRepsMax: 10 },
     { id: 'ri4', exerciseId: 'ex_brachialis', order: 3, targetSets: 4, targetRepsMax: 16, restSeconds: 90 },
     { id: 'ri5', exerciseId: 'ex_situp_weighted', order: 4, targetSets: 3, targetRepsMax: 12, restSeconds: 90 },
-    // 50 min in the pool. `targetRepsMax` is seconds for a time-counted exercise.
-    { id: 'ri6', exerciseId: 'ex_swim', order: 5, targetSets: 1, targetRepsMax: 3000, restSeconds: 0 },
+    /*
+     * The two shapes of a timed set, back to back: a 2:00 plank the clock counts
+     * DOWN to a prescribed target, and a dead hang the clock counts UP until the
+     * hands give out. `targetRepsMax` is seconds for time-counted work, so it is
+     * also what the countdown starts from.
+     */
+    { id: 'ri7', exerciseId: 'ex_plank', order: 5, targetSets: 3, targetRepsMax: 120, restSeconds: 60 },
+    { id: 'ri8', exerciseId: 'ex_dead_hang', order: 6, targetSets: 2, targetRepsMax: 45, restSeconds: 90 },
+    // 50 min in the pool.
+    { id: 'ri6', exerciseId: 'ex_swim', order: 7, targetSets: 1, targetRepsMax: 3000, restSeconds: 0 },
   ],
 };
 
@@ -354,6 +540,9 @@ export const seedHistory: SetHistory[] = [
   ...log('s84', '2026-07-30', 'ex_row_stomach', 60, [10, 11, 10, 10]),
   ...log('s84', '2026-07-30', 'ex_brachialis', 15, [16, 12, 12]),
   ...log('s84', '2026-07-30', 'ex_situp_weighted', 25, [12, 12, 12]),
+  // Timed holds are logged in seconds, exactly like a swim: the count IS the time.
+  ...log('s84', '2026-07-30', 'ex_plank', null, [120, 105, 90]),
+  ...log('s84', '2026-07-30', 'ex_dead_hang', null, [42, 35]),
 
   // #85 — 4 Aug · Push
   ...log('s85', '2026-08-04', 'ex_dips_weighted', 30, [12, 8, 6, 5]),
@@ -370,6 +559,9 @@ export const seedHistory: SetHistory[] = [
   ...log('s87', '2026-08-08', 'ex_row_stomach', 55, [10, 10, 10, 10]),
   ...log('s87', '2026-08-08', 'ex_brachialis', 15, [16, 16, 14, 14]),
   ...log('s87', '2026-08-08', 'ex_situp_weighted', 25, [12, 12, 12]),
+  // The plank held to the bell all three sets; the hang went up by 3 s.
+  ...log('s87', '2026-08-08', 'ex_plank', null, [120, 120, 120]),
+  ...log('s87', '2026-08-08', 'ex_dead_hang', null, [45, 38]),
   ...log('s87', '2026-08-08', 'ex_swim', null, [3000]),
 ];
 

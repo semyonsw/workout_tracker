@@ -8,6 +8,7 @@
  *   FieldWell   a 56-high text field with a green caret
  *   NumericWell a 96-high labelled number
  *   Segmented   a 44-high pill of equal segments
+ *   SelectChip  a 36-high pill that is on or off, for sets of options
  *   Toggle      52 × 32, the only switch in the app
  *   PrimaryButton / GhostButton — 56 high, full width
  *
@@ -320,6 +321,51 @@ export function Segmented<T extends string>({
         );
       })}
     </View>
+  );
+}
+
+/**
+ * A chip that is on or off.
+ *
+ * `Segmented` is for two to four mutually-exclusive options that must ALL be
+ * visible without a tap. Chips are for the other shape: a SET of options — the
+ * fourteen muscle groups, the five movement clusters — too many to sit in one
+ * fixed-width control, and often more than one selected at a time. Same green
+ * fill for "on" so the two controls read as the same system.
+ *
+ * 36 high inside a 44 row (the parent supplies the padding), which keeps the
+ * thumb target legal while letting a row of chips stay one line tall.
+ */
+export function SelectChip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={label}
+      className={[
+        'mb-sm mr-sm h-[36px] items-center justify-center rounded-pill px-lg',
+        selected ? 'bg-green' : 'border border-hairline bg-surface',
+      ].join(' ')}
+    >
+      <Text
+        className={[
+          'text-label',
+          selected ? 'font-semibold text-ink' : 'font-medium text-ink-muted',
+        ].join(' ')}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 

@@ -35,6 +35,14 @@ export const exercises = sqliteTable(
     ownerId: text('owner_id').references(() => users.id),
     name: text('name').notNull(),
     aliases: text('aliases', { mode: 'json' }).$type<string[]>(),
+    /**
+     * PRIMARY FIRST — the order is data, not presentation. The first entry
+     * decides which movement cluster the exercise files under, so this is stored
+     * as an ordered JSON array rather than a normalized join table. There is no
+     * `cluster` column for the same reason there is no `is_pull` flag: the
+     * cluster is a total function of this list (see `src/lib/muscles.ts`) and a
+     * derived column is one more thing that can disagree with itself.
+     */
     muscleGroups: text('muscle_groups', { mode: 'json' }).$type<string[]>().notNull(),
 
     requiresWeight: integer('requires_weight', { mode: 'boolean' }).notNull(),
@@ -46,6 +54,14 @@ export const exercises = sqliteTable(
     })
       .notNull()
       .default('external'),
+
+    /**
+     * Whether the phone runs the clock, and which way. NULL — not 'manual' — for
+     * everything that isn't timed: absent means "no timer was ever configured
+     * here", which is what a rep-counted exercise honestly is.
+     */
+    timerMode: text('timer_mode', { enum: ['manual', 'countdown', 'countup'] }),
+    prepareSeconds: integer('prepare_seconds'),
 
     isUnilateral: integer('is_unilateral', { mode: 'boolean' }).notNull().default(false),
     incrementKg: real('increment_kg'),

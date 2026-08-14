@@ -23,6 +23,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import type { DraftEntry, DraftSet } from '../lib/draft';
 import { formatTarget } from '../lib/draft';
+import { isTimed as isTimedExercise } from '../lib/setTimer';
 import type { ID, UnitSystem } from '../types/models';
 import { palette } from '../theme/tokens';
 import { Icon } from './Icon';
@@ -35,6 +36,8 @@ interface ExerciseCardProps {
   isActive: boolean;
   unitSystem: UnitSystem;
   policyIncrementKg: number;
+  /** The set in this card whose clock is running, if any. */
+  timingSetId?: ID | null;
   onActivate: () => void;
   onToggleSet: (setId: ID) => void;
   onPatchSet: (setId: ID, patch: Partial<DraftSet>) => void;
@@ -42,6 +45,8 @@ interface ExerciseCardProps {
   onRemoveSet: (setId: ID) => void;
   onAcceptOverload: () => void;
   onDismissOverload: () => void;
+  /** Start the clock for a set, or stop the one already running on it. */
+  onPressTimer: (setId: ID) => void;
 }
 
 function ExerciseCardComponent({
@@ -49,6 +54,7 @@ function ExerciseCardComponent({
   isActive,
   unitSystem,
   policyIncrementKg,
+  timingSetId = null,
   onActivate,
   onToggleSet,
   onPatchSet,
@@ -56,6 +62,7 @@ function ExerciseCardComponent({
   onRemoveSet,
   onAcceptOverload,
   onDismissOverload,
+  onPressTimer,
 }: ExerciseCardProps) {
   /** Which set row has the editor open, and on which field. Card-local state. */
   const [focus, setFocus] = useState<{ setId: ID; field: SetField } | null>(null);
@@ -66,6 +73,7 @@ function ExerciseCardComponent({
   const nextSetId = entry.sets.find((s) => !s.isCompleted)?.localId ?? null;
   const nudgeWaiting = entry.overload.shouldNudge && !entry.overloadAccepted;
   const isRounds = entry.exercise.countUnit === 'rounds';
+  const isTimed = isTimedExercise(entry.exercise);
 
   /* ---------------------------------------------------------------- */
   /* Collapsed                                                         */
@@ -162,6 +170,12 @@ function ExerciseCardComponent({
               unitSystem={unitSystem}
               isNext={set.localId === nextSetId}
               focusedField={focus?.setId === set.localId ? focus.field : null}
+              isTimed={isTimed}
+              isTiming={timingSetId === set.localId}
+              onPressTimer={() => {
+                setFocus(null); // the clock and the editor never share the row
+                onPressTimer(set.localId);
+              }}
               onFocusField={(field) =>
                 setFocus((current) =>
                   // Tapping the open field again closes the panel.

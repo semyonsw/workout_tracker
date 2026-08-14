@@ -99,8 +99,10 @@ export function useSetTimer(): SetTimerApi {
     }
 
     // "Go." Medium impact — the same weight as logging a set, because this is
-    // the moment the set actually starts.
-    if (wentToWorkFor.current !== timer.startedAt) {
+    // the moment the set actually starts. Guarded on `work` rather than on
+    // "not prepare": a timer rehydrated after the app was killed mid-plank is
+    // already over, and buzzing "go" a beat before the bell would be a lie.
+    if (reading.phase === 'work' && wentToWorkFor.current !== timer.startedAt) {
       wentToWorkFor.current = timer.startedAt;
       lastPrepareTick.current = null;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});

@@ -32,8 +32,9 @@ import { ExerciseLibraryScreen } from '../screens/ExerciseLibraryScreen';
 import { HomeScreen, type TodayPlan } from '../screens/HomeScreen';
 import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
+import { describeItemsFocus } from '../lib/muscles';
 import { evaluateOverloadBatch } from '../lib/progressiveOverload';
-import { searchExercises } from '../lib/search';
+import { filterByCluster, searchExercises } from '../lib/search';
 import { useActiveWorkout } from '../state/activeWorkoutStore';
 import {
   seedExercises,
@@ -44,7 +45,7 @@ import {
   seedSplit,
   seedUser,
 } from '../data/seed';
-import type { Exercise, ID, Routine } from '../types/models';
+import type { Exercise, ID, MuscleCluster, Routine } from '../types/models';
 
 /** Screens pushed on top of a tab. `session` is pushed and owns the screen. */
 type Route =
@@ -57,7 +58,13 @@ type Route =
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
   const [stack, setStack] = useState<Route[]>([]);
-  const [query, setQuery] = useState('pull');
+  /*
+   * The library's two lenses. Empty query = browse the muscle hierarchy; a
+   * cluster narrows either mode. Both live here rather than in the screen so the
+   * picker pushed from a routine editor opens where the user left the tab.
+   */
+  const [query, setQuery] = useState('');
+  const [cluster, setCluster] = useState<MuscleCluster | null>(null);
 
   /*
    * Library and routines are local state here only because there is no database
@@ -77,6 +84,20 @@ export function AppShell() {
   const routinesById = useMemo<Record<ID, Routine>>(
     () => Object.fromEntries(routines.map((r) => [r.id, r])),
     [routines],
+  );
+
+  /** The library list, both lenses applied. Shared by the tab and the picker. */
+  const libraryMatches = useMemo(
+    () => filterByCluster(searchExercises(exercises, query), cluster),
+    [cluster, exercises, query],
+  );
+
+  const recentlyUsed = useMemo(
+    () =>
+      seedRecentlyUsedExerciseIds
+        .map((id) => exercisesById[id])
+        .filter((e): e is Exercise => e != null),
+    [exercisesById],
   );
 
   const top = stack[stack.length - 1] ?? null;
@@ -132,6 +153,7 @@ export function AppShell() {
     return {
       routineId: routine.id,
       name: routine.name,
+      focus: describeItemsFocus(items, exercisesById),
       exerciseCount: items.length,
       setCount: items.reduce((total, item) => total + item.targetSets, 0),
       // Only counts what the engine would actually surface — an exercise with no
@@ -218,15 +240,15 @@ export function AppShell() {
     return (
       <ExerciseLibraryScreen
         query={query}
-        matches={searchExercises(exercises, query)}
-        recentlyUsed={seedRecentlyUsedExerciseIds
-          .map((id) => exercisesById[id])
-          .filter((e): e is Exercise => e != null)}
+        matches={libraryMatches}
+        recentlyUsed={recentlyUsed}
+        cluster={cluster}
         onBack={pop}
         onChangeQuery={setQuery}
+        onChangeCluster={setCluster}
         onPick={(exerciseId) => {
           if (!routineId) return push({ name: 'exerciseHistory', exerciseId });
-          appendToRoutine(setRoutines, routineId, exerciseId);
+          appendToRoutine(setRoutines, routineId, exercisesById[exerciseId]);
           return pop();
         }}
         onCreate={(name) => push({ name: 'createExercise', draft: emptyExerciseDraft(name) })}
@@ -299,11 +321,11 @@ export function AppShell() {
         {tab === 'Library' ? (
           <ExerciseLibraryScreen
             query={query}
-            matches={searchExercises(exercises, query)}
-            recentlyUsed={seedRecentlyUsedExerciseIds
-              .map((id) => exercisesById[id])
-              .filter((e): e is Exercise => e != null)}
+            matches={libraryMatches}
+            recentlyUsed={recentlyUsed}
+            cluster={cluster}
             onChangeQuery={setQuery}
+            onChangeCluster={setCluster}
             onPick={(exerciseId) => push({ name: 'exerciseHistory', exerciseId })}
             onCreate={(name) => push({ name: 'createExercise', draft: emptyExerciseDraft(name) })}
           />
@@ -317,12 +339,24 @@ export function AppShell() {
 
 /* ------------------------------------------------------------------ */
 
-/** Appends an exercise to a routine with sane defaults from the exercise itself. */
+/**
+ * Appends an exercise to a routine with sane defaults from the exercise itself.
+ *
+ * The target has to come from the count unit, not from a constant: `targetRepsMax`
+ * holds SECONDS for time-counted work, so a shared default of 10 would add a
+ * ten-second plank and a ten-second boxing round — and on a timed exercise that
+ * number is what the countdown counts down.
+ */
 function appendToRoutine(
   setRoutines: React.Dispatch<React.SetStateAction<Routine[]>>,
   routineId: ID,
-  exerciseId: ID,
+  exercise: Exercise | undefined,
 ) {
+  if (!exercise) return;
+  const target =
+    exercise.countUnit === 'rounds' ? 180 : exercise.countUnit === 'seconds' ? 60 : 10;
+  const sets = exercise.countUnit === 'rounds' ? 12 : 4;
+
   setRoutines((all) =>
     all.map((routine) =>
       routine.id === routineId
@@ -332,10 +366,11 @@ function appendToRoutine(
               ...routine.items,
               {
                 id: `ri_${Date.now().toString(36)}`,
-                exerciseId,
+                exerciseId: exercise.id,
                 order: routine.items.length,
-                targetSets: 4,
-                targetRepsMax: 10,
+                targetSets: sets,
+                targetRepsMax: target,
+                restSeconds: exercise.defaultRestSeconds,
               },
             ],
           }

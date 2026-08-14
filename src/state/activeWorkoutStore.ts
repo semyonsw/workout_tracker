@@ -297,6 +297,11 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
        * target on a first attempt), and `+15` before starting edits that number
        * through the normal quick-adjust. So the clock always counts down the
        * thing the row says it will.
+       *
+       * Starting a timer while another one runs REPLACES it. Pressing ▶ on a
+       * second row while the first is still counting can only mean "time this
+       * one instead", and nothing is lost: an uncommitted timer has written
+       * nothing to the set it was pointed at.
        */
       startSetTimer: (entryId, setId) => {
         const { session } = get();

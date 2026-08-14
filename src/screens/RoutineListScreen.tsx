@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '../components/Icon';
 import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
+import { describeItemsFocus } from '../lib/muscles';
 import { palette } from '../theme/tokens';
 import type { Exercise, ID, Routine } from '../types/models';
 
@@ -73,9 +74,18 @@ export function RoutineListScreen({
   );
 }
 
-/** "6 exercises · 18 sets" — the same two numbers the Today card leads with. */
+/**
+ * "Pull · back, biceps · 6 exercises" — what day it is, then how much of it.
+ *
+ * The focus clause comes from the exercises themselves (see `lib/muscles.ts`), so
+ * it is a fact about the routine rather than a repeat of the name someone typed:
+ * a routine called "Pull + swimming" that is secretly all squats says `Legs`.
+ * It leads because it is the thing you scan for when you are looking for the
+ * right session, and it drops out silently for a routine with no muscles filed.
+ */
 function summarize(routine: Routine, exercisesById: Record<ID, Exercise>): string {
   const items = routine.items.filter((item) => exercisesById[item.exerciseId]);
   const sets = items.reduce((total, item) => total + item.targetSets, 0);
-  return `${items.length} exercises · ${sets} sets`;
+  const focus = describeItemsFocus(items, exercisesById);
+  return [focus, `${items.length} exercises · ${sets} sets`].filter(Boolean).join(' · ');
 }
