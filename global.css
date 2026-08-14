@@ -1,0 +1,33 @@
+/**
+ * NativeWind v4 entry stylesheet.
+ * Imported once from `App.tsx`; the CSS variables below back the semantic
+ * colour names in `tailwind.config.js`, which is what lets a component write
+ * `bg-surface text-ink` and be correct everywhere.
+ *
+ * Values are space-separated RGB channels so Tailwind can apply <alpha-value>.
+ *
+ * ONE palette, not two. This app is near-black only: an OLED-off page with a
+ * faint green cast, and green as the single hue. A light theme would need a
+ * second set of contrast decisions for a screen that is only ever read in a
+ * gym at arm's length, so there isn't one.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: 6 8 7; /* #060807 — near-black, faint green cast */
+    --surface: 14 18 17; /* #0E1211 — cards, set rows */
+    --surface-alt: 20 26 24; /* #141A18 — wells, primed set, editors, timer pill */
+    --hairline: 30 37 35; /* #1E2523 — the only "border" in the app */
+    --ink: 236 241 238; /* #ECF1EE — primary text. never pure white */
+    --ink-muted: 138 150 143; /* #8A968F — secondary text */
+    --ink-faint: 87 97 92; /* #57615C — micro-labels, ghosted values */
+    --green-wash: 12 26 18; /* #0C1A12 — overload nudge card only */
+    --green-dim: 21 69 44; /* #15452C — tracks, connectors, drop rules */
+    --green: 30 122 76; /* #1E7A4C — primary fills */
+    --green-bright: 63 169 108; /* #3FA96C — green text/icons on black */
+  }
+}
