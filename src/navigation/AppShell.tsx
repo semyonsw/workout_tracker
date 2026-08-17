@@ -1,24 +1,31 @@
 /**
- * AppShell — three tabs and a stack, in about a hundred lines of state.
+ * AppShell — four tabs and a stack, in about a hundred lines of state.
  *
- *   tab:  Today  |  Routines  |  Library          ← the roots
+ *   tab:  Today  |  Routines  |  Library  |  Settings     ← the roots
  *   stack: session · routineEditor · addExercise · createExercise · history
  *
- * Why not a router library: the app has three roots and five pushable screens,
- * none of them deep-linked, none of them needing URL state. `expo-router` would
- * add a dependency, a file-system convention and a navigator config to express a
- * `Route[]` and two functions. When deep links or a native back-stack are
- * actually needed, every screen below this file is already a plain component
- * taking props and callbacks — they port without edits.
+ * Why not a router library: the app has four roots and five pushable screens, none
+ * of them deep-linked, none of them needing URL state. `expo-router` would add a
+ * dependency, a file-system convention and a navigator config to express a
+ * `Route[]` and two functions. When deep links or a native back-stack are actually
+ * needed, every screen below this file is already a plain component taking props
+ * and callbacks — they port without edits.
  *
  * The one rule this shell enforces that a router wouldn't: THE TAB BAR DOES NOT
  * EXIST DURING A SESSION. A workout is not a tab.
+ *
+ * What lives here and what doesn't: the library and the routines moved out to
+ * `libraryStore` the moment they became editable — component state that vanishes
+ * on a cold launch is not where a user's exercises belong. What is left in this
+ * file is navigation, plus the two derived things navigation needs: today's plan
+ * and the overload verdicts behind its nudge count.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
+import { ConfirmSheet } from '../components/ConfirmSheet';
 import { TabBar, type TabName } from '../components/TabBar';
 import { ActiveWorkoutScreen } from '../screens/ActiveWorkoutScreen';
 import {
@@ -28,24 +35,25 @@ import {
   type ExerciseDraft,
 } from '../screens/CreateExerciseScreen';
 import { ExerciseHistoryScreen } from '../screens/ExerciseHistoryScreen';
-import { ExerciseLibraryScreen } from '../screens/ExerciseLibraryScreen';
+import { ExerciseLibraryScreen, clusterKey, muscleKey } from '../screens/ExerciseLibraryScreen';
 import { HomeScreen, type TodayPlan } from '../screens/HomeScreen';
 import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
-import { describeItemsFocus } from '../lib/muscles';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { MUSCLE_CLUSTER, describeItemsFocus } from '../lib/muscles';
 import { evaluateOverloadBatch } from '../lib/progressiveOverload';
-import { filterByCluster, searchExercises } from '../lib/search';
+import { searchExercises } from '../lib/search';
 import { useActiveWorkout } from '../state/activeWorkoutStore';
+import { routineUsageCount, useLibrary } from '../state/libraryStore';
+import { useSettings } from '../state/settingsStore';
 import {
-  seedExercises,
   seedHistoryByExerciseId,
   seedRecentSessions,
   seedRecentlyUsedExerciseIds,
-  seedRoutines,
   seedSplit,
   seedUser,
 } from '../data/seed';
-import type { Exercise, ID, MuscleCluster, Routine } from '../types/models';
+import type { Exercise, ID, MuscleGroup } from '../types/models';
 
 /** Screens pushed on top of a tab. `session` is pushed and owns the screen. */
 type Route =
@@ -58,21 +66,26 @@ type Route =
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
   const [stack, setStack] = useState<Route[]>([]);
-  /*
-   * The library's two lenses. Empty query = browse the muscle hierarchy; a
-   * cluster narrows either mode. Both live here rather than in the screen so the
-   * picker pushed from a routine editor opens where the user left the tab.
-   */
   const [query, setQuery] = useState('');
-  const [cluster, setCluster] = useState<MuscleCluster | null>(null);
-
   /*
-   * Library and routines are local state here only because there is no database
-   * yet. Each of these becomes a query the day `src/db` is wired up, and nothing
-   * below this file changes.
+   * Which library sections are open. Held here rather than in the screen so a trip
+   * out to `createExercise` and back lands the user in the group they were looking
+   * at — the whole flow of "open chest, add an exercise, see it appear" depends on
+   * chest still being open when they get back.
    */
-  const [exercises, setExercises] = useState<Exercise[]>(seedExercises);
-  const [routines, setRoutines] = useState<Routine[]>(seedRoutines);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  /** The exercise the user asked to delete, held while the sheet asks. */
+  const [deleting, setDeleting] = useState<Exercise | null>(null);
+
+  const exercises = useLibrary((s) => s.exercises);
+  const routines = useLibrary((s) => s.routines);
+  const addExercise = useLibrary((s) => s.addExercise);
+  const deleteExercise = useLibrary((s) => s.deleteExercise);
+  const updateRoutine = useLibrary((s) => s.updateRoutine);
+  const deleteRoutine = useLibrary((s) => s.deleteRoutine);
+  const appendToRoutine = useLibrary((s) => s.appendToRoutine);
+
+  const unitSystem = useSettings((s) => s.unitSystem);
 
   const session = useActiveWorkout((s) => s.session);
   const startSession = useActiveWorkout((s) => s.startSession);
@@ -81,16 +94,13 @@ export function AppShell() {
     () => Object.fromEntries(exercises.map((e) => [e.id, e])),
     [exercises],
   );
-  const routinesById = useMemo<Record<ID, Routine>>(
+  const routinesById = useMemo(
     () => Object.fromEntries(routines.map((r) => [r.id, r])),
     [routines],
   );
 
-  /** The library list, both lenses applied. Shared by the tab and the picker. */
-  const libraryMatches = useMemo(
-    () => filterByCluster(searchExercises(exercises, query), cluster),
-    [cluster, exercises, query],
-  );
+  /** Search results. Browse mode builds its own tree from `exercises`. */
+  const matches = useMemo(() => searchExercises(exercises, query), [exercises, query]);
 
   const recentlyUsed = useMemo(
     () =>
@@ -104,6 +114,15 @@ export function AppShell() {
   const push = useCallback((route: Route) => setStack((s) => [...s, route]), []);
   const pop = useCallback(() => setStack((s) => s.slice(0, -1)), []);
 
+  const toggleExpanded = useCallback((key: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
   /* Android hardware back pops the stack before it leaves the app. */
   useEffect(() => {
     if (stack.length === 0) return undefined;
@@ -115,9 +134,9 @@ export function AppShell() {
   }, [pop, stack.length]);
 
   /*
-   * A session claims the screen exactly ONCE per session — on the render after
-   * it is started, and on the render after `persist` rehydrates one from a crash
-   * or a force-quit mid-workout.
+   * A session claims the screen exactly ONCE per session — on the render after it
+   * is started, and on the render after `persist` rehydrates one from a crash or a
+   * force-quit mid-workout.
    *
    * Keyed on `localId` rather than on truthiness, because "a session exists" is
    * also true after the user has deliberately backed out of it, and re-pushing
@@ -139,9 +158,9 @@ export function AppShell() {
     () =>
       evaluateOverloadBatch(exercises, seedHistoryByExerciseId, {
         policy: seedUser.overloadPolicy,
-        unitSystem: seedUser.unitSystem,
+        unitSystem,
       }),
-    [exercises],
+    [exercises, unitSystem],
   );
 
   const today = useMemo<TodayPlan | null>(() => {
@@ -165,9 +184,9 @@ export function AppShell() {
   const handleStart = useCallback(
     (routineId: ID) => {
       /*
-       * A live session is never clobbered. If one exists — the user backed out
-       * of it and hit Start again — this returns to it rather than rebuilding
-       * the draft, which would silently discard everything already logged.
+       * A live session is never clobbered. If one exists — the user backed out of
+       * it and hit Start again — this returns to it rather than rebuilding the
+       * draft, which would silently discard everything already logged.
        */
       if (session) {
         push({ name: 'session' });
@@ -176,6 +195,20 @@ export function AppShell() {
 
       const routine = routinesById[routineId];
       if (!routine) return;
+
+      /*
+       * A routine whose every exercise has been deleted builds a session with no
+       * entries: a logging screen with nothing to log and a Finish button that
+       * saves nothing. Refuse it and send the user to the editor instead, which is
+       * where the problem actually is.
+       */
+      const hasWork = routine.items.some((item) => exercisesById[item.exerciseId]);
+      if (!hasWork) {
+        push({ name: 'routineEditor', routineId });
+        return;
+      }
+
+      const settings = useSettings.getState();
       // The push is left to the resume effect above, which fires for the new
       // session's localId — one code path for "started" and "rehydrated".
       startSession({
@@ -183,11 +216,30 @@ export function AppShell() {
         exercisesById,
         historyByExerciseId: seedHistoryByExerciseId,
         policy: seedUser.overloadPolicy,
-        unitSystem: seedUser.unitSystem,
-        defaultRestSeconds: seedUser.defaultRestSeconds,
+        unitSystem: settings.unitSystem,
+        defaultRestSeconds: settings.restSecondsBetweenSets,
+        defaultTransitionRestSeconds: settings.restSecondsBetweenExercises,
       });
     },
     [exercisesById, push, routinesById, session, startSession],
+  );
+
+  /**
+   * Open the create flow, optionally pre-filed under a muscle group.
+   *
+   * Also opens that group's disclosure, so the new exercise is visible the moment
+   * the user is dropped back on the library rather than hidden behind a chevron
+   * they have to remember to tap.
+   */
+  const handleCreate = useCallback(
+    (name: string, muscle?: MuscleGroup) => {
+      if (muscle) {
+        const cluster = MUSCLE_CLUSTER[muscle];
+        setExpanded((current) => new Set(current).add(muscleKey(muscle)).add(clusterKey(cluster)));
+      }
+      push({ name: 'createExercise', draft: emptyExerciseDraft(name, muscle) });
+    },
+    [push],
   );
 
   /* ------------------------------------------------------------------ */
@@ -199,7 +251,7 @@ export function AppShell() {
       <View className="flex-1 bg-bg">
         {/* No TabBar. See the file header. */}
         <ActiveWorkoutScreen
-          unitSystem={seedUser.unitSystem}
+          unitSystem={unitSystem}
           policy={seedUser.overloadPolicy}
           onFinish={async ({ setHistory, totalVolumeKg }) => {
             // TODO: persist via Drizzle, then advance the split cursor.
@@ -220,15 +272,13 @@ export function AppShell() {
         exercisesById={exercisesById}
         onBack={pop}
         onSave={({ name, items }) => {
-          setRoutines((all) =>
-            all.map((r) => (r.id === routine.id ? { ...r, name, items, updatedAt: nowIso() } : r)),
-          );
+          updateRoutine(routine.id, { name, items });
           pop();
         }}
         onOpenItem={(item) => push({ name: 'exerciseHistory', exerciseId: item.exerciseId })}
         onAddExercise={() => push({ name: 'addExercise', routineId: routine.id })}
         onDelete={() => {
-          setRoutines((all) => all.filter((r) => r.id !== routine.id));
+          deleteRoutine(routine.id);
           pop();
         }}
       />
@@ -238,20 +288,26 @@ export function AppShell() {
   if (top?.name === 'addExercise') {
     const routineId = top.routineId;
     return (
-      <ExerciseLibraryScreen
+      <LibraryTab
         query={query}
-        matches={libraryMatches}
+        exercises={exercises}
+        matches={matches}
         recentlyUsed={recentlyUsed}
-        cluster={cluster}
+        expanded={expanded}
+        onToggleExpanded={toggleExpanded}
         onBack={pop}
         onChangeQuery={setQuery}
-        onChangeCluster={setCluster}
         onPick={(exerciseId) => {
           if (!routineId) return push({ name: 'exerciseHistory', exerciseId });
-          appendToRoutine(setRoutines, routineId, exercisesById[exerciseId]);
+          appendToRoutine(routineId, exerciseId);
           return pop();
         }}
-        onCreate={(name) => push({ name: 'createExercise', draft: emptyExerciseDraft(name) })}
+        onCreate={handleCreate}
+        onDelete={setDeleting}
+        deleting={deleting}
+        onCancelDelete={() => setDeleting(null)}
+        onConfirmDelete={deleteExercise}
+        routineUses={(id) => routineUsageCount(routines, id)}
       />
     );
   }
@@ -262,8 +318,7 @@ export function AppShell() {
         initial={top.draft}
         onBack={pop}
         onCreate={(draft) => {
-          const created = draftToExercise(draft, `ex_${Date.now().toString(36)}`, seedUser.id);
-          setExercises((all) => [...all, created]);
+          addExercise(draftToExercise(draft, `ex_${Date.now().toString(36)}`, seedUser.id));
           pop();
         }}
       />
@@ -319,17 +374,25 @@ export function AppShell() {
         ) : null}
 
         {tab === 'Library' ? (
-          <ExerciseLibraryScreen
+          <LibraryTab
             query={query}
-            matches={libraryMatches}
+            exercises={exercises}
+            matches={matches}
             recentlyUsed={recentlyUsed}
-            cluster={cluster}
+            expanded={expanded}
+            onToggleExpanded={toggleExpanded}
             onChangeQuery={setQuery}
-            onChangeCluster={setCluster}
             onPick={(exerciseId) => push({ name: 'exerciseHistory', exerciseId })}
-            onCreate={(name) => push({ name: 'createExercise', draft: emptyExerciseDraft(name) })}
+            onCreate={handleCreate}
+            onDelete={setDeleting}
+            deleting={deleting}
+            onCancelDelete={() => setDeleting(null)}
+            onConfirmDelete={deleteExercise}
+            routineUses={(id) => routineUsageCount(routines, id)}
           />
         ) : null}
+
+        {tab === 'Settings' ? <SettingsScreen /> : null}
       </View>
 
       <TabBar active={tab} onSelect={setTab} />
@@ -339,49 +402,57 @@ export function AppShell() {
 
 /* ------------------------------------------------------------------ */
 
+type LibraryProps = React.ComponentProps<typeof ExerciseLibraryScreen>;
+
 /**
- * Appends an exercise to a routine with sane defaults from the exercise itself.
+ * The library plus its delete confirmation.
  *
- * The target has to come from the count unit, not from a constant: `targetRepsMax`
- * holds SECONDS for time-counted work, so a shared default of 10 would add a
- * ten-second plank and a ten-second boxing round — and on a timed exercise that
- * number is what the countdown counts down.
+ * Wrapped rather than inlined because the library appears in two places — the tab
+ * root and the picker pushed from a routine editor — and the confirmation has to
+ * behave identically in both. Deleting an exercise edits every routine that holds
+ * it, so the sheet's copy is written HERE, where the routine count is known,
+ * rather than in a screen whose job is to render a list.
  */
-function appendToRoutine(
-  setRoutines: React.Dispatch<React.SetStateAction<Routine[]>>,
-  routineId: ID,
-  exercise: Exercise | undefined,
-) {
-  if (!exercise) return;
-  const target =
-    exercise.countUnit === 'rounds' ? 180 : exercise.countUnit === 'seconds' ? 60 : 10;
-  const sets = exercise.countUnit === 'rounds' ? 12 : 4;
+function LibraryTab({
+  deleting,
+  onCancelDelete,
+  onConfirmDelete,
+  routineUses,
+  ...libraryProps
+}: LibraryProps & {
+  deleting: Exercise | null;
+  onCancelDelete: () => void;
+  onConfirmDelete: (exerciseId: ID) => void;
+  routineUses: (exerciseId: ID) => number;
+}) {
+  const uses = deleting ? routineUses(deleting.id) : 0;
 
-  setRoutines((all) =>
-    all.map((routine) =>
-      routine.id === routineId
-        ? {
-            ...routine,
-            items: [
-              ...routine.items,
-              {
-                id: `ri_${Date.now().toString(36)}`,
-                exerciseId: exercise.id,
-                order: routine.items.length,
-                targetSets: sets,
-                targetRepsMax: target,
-                restSeconds: exercise.defaultRestSeconds,
-              },
-            ],
-          }
-        : routine,
-    ),
+  return (
+    <View className="flex-1">
+      <View className="flex-1" style={deleting ? { opacity: 0.28 } : undefined}>
+        <ExerciseLibraryScreen {...libraryProps} />
+      </View>
+
+      {deleting ? (
+        <ConfirmSheet
+          title={`Delete “${deleting.name}”?`}
+          body={[
+            uses > 0
+              ? `It's in ${uses} ${uses === 1 ? 'routine' : 'routines'}, and will be removed from ${uses === 1 ? 'it' : 'them'}.`
+              : "It isn't in any routine.",
+            'Sets you already logged stay in your history.',
+          ].join(' ')}
+          confirmLabel="Delete it"
+          cancelLabel="Keep it"
+          onConfirm={() => {
+            onConfirmDelete(deleting.id);
+            onCancelDelete();
+          }}
+          onCancel={onCancelDelete}
+        />
+      ) : null}
+    </View>
   );
-}
-
-/** Isolated so the rest of this file stays free of ambient clock reads. */
-function nowIso(): string {
-  return new Date().toISOString();
 }
 
 /** A pushed route whose subject was deleted underneath it. */

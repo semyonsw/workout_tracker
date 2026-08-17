@@ -23,8 +23,8 @@
  * alphabetically — but when the query is a body part, any hit is a good hit.
  */
 
-import type { Exercise, MuscleCluster } from '../types/models';
-import { MUSCLE_CLUSTER, touchesCluster } from './muscles';
+import type { Exercise } from '../types/models';
+import { MUSCLE_CLUSTER } from './muscles';
 
 function matchesName(exercise: Exercise, needle: string): boolean {
   if (exercise.name.toLowerCase().includes(needle)) return true;
@@ -45,19 +45,4 @@ export function searchExercises(exercises: Exercise[], query: string): Exercise[
   const byName = live.filter((e) => matchesName(e, needle));
   const byMuscle = live.filter((e) => !matchesName(e, needle) && matchesMuscle(e, needle));
   return [...byName, ...byMuscle];
-}
-
-/**
- * Narrow to one movement family — the library's filter row.
- *
- * Generous on purpose: an exercise counts as pull work if ANY muscle it works is
- * pull work, not only its primary. Browsing pull day should show the brachialis
- * curls whether or not `forearms` happens to be listed before `biceps`.
- */
-export function filterByCluster(
-  exercises: Exercise[],
-  cluster: MuscleCluster | null,
-): Exercise[] {
-  if (!cluster) return exercises;
-  return exercises.filter((exercise) => touchesCluster(exercise, cluster));
 }

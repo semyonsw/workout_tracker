@@ -455,11 +455,21 @@ export function draftToExercise(draft: ExerciseDraft, id: string, ownerId: strin
   };
 }
 
-/** A blank draft, named from whatever the user typed into the library search. */
-export function emptyExerciseDraft(name: string): ExerciseDraft {
+/**
+ * A blank draft, named from whatever the user typed into the library search.
+ *
+ * `muscle` is the group the create flow was opened FROM — the library's tree
+ * hangs an `+ Add exercise to chest` row off every muscle group, and arriving here
+ * with `chest` already picked is the whole point of that row. It lands first in
+ * `muscleGroups`, which makes it the primary and therefore decides where the
+ * exercise files: the user is returned to exactly the group they were looking at.
+ *
+ * The chips are still live, so it is a starting point rather than a lock-in.
+ */
+export function emptyExerciseDraft(name: string, muscle?: MuscleGroup): ExerciseDraft {
   return {
     name,
-    muscleGroups: [],
+    muscleGroups: muscle ? [muscle] : [],
     requiresWeight: true,
     countUnit: 'reps',
     loadMode: 'external',

@@ -22,13 +22,11 @@ import {
   CLUSTER_MUSCLES,
   MUSCLE_CLUSTER,
   MUSCLE_GROUPS,
+  buildMuscleTree,
   clusterOf,
   describeRoutineFocus,
-  groupByCluster,
   primaryMuscle,
   routineFocus,
-  sectionLabel,
-  touchesCluster,
 } from './muscles';
 import { seedExercises, seedExercisesById, seedRoutine, seedRoutinePush } from '../data/seed';
 import type { Exercise, MuscleGroup } from '../types/models';
@@ -73,53 +71,6 @@ describe('filing an exercise', () => {
     const unfiled = { ...byId('ex_pushups'), muscleGroups: [] } as Exercise;
     expect(clusterOf(unfiled)).toBeNull();
   });
-
-  it('is generous when FILTERING: any muscle counts, not just the primary', () => {
-    const dips = byId('ex_dips_weighted');
-    expect(clusterOf(dips)).toBe('push');
-    // Filed under push, but a pull-day filter would still be wrong to hide
-    // something that works a pull muscle — brachialis curls list forearms too.
-    const curls = byId('ex_brachialis');
-    expect(touchesCluster(curls, 'pull')).toBe(true);
-    expect(touchesCluster(dips, 'pull')).toBe(false);
-  });
-});
-
-describe('grouping the library', () => {
-  const { sections, unfiled } = groupByCluster(seedExercises);
-
-  it('lists every exercise exactly once', () => {
-    const listed = [...sections.flatMap((s) => s.exercises), ...unfiled];
-    expect(listed).toHaveLength(seedExercises.length);
-    expect(new Set(listed.map((e) => e.id)).size).toBe(seedExercises.length);
-  });
-
-  it('orders sections cluster by cluster, muscle by muscle', () => {
-    const order = sections.map((s) => s.cluster);
-    const expected = CLUSTERS.filter((c) => order.includes(c));
-    // Never interleaved: all the push sections, then all the pull sections, …
-    expect([...new Set(order)]).toEqual(expected);
-  });
-
-  it('labels a section by both levels, unless they are the same word', () => {
-    expect(sectionLabel({ cluster: 'pull', muscle: 'back' })).toBe('Pull · back');
-    expect(sectionLabel({ cluster: 'core', muscle: 'core' })).toBe('Core');
-  });
-
-  it('files within the filtered cluster, so no header contradicts the filter', () => {
-    // Face pulls are ['traps', 'shoulders'] — filed under pull, but the push
-    // filter is generous enough to include them. Under that filter they must
-    // appear as SHOULDERS, never as a stray PULL · TRAPS header.
-    const pushed = groupByCluster([byId('ex_face_pull'), byId('ex_dips_weighted')], 'push');
-    expect(pushed.sections.every((s) => s.cluster === 'push')).toBe(true);
-    expect(pushed.sections.find((s) => s.muscle === 'shoulders')?.exercises).toEqual([
-      byId('ex_face_pull'),
-    ]);
-
-    // Unfiltered, the same exercise files under its primary.
-    const browsed = groupByCluster([byId('ex_face_pull')]);
-    expect(browsed.sections[0]).toMatchObject({ cluster: 'pull', muscle: 'traps' });
-  });
 });
 
 describe('what day is this', () => {
@@ -162,5 +113,68 @@ describe('what day is this', () => {
   it('says nothing rather than guessing when nothing is filed', () => {
     expect(routineFocus([])).toBeNull();
     expect(describeRoutineFocus([{ ...byId('ex_pushups'), muscleGroups: [] } as Exercise])).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+describe('buildMuscleTree', () => {
+  /*
+   * The library screen hangs an `+ Add exercise to chest` row off every muscle
+   * group, so the tree's contract is different from `groupByCluster`'s: it must
+   * return the EMPTY groups too. A `chest` that vanishes because you own no chest
+   * exercises is a `chest` you cannot add one to.
+   */
+  it('returns every cluster and every muscle, empty ones included', () => {
+    const { clusters } = buildMuscleTree([]);
+
+    expect(clusters.map((c) => c.cluster)).toEqual(CLUSTERS);
+    for (const node of clusters) {
+      expect(node.groups.map((g) => g.muscle)).toEqual([...CLUSTER_MUSCLES[node.cluster]]);
+      expect(node.total).toBe(0);
+    }
+  });
+
+  it('files each exercise once, under its primary muscle', () => {
+    const { clusters, unfiled } = buildMuscleTree(seedExercises);
+
+    const filed = clusters.flatMap((c) => c.groups.flatMap((g) => g.exercises));
+    expect(filed.length + unfiled.length).toBe(seedExercises.length);
+    expect(new Set(filed.map((e) => e.id)).size).toBe(filed.length);
+
+    for (const node of clusters) {
+      for (const group of node.groups) {
+        for (const exercise of group.exercises) {
+          expect(primaryMuscle(exercise)).toBe(group.muscle);
+          expect(MUSCLE_CLUSTER[group.muscle]).toBe(node.cluster);
+        }
+      }
+    }
+  });
+
+  /*
+   * The count is the whole value of a collapsed row: `TRICEPS 5` answers "have I
+   * got triceps work" without opening anything, so it must count the cluster and
+   * not just the group the eye happens to be on.
+   */
+  it('totals a cluster from its groups', () => {
+    const { clusters } = buildMuscleTree(seedExercises);
+    for (const node of clusters) {
+      expect(node.total).toBe(node.groups.reduce((n, g) => n + g.exercises.length, 0));
+    }
+  });
+
+  it('keeps unfiled exercises rather than dropping them', () => {
+    const orphan = { ...seedExercises[0], id: 'ex_orphan', muscleGroups: [] } as Exercise;
+    const { clusters, unfiled } = buildMuscleTree([orphan]);
+
+    expect(unfiled.map((e) => e.id)).toEqual(['ex_orphan']);
+    expect(clusters.every((c) => c.total === 0)).toBe(true);
+  });
+
+  it('treats a muscle that is not in the hierarchy as unfiled, not as a crash', () => {
+    const bogus = { ...seedExercises[0], id: 'ex_bogus', muscleGroups: ['spleen'] } as never;
+    const { unfiled } = buildMuscleTree([bogus]);
+    expect(unfiled).toHaveLength(1);
   });
 });

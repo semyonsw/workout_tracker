@@ -155,7 +155,14 @@ export interface BuildDraftParams {
   historyByExerciseId: Record<ID, SetHistory[]>;
   policy: OverloadPolicy;
   unitSystem: UnitSystem;
+  /** Rest between sets when neither the routine item nor the exercise says. */
   defaultRestSeconds: number;
+  /**
+   * Rest after the last set of an exercise when the routine item doesn't
+   * override it. A separate setting rather than `defaultRestSeconds + 30`: the
+   * walk to the next machine is its own length, and the user owns both numbers.
+   */
+  defaultTransitionRestSeconds?: number;
   now?: Date;
 }
 
@@ -167,6 +174,7 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
     policy,
     unitSystem,
     defaultRestSeconds,
+    defaultTransitionRestSeconds = defaultRestSeconds + 30,
     now = new Date(),
   } = params;
 
@@ -207,8 +215,7 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
         targetRepsMin: item.targetRepsMin,
         targetRepsMax: item.targetRepsMax,
         restSeconds: item.restSeconds ?? exercise.defaultRestSeconds ?? defaultRestSeconds,
-        transitionRestSeconds:
-          item.transitionRestSeconds ?? (item.restSeconds ?? defaultRestSeconds) + 30,
+        transitionRestSeconds: item.transitionRestSeconds ?? defaultTransitionRestSeconds,
         sets,
         overload,
         overloadAccepted: false,

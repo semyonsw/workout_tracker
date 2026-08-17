@@ -19,8 +19,8 @@
  */
 
 import { Pressable, Text, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
 
+import { commit } from '../lib/feedback';
 import type { OverloadVerdict } from '../lib/progressiveOverload';
 import type { LoadMode, UnitSystem } from '../types/models';
 import { formatWeight, unitLabel } from '../lib/units';
@@ -58,7 +58,7 @@ export function OverloadNudge({
     : `Try ${verdict.suggestedReps} reps at the same weight`;
 
   const handleAccept = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    commit();
     onAccept();
   };
 

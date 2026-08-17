@@ -45,7 +45,7 @@ export const CLUSTER_MUSCLES = {
   cardio: ['cardio'],
 } as const satisfies Record<MuscleCluster, readonly MuscleGroup[]>;
 
-/** Display order for the filter row and for section headers. */
+/** Display order for the library tree and for the create screen's cluster chips. */
 export const CLUSTERS = Object.keys(CLUSTER_MUSCLES) as MuscleCluster[];
 
 /**
@@ -84,20 +84,6 @@ export function clusterOf(exercise: MuscleSubject): MuscleCluster | null {
   return primary ? MUSCLE_CLUSTER[primary] : null;
 }
 
-/**
- * Does this exercise belong to a cluster — by its primary muscle OR by any
- * secondary one?
- *
- * Filing is single-cluster (rule 2 above), but FILTERING is not: someone
- * browsing pull day wants to see brachialis curls whether or not `forearms`
- * happens to be listed before `biceps`. A filter that hides work you will
- * actually do on the day is worse than a section header that is slightly
- * generous.
- */
-export function touchesCluster(exercise: MuscleSubject, cluster: MuscleCluster): boolean {
-  return exercise.muscleGroups.some((muscle) => MUSCLE_CLUSTER[muscle] === cluster);
-}
-
 /* ------------------------------------------------------------------ */
 /* Labels                                                              */
 /* ------------------------------------------------------------------ */
@@ -107,77 +93,69 @@ export function clusterLabel(cluster: MuscleCluster): string {
   return cluster.charAt(0).toUpperCase() + cluster.slice(1);
 }
 
-/** "back", "hamstrings" — muscle names read lowercase inside a sentence. */
-export function muscleLabel(muscle: MuscleGroup): string {
-  return muscle;
-}
-
 /* ------------------------------------------------------------------ */
 /* Grouping the library                                                */
 /* ------------------------------------------------------------------ */
 
-export interface MuscleSection {
-  cluster: MuscleCluster;
+export interface MuscleNode {
   muscle: MuscleGroup;
+  /** Exercises filed here, by primary muscle. May be empty. */
   exercises: Exercise[];
 }
 
-/**
- * Browse order: cluster by cluster, and inside a cluster, muscle by muscle.
- *
- * An exercise appears exactly ONCE, under its primary muscle. Unfiled exercises
- * (`muscleGroups: []` — everything created before this screen existed) are
- * returned separately rather than dropped: an exercise you cannot find is worse
- * than one filed under nothing.
- *
- * `within` narrows to one cluster AND changes the filing rule for the rows that
- * survive: an exercise is filed under its first muscle IN THAT CLUSTER rather
- * than under its overall primary. Without that, filtering to Push and then
- * seeing a `PULL · TRAPS` header — face pulls are `['traps', 'shoulders']`, so
- * they touch push — would make the filter look broken. The filter is generous
- * (see `touchesCluster`); the headers must agree with it.
- */
-export function groupByCluster(
-  exercises: Exercise[],
-  within?: MuscleCluster | null,
-): {
-  sections: MuscleSection[];
-  unfiled: Exercise[];
-} {
-  const sections: MuscleSection[] = [];
-  const unfiled: Exercise[] = [];
-  const byMuscle = new Map<MuscleGroup, Exercise[]>();
-
-  for (const exercise of exercises) {
-    const filedUnder = within
-      ? (exercise.muscleGroups.find((m) => MUSCLE_CLUSTER[m] === within) ?? null)
-      : primaryMuscle(exercise);
-    if (!filedUnder) {
-      unfiled.push(exercise);
-      continue;
-    }
-    const bucket = byMuscle.get(filedUnder);
-    if (bucket) bucket.push(exercise);
-    else byMuscle.set(filedUnder, [exercise]);
-  }
-
-  for (const muscle of MUSCLE_GROUPS) {
-    const bucket = byMuscle.get(muscle);
-    if (bucket && bucket.length > 0) {
-      sections.push({ cluster: MUSCLE_CLUSTER[muscle], muscle, exercises: bucket });
-    }
-  }
-
-  return { sections, unfiled };
+export interface ClusterNode {
+  cluster: MuscleCluster;
+  /** Every muscle in the cluster, in display order — empty groups included. */
+  groups: MuscleNode[];
+  /** Exercises across the whole cluster, for the collapsed row's count. */
+  total: number;
 }
 
 /**
- * A section header: `PULL · BACK`, or just `CORE` where the cluster and the
- * muscle are the same word — "CORE · CORE" reads like a bug.
+ * The full hierarchy as a two-level tree: `push → chest → [dips, pec flies]`.
+ *
+ * EVERY cluster and EVERY muscle comes back, including the empty ones, because an
+ * empty group is a destination rather than dead space: the library screen hangs an
+ * `+ Add exercise to chest` row off each one, and a `chest` that vanishes because
+ * you own no chest exercises is a `chest` you cannot add one to. That is the one
+ * way this differs from listing only what is populated, and it is the whole reason
+ * the library is a tree you open instead of a filter you apply.
+ *
+ * Filing follows the primary-muscle rule (see the file header): an exercise
+ * appears exactly once, under `muscleGroups[0]`. Exercises with no muscles at all
+ * come back separately in `unfiled` rather than being dropped.
  */
-export function sectionLabel(section: Pick<MuscleSection, 'cluster' | 'muscle'>): string {
-  const cluster = clusterLabel(section.cluster);
-  return section.cluster === section.muscle ? cluster : `${cluster} · ${section.muscle}`;
+export function buildMuscleTree(exercises: Exercise[]): {
+  clusters: ClusterNode[];
+  unfiled: Exercise[];
+} {
+  const byMuscle = new Map<MuscleGroup, Exercise[]>();
+  const unfiled: Exercise[] = [];
+
+  for (const exercise of exercises) {
+    const primary = primaryMuscle(exercise);
+    if (!primary || !(primary in MUSCLE_CLUSTER)) {
+      unfiled.push(exercise);
+      continue;
+    }
+    const bucket = byMuscle.get(primary);
+    if (bucket) bucket.push(exercise);
+    else byMuscle.set(primary, [exercise]);
+  }
+
+  const clusters = CLUSTERS.map((cluster) => {
+    const groups = CLUSTER_MUSCLES[cluster].map((muscle) => ({
+      muscle,
+      exercises: byMuscle.get(muscle) ?? [],
+    }));
+    return {
+      cluster,
+      groups,
+      total: groups.reduce((sum, group) => sum + group.exercises.length, 0),
+    };
+  });
+
+  return { clusters, unfiled };
 }
 
 /* ------------------------------------------------------------------ */

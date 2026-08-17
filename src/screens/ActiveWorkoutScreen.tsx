@@ -38,7 +38,8 @@ import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
 import { draftToSetHistory, totalVolumeKg, type DraftSet } from '../lib/draft';
-import { useActiveWorkout, selectProgress } from '../state/activeWorkoutStore';
+import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
+import { PrimaryButton } from '../components/primitives';
 import type { ID, OverloadPolicy, UnitSystem } from '../types/models';
 
 interface ActiveWorkoutScreenProps {
@@ -67,7 +68,18 @@ export function ActiveWorkoutScreen({
   /* --- store bindings: one selector per slice, never the whole store --- */
   const session = useActiveWorkout((s) => s.session);
   const activeEntryId = useActiveWorkout((s) => s.activeEntryId);
-  const progress = useActiveWorkout(selectProgress);
+  /*
+   * Set counts, through a hook rather than `useActiveWorkout(selectProgress)`.
+   *
+   * That selector builds a `{done, total}` object, and Zustand v5 compares
+   * selector results by reference: a fresh object every call means every render
+   * reports a changed snapshot, `useSyncExternalStore` re-renders to catch up, and
+   * the render after that reports changed again — an unbounded loop ending in
+   * "Maximum update depth exceeded". This screen was the only place it happened,
+   * which made it a crash the instant a workout started. `useSessionProgress`
+   * wraps the same selector in `useShallow`. See the note on `selectProgress`.
+   */
+  const progress = useSessionProgress();
   /*
    * The timer object, not its ticking clock: this identity changes only when a
    * timer starts, is adjusted, or ends. The 4 Hz tick lives inside the pill, so
@@ -137,11 +149,36 @@ export function ActiveWorkoutScreen({
     void commitFinish();
   }, [commitFinish, progress.done, progress.total, session]);
 
-  /* --- empty state ---------------------------------------------------- */
+  /* --- empty states --------------------------------------------------- */
+  /*
+   * Both of these used to be a bare centred line with no way off the screen —
+   * which on Android meant hardware-back or nothing. They get a button now,
+   * because a screen you cannot leave is indistinguishable from a hang.
+   */
   if (!session) {
     return (
       <View className="flex-1 items-center justify-center bg-bg px-xl">
         <Text className="text-body text-ink-muted">No workout in progress</Text>
+        <View className="mt-xl w-full">
+          <PrimaryButton label="Back" variant="ghost" onPress={onExit} />
+        </View>
+      </View>
+    );
+  }
+
+  // A routine whose exercises were all deleted after it was started. `AppShell`
+  // refuses to start one, but a session already in flight can be emptied out from
+  // the library, and a Finish button over an empty list saves nothing.
+  if (session.entries.length === 0) {
+    return (
+      <View className="flex-1 items-center justify-center bg-bg px-xl">
+        <Text className="text-title font-medium text-ink">Nothing to log</Text>
+        <Text className="mt-sm text-center text-body text-ink-muted">
+          None of this routine&apos;s exercises are in your library any more.
+        </Text>
+        <View className="mt-xl w-full">
+          <PrimaryButton label="Back" variant="ghost" onPress={onExit} />
+        </View>
       </View>
     );
   }

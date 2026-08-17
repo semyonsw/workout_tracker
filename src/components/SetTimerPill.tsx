@@ -39,7 +39,7 @@ import { FINAL_SECONDS, FloatingPill } from './FloatingPill';
 import { Icon } from './Icon';
 
 export function SetTimerPill() {
-  const { timer, reading, add, startNow, stop, cancel } = useSetTimer();
+  const { timer, reading, stepSeconds, add, startNow, stop, cancel } = useSetTimer();
   /* The exercise name is what makes the clock mean something — "1:24" alone
      could be rest. Read straight from the store so the pill needs no props. */
   const exerciseName = useActiveWorkout((s) =>
@@ -105,10 +105,10 @@ export function SetTimerPill() {
           </Pressable>
         ) : timer.mode === 'countdown' ? (
           <Pressable
-            onPress={() => add(15)}
+            onPress={() => add(stepSeconds)}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Add 15 seconds"
+            accessibilityLabel={`Add ${stepSeconds} seconds`}
             className="h-hit justify-center px-md"
           >
             <Text
@@ -117,7 +117,7 @@ export function SetTimerPill() {
                 finalTen ? 'text-green-wash' : 'text-ink-muted',
               ].join(' ')}
             >
-              +15
+              +{stepSeconds}
             </Text>
           </Pressable>
         ) : null}

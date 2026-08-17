@@ -1,18 +1,22 @@
 /**
- * TabBar — Today / Routines / Library.
+ * TabBar — Today / Routines / Library / Settings.
  *
  * This bar exists ONLY outside a session. During a workout the session owns the
  * whole screen: there is nothing else to do while you are mid-set, and a tab bar
  * would put "Library" one thumb-slip away from the ✓.
  *
- * Text only, no icons. Three words are faster to read than three glyphs you have
- * to learn, and the app's icon budget is spent on things that do something.
+ * Text only, no icons. Four words are faster to read than four glyphs you have to
+ * learn, and the app's icon budget is spent on things that do something.
+ *
+ * Four is the ceiling. A fifth root would push the labels under 13px or start
+ * truncating them, and at that point the bar is glyphs whether it wants to be or
+ * not — so anything else that needs a home goes inside one of these four.
  */
 
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export const TABS = ['Today', 'Routines', 'Library'] as const;
+export const TABS = ['Today', 'Routines', 'Library', 'Settings'] as const;
 export type TabName = (typeof TABS)[number];
 
 interface TabBarProps {

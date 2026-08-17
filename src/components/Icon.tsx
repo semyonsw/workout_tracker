@@ -1,11 +1,22 @@
 /**
- * Icon — the entire icon set. Six glyphs, one drag handle, nothing else.
+ * Icon — the entire icon set. Nine glyphs, one drag handle, nothing else.
  *
- *   check · plus · chevron · trending-up · x · play  (+ the reorder handle)
+ *   check · plus · minus · chevron ×3 · trending-up · x · play · pause
+ *                                                  (+ the reorder handle)
  *
- * `play` is in the same weight class as `check` and `plus` (2.5) because it is
- * the same kind of mark: on a timed set — a plank, a hang — it IS the commit
- * button, the thing you press to say "this set is happening now".
+ * `play` and `pause` are in the same weight class as `check` and `plus` (2.5)
+ * because they are the same kind of mark: on a timed set — a plank, a hang — ▶ IS
+ * the commit button, the thing you press to say "this set is happening now", and
+ * ⏸ is what stops a rest without throwing it away.
+ *
+ * `minus` is drawn as the exact middle bar of `plus`, at the same weight, because
+ * it is that glyph's opposite and nothing else: `+` adds an exercise to a muscle
+ * group, `−` takes one out. Two marks that only differ by a stroke are two marks
+ * nobody has to learn.
+ *
+ * `chevron-down` is the disclosure arrow for the library's clusters and muscle
+ * groups; it rotates to `chevron-right` when a section is closed, which is why
+ * both exist at the same weight rather than one being transformed at runtime.
  *
  * Why a hand-rolled set instead of an icon font: the design specifies stroke
  * weights per glyph — 2.5 for `check` and `plus` so they hold up as marks of
@@ -23,11 +34,14 @@ import Svg, { Path } from 'react-native-svg';
 export type IconName =
   | 'check'
   | 'plus'
+  | 'minus'
   | 'chevron-left'
   | 'chevron-right'
+  | 'chevron-down'
   | 'trending-up'
   | 'x'
-  | 'play';
+  | 'play'
+  | 'pause';
 
 interface IconProps {
   name: IconName;
@@ -40,22 +54,30 @@ interface IconProps {
 const STROKE: Record<IconName, number> = {
   check: 2.5,
   plus: 2.5,
+  minus: 2.5,
   'chevron-left': 2,
   'chevron-right': 2,
+  'chevron-down': 2,
   'trending-up': 2,
   x: 2,
   play: 2.5,
+  pause: 2.5,
 };
 
 const PATHS: Record<IconName, string[]> = {
   check: ['M20 6L9 17l-5-5'],
   plus: ['M12 5v14M5 12h14'],
+  minus: ['M5 12h14'],
   'chevron-left': ['M15 18l-6-6 6-6'],
   'chevron-right': ['M9 6l6 6-6 6'],
+  'chevron-down': ['M6 9l6 6 6-6'],
   'trending-up': ['M22 7l-8.5 8.5-4-4L2 19', 'M16 7h6v6'],
   x: ['M18 6L6 18M6 6l12 12'],
   // Closed triangle: the round join at the apex matches the checkmark's corner.
   play: ['M8 5.5l11 6.5-11 6.5z'],
+  // Two bars on the same 6.5→17.5 vertical as the triangle, so ▶ and ⏸ swapping
+  // in the same slot doesn't shift the optical centre.
+  pause: ['M9.5 6.5v11M14.5 6.5v11'],
 };
 
 export function Icon({ name, size, color }: IconProps) {

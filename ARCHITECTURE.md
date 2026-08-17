@@ -183,17 +183,28 @@ is the difference between an app and an instrument.
 | [src/components/QuickAdjust.tsx](src/components/QuickAdjust.tsx) | Inline ± editor; keyboard is the fallback, not the default |
 | [src/components/ExerciseCard.tsx](src/components/ExerciseCard.tsx) | Expanded / collapsed exercise; one open at a time |
 | [src/components/FloatingPill.tsx](src/components/FloatingPill.tsx) | The hovering pill both timers live in — the app's one shadow |
-| [src/components/RestTimerPill.tsx](src/components/RestTimerPill.tsx) | Rest countdown with `+15` and `Skip` on the pill |
+| [src/components/RestTimerPill.tsx](src/components/RestTimerPill.tsx) | Rest countdown with `+15`, `⏸` and `Skip` on the pill |
 | [src/components/SetTimerPill.tsx](src/components/SetTimerPill.tsx) | The clock on a plank / hang / round |
 | [src/components/OverloadNudge.tsx](src/components/OverloadNudge.tsx) | The only coloured element in the app |
 | [src/components/SplitTimeline.tsx](src/components/SplitTimeline.tsx) | Push → Pull → Boxing → Rest strip |
+| [src/components/ErrorBoundary.tsx](src/components/ErrorBoundary.tsx) | Turns a crash into a readable message with a way out |
+| [src/components/ConfirmSheet.tsx](src/components/ConfirmSheet.tsx) | "Are you sure", in the bottom third where the thumb is |
+| [src/screens/ExerciseLibraryScreen.tsx](src/screens/ExerciseLibraryScreen.tsx) | The muscle tree: browse, add per group, delete per row |
+| [src/screens/SettingsScreen.tsx](src/screens/SettingsScreen.tsx) | Every duration the app counts |
 | [src/lib/progressiveOverload.ts](src/lib/progressiveOverload.ts) | The engine — pure, injectable clock, zero deps |
 | [src/lib/setTimer.ts](src/lib/setTimer.ts) | Two-phase set clock — pure, one stored fact |
-| [src/lib/muscles.ts](src/lib/muscles.ts) | Muscle → cluster hierarchy; "what day is this" |
+| [src/lib/muscles.ts](src/lib/muscles.ts) | Muscle → cluster hierarchy; the browsable tree; "what day is this" |
+| [src/lib/countdownCue.ts](src/lib/countdownCue.ts) | When a countdown speaks — pure, latched, tested |
+| [src/lib/beeper.ts](src/lib/beeper.ts) | Two tones, two players, never throws |
+| [src/lib/feedback.ts](src/lib/feedback.ts) | Every buzz and beep, behind the user's two switches |
+| [src/lib/notify.ts](src/lib/notify.ts) | Notifications, channel included, all failures swallowed |
 | [src/lib/draft.ts](src/lib/draft.ts) | Prefill from history; draft → `SetHistory` on save |
 | [src/hooks/useRestTimer.ts](src/hooks/useRestTimer.ts) | Deadline-based timer, background-safe |
 | [src/hooks/useSetTimer.ts](src/hooks/useSetTimer.ts) | Ticks, haptics, the bell, and auto-logging |
-| [src/state/activeWorkoutStore.ts](src/state/activeWorkoutStore.ts) | The only global state |
+| [src/hooks/useCountdownBeeps.ts](src/hooks/useCountdownBeeps.ts) | The count-in — holds the latch, plays the cue |
+| [src/state/activeWorkoutStore.ts](src/state/activeWorkoutStore.ts) | The live session |
+| [src/state/libraryStore.ts](src/state/libraryStore.ts) | Exercises and routines, persisted and validated |
+| [src/state/settingsStore.ts](src/state/settingsStore.ts) | The durations, clamped on the way in |
 
 ### Timed sets
 
@@ -232,6 +243,126 @@ checkmark. On the row, ▶ sits beside the ✓ rather than replacing it — ▶ 
 the clock for me", ✓ is "I did this, take my word for it", and the ✓ never
 changes meaning anywhere in the app.
 
+### The count-in, and the two ways rest ends
+
+A timer nobody notices is a timer that doesn't work. The phone spends a workout
+face-up on a bench or on the floor under a plank, which rules out both of the
+cues the app used to have: a haptic buzz doesn't travel three feet, and the
+notification fires *at* zero — a beat too late to be set under the bar.
+
+So the last **N** seconds of every countdown are audible, and they land on a
+different tone than the ones before them:
+
+```
+secondsLeft:  8    7    6    5    4    3    2    1    0
+window = 5:                  ·    ·    ·    ·    ·   ▔▔▔
+                            880 Hz, 110 ms each      1320 Hz, 420 ms
+```
+
+One implementation covers all three countdowns — rest, the get-ready count, and a
+prescribed hold — because "beep the last five seconds" should be one behaviour,
+not three that drift. The rules live in
+[src/lib/countdownCue.ts](src/lib/countdownCue.ts) as a pure latch, and there are
+three of them, each guarding a way of lying to the user:
+
+1. **One cue per second.** The clocks tick at 4 Hz, so the naive version beeps
+   four times a second.
+2. **Never narrate the past.** Both timers are absolute deadlines, so a plank that
+   ran out in a pocket reads `0` on the first frame after relaunch. Sounding five
+   ticks and a "go" then would be announcing something that already happened, so
+   the first reading of any countdown *arms* the latch and stays silent.
+3. **Re-arm when the target moves.** `+15` is a new deadline, so the seconds
+   already spoken belong to the old one and the count starts over.
+
+Audio is the least important thing in a gym app, so
+[src/lib/beeper.ts](src/lib/beeper.ts) cannot throw and cannot interrupt: failures
+are latched (a broken device stops being retried every tick), and playback is
+`mixWithOthers` — people train to music, and an app that pauses their playlist to
+say "four" is an app they mute. It plays on the media stream, which is also why it
+obeys the media slider rather than the ringer.
+
+**Rest now ends two ways, and the pill says which.** `⏸` freezes the clock and
+keeps the pill; `Skip` ends rest and dismisses it. Only one of them loses the
+timer, which is why the destructive-sounding word is the one that does. Pausing is
+modelled as a second stored fact rather than a stopped clock —
+`pausedRemainingMs` holds what was left, and `endsAt` goes null — so rest is
+always in exactly one of three states (idle, running, frozen) and a paused rest
+cannot expire while the phone is in a pocket. `+15` works in both states: while
+frozen it moves the remainder instead of a deadline.
+
+### Settings: the numbers belong to the lifter
+
+The correct length of a rest is a fact about the person, not about the app. Rest
+between sets, rest between exercises, the get-ready count, how many seconds beep
+and the ± step are all in
+[src/state/settingsStore.ts](src/state/settingsStore.ts), alongside switches for
+sound, vibration, screen-on and notifications.
+
+Two rules make it safe. Every number is **clamped on the way in**, because
+`endsAt = Date.now() + NaN * 1000` is a countdown that never ends and a pill that
+never leaves — and a `NaN` arrives from a half-written persisted blob as easily as
+from a text field. And **nothing is read during a tick**: timers capture their
+lengths when they *start*, so dragging a setting mid-rest cannot move a deadline
+the user is already watching.
+
+### The library is a tree you open
+
+`push → chest → dips`. Five collapsed rows show the whole library at a glance and
+reach any movement in two taps, and every muscle group — **including the empty
+ones** — carries its own `+ Add exercise to chest`. That row is the reason the
+tree exists instead of a filter: creating from inside `chest` files the exercise
+under `chest` without the user picking a muscle twice, which means a group with
+nothing in it is a destination rather than dead space. A `chest` that disappears
+because you own no chest exercises is a `chest` you cannot add one to.
+
+Searching stays **flat**. With no query the question is "what have I got for chest
+day" and the answer is a shape; the moment a query exists the question is "where
+is the plank", which has one answer, and a hierarchy between you and it is
+furniture.
+
+Delete is a `−` — `plus` with its vertical stroke removed, same weight, same slot
+as the `+` on the row below — and it asks first, because deleting an exercise also
+edits every routine holding it. Those routine items go too: a routine pointing at
+a dead `exerciseId` doesn't crash (`buildDraftSession` skips what it can't
+resolve), it quietly plans fewer sets than its own header claims, which is worse.
+**History is never touched.** Those rows record something that actually happened.
+
+### Why there is an error boundary
+
+In a release build there is no red box. An uncaught render error takes the process
+down, and Android offers "App info / Close app", which tells nobody anything.
+
+Worse: the live session is **persisted**, and the shell navigates straight to the
+logging screen for a rehydrated one. A crash there doesn't happen once — it
+repeats on every launch, forever, with no way back short of clearing app data.
+That is what "Workout Tracker keeps stopping" looked like, and the actual bug was
+one selector:
+
+```ts
+const progress = useActiveWorkout(selectProgress);   // returns a NEW object
+```
+
+Zustand v5 compares selector results with `Object.is` (v4's automatic shallow
+compare is gone). A selector building a fresh `{done, total}` reports a changed
+snapshot on every render, `useSyncExternalStore` re-renders to catch up, and the
+next render reports changed again — an unbounded loop ending in "Maximum update
+depth exceeded". It only ever rendered on the logging screen, so it was a crash
+the instant a workout started.
+
+Two things came out of that, and the second matters more than the fix:
+
+- [src/components/ErrorBoundary.tsx](src/components/ErrorBoundary.tsx) shows the
+  message and the top of the component stack — ugly on purpose, because a file and
+  a line is a bug report a user can screenshot — with `Try again` (remount) and
+  `Discard the workout` (clear the persisted session first). The second button is
+  the escape hatch from the loop, and it is second because it throws a workout
+  away.
+- **Nothing rehydrates unchecked.** All three stores validate what comes back from
+  disk: a session whose entry lost its `exercise`, a set with a `NaN` count, a
+  rest claiming to be both running and paused, a timer pointed at an entry that
+  didn't survive. A dropped session costs one workout's prefills; a crash loop
+  costs the app.
+
 ### Progressive overload rules
 
 Judged on the **top working weight per session** (never per set), over the streak
@@ -267,8 +398,17 @@ add. Progression there is the routine's target going up, not the engine's.
 ```bash
 npx expo install   # pin every dependency to the installed SDK
 npx expo start
-npm test           # overload engine, set timer, muscle clusters, display shorthand
+npm test           # overload engine, timers, the count-in, the muscle tree,
+                   # and all three stores including their rehydration guards
+npm run typecheck
 ```
+
+`vitest.config.ts` aliases `@react-native-async-storage/async-storage` to an
+in-memory stub, which is what makes the stores testable outside a native runtime —
+a bad rehydration and an unstable selector were both crashes on the logging
+screen, so they are worth pinning down. Nothing mocks `react-native` itself: a test
+that needs it is a test of a component, and components are verified by running the
+app.
 
 > Dependency versions in `package.json` are SDK-54-era ranges written by hand.
 > Run `npx expo install` to let Expo resolve the exact compatible set before the
@@ -280,9 +420,14 @@ npm test           # overload engine, set timer, muscle clusters, display shorth
   `split.cursor`. The seam exists (`onFinish`), the writer does not.
 - Routine/exercise editor screens (the models and store support them fully).
 - Superset grouping in the UI (`RoutineItem.supersetGroup` is modelled).
-- Editing an existing exercise's muscles: the picker only exists on the create
-  screen, so the pre-hierarchy rows would need it to be reachable from the
-  library. They render under `Unfiled` until then rather than disappearing.
+- Editing an existing exercise: the muscle picker and every other field only
+  exist on the create screen, so the library can add and delete but not rename or
+  re-file. Unfiled rows show under `Unfiled` rather than disappearing, and the way
+  to move one today is delete-and-recreate.
+- History and the split are still fixtures (`src/data/seed.ts`), so `Recently
+  used` and the overload verdicts describe seeded sessions rather than the
+  exercises you just created. The library and routines are real and persisted;
+  these two are the remaining reads to move.
 - A per-cluster volume view ("sets of back this week"). The cluster hierarchy is
   what that feature needs and it is now in place.
 - Plate-math helper for barbell loading.

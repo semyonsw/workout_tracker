@@ -1,17 +1,30 @@
 /**
  * RestTimerPill — the floating rest countdown.
  *
- *   ╭───────────────────────────────────────╮
- *   │  1:28            +15      Skip        │
- *   │ ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░ │
- *   ╰───────────────────────────────────────╯
+ *   running   ╭───────────────────────────────────────╮
+ *             │  1:28        +15   ⏸    Skip          │
+ *             │ ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░ │
+ *             ╰───────────────────────────────────────╯
+ *
+ *   paused    ╭───────────────────────────────────────╮
+ *             │  1:28  PAUSED   +15   ▶    Skip       │
+ *             │ ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░ │
+ *             ╰───────────────────────────────────────╯
  *
  * The pill's geometry, elevation, inversion and drain line belong to
- * `FloatingPill`, which the set timer shares — see that file for those
- * decisions. What is specific to REST is only this:
+ * `FloatingPill`, which the set timer shares — see that file for those decisions.
+ * What is specific to REST is only this:
  *
- *   • Controls are ON the pill, not behind a tap-to-expand. "+15" and "Skip"
- *     are the only two things anyone does to a rest timer, and both are one tap.
+ *   • THREE CONTROLS, ALL ON THE PILL, all one tap. `+15` buys more, `⏸` stops the
+ *     clock without losing it, `Skip` ends rest now. Nothing is behind a
+ *     tap-to-expand, because every one of them is something people do mid-rest
+ *     with one hand while holding a water bottle in the other.
+ *   • STOP AND SKIP ARE DIFFERENT, AND THE PILL SAYS SO. Pausing keeps the pill and
+ *     freezes the number; skipping dismisses it. The paused state relabels itself
+ *     `PAUSED` and swaps ⏸ for ▶, so a frozen 1:28 can never be mistaken for a
+ *     timer that has stalled.
+ *   • THE ± STEP IS THE USER'S. Read from Settings rather than hard-coded at 15,
+ *     so the chip's label and what it does can never drift apart.
  *   • It renders only while resting and unmounts cleanly. No permanent chrome.
  */
 
@@ -19,37 +32,52 @@ import { Pressable, Text, View } from 'react-native';
 
 import { formatClock } from '../lib/units';
 import { useRestTimer } from '../hooks/useRestTimer';
+import { palette } from '../theme/tokens';
 import { FINAL_SECONDS, FloatingPill } from './FloatingPill';
+import { Icon } from './Icon';
 
 export function RestTimerPill() {
-  const { remaining, isRunning, totalSeconds, add, skip } = useRestTimer();
+  const { remaining, isActive, isPaused, totalSeconds, stepSeconds, add, pause, resume, skip } =
+    useRestTimer();
 
-  if (!isRunning) return null;
+  if (!isActive) return null;
 
-  const finalTen = remaining <= FINAL_SECONDS;
+  // A paused pill never inverts: the slab means "act now", and the whole point of
+  // a pause is that nothing is being demanded of the user yet.
+  const finalTen = !isPaused && remaining <= FINAL_SECONDS;
 
   return (
     <FloatingPill
       inverted={finalTen}
       remainingFraction={totalSeconds > 0 ? remaining / totalSeconds : 0}
     >
-      <Text
-        accessibilityLiveRegion="polite"
-        accessibilityLabel={`${Math.ceil(remaining)} seconds of rest left`}
-        className={[
-          'text-title font-semibold tabular-nums',
-          finalTen ? 'text-bg' : 'text-green-bright',
-        ].join(' ')}
-      >
-        {formatClock(remaining)}
-      </Text>
+      <View className="flex-1 flex-row items-baseline">
+        <Text
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={
+            isPaused
+              ? `Rest paused with ${Math.ceil(remaining)} seconds left`
+              : `${Math.ceil(remaining)} seconds of rest left`
+          }
+          className={[
+            'text-title font-semibold tabular-nums',
+            finalTen ? 'text-bg' : 'text-green-bright',
+          ].join(' ')}
+        >
+          {formatClock(remaining)}
+        </Text>
+
+        {isPaused ? (
+          <Text className="ml-sm text-micro font-semibold uppercase text-ink-faint">paused</Text>
+        ) : null}
+      </View>
 
       <View className="flex-row items-center">
         <Pressable
-          onPress={() => add(15)}
+          onPress={() => add(stepSeconds)}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel="Add 15 seconds"
+          accessibilityLabel={`Add ${stepSeconds} seconds`}
           className="h-hit justify-center px-md"
         >
           <Text
@@ -58,8 +86,24 @@ export function RestTimerPill() {
               finalTen ? 'text-green-wash' : 'text-ink-muted',
             ].join(' ')}
           >
-            +15
+            +{stepSeconds}
           </Text>
+        </Pressable>
+
+        {/* Glyph, not a word: `Pause` and `Skip` side by side are two similar
+            words in the same weight, and the wrong one costs you a rest. */}
+        <Pressable
+          onPress={isPaused ? resume : pause}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel={isPaused ? 'Resume rest' : 'Pause rest'}
+          className="h-hit w-[32px] items-center justify-center"
+        >
+          <Icon
+            name={isPaused ? 'play' : 'pause'}
+            size={16}
+            color={finalTen ? palette.bg : palette.greenBright}
+          />
         </Pressable>
 
         <Pressable

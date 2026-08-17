@@ -30,7 +30,6 @@
 
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { DragHandle, Icon } from '../components/Icon';
@@ -42,6 +41,7 @@ import {
   Separator,
   TextButton,
 } from '../components/primitives';
+import { commit, undo } from '../lib/feedback';
 import { formatClock, formatDuration } from '../lib/units';
 import { palette } from '../theme/tokens';
 import type { Exercise, ID, Routine, RoutineItem } from '../types/models';
@@ -79,14 +79,14 @@ export function RoutineEditorScreen({
   const movingExercise = movingItem ? exercisesById[movingItem.exerciseId] : null;
 
   const lift = (item: RoutineItem, index: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    commit();
     setMoving({ id: item.id, targetIndex: index });
   };
 
   /** Release: splice the lifted row into the marked gap and renumber. */
   const drop = () => {
     if (!moving || movingIndex < 0) return setMoving(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    undo();
 
     const without = items.filter((i) => i.id !== moving.id);
     // The gap index counts the list WITHOUT the lifted row, which is what the

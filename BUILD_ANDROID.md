@@ -16,6 +16,10 @@ compiled into the APK, so it runs with the laptop switched off.
 4. On first launch, allow notifications — that's how both timers reach you with
    the phone in a pocket or on the floor under a plank: rest ending, and the bell
    at the end of a timed hold. They also work without it, just silently.
+5. Check the beep once, in **Settings → Countdown → Test the beep**. It plays the
+   real 3 · 2 · 1 · go. If it's silent, the phone's media volume is down — the
+   cue plays on the media stream so it can be heard over music, which also means
+   it obeys the media slider rather than the ringer.
 
 Minimum Android 24 (7.0); the S24 ships far newer.
 
@@ -29,6 +33,41 @@ npx expo prebuild -p android --clean     # only if app.json or deps changed
 cd android
 ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 ```
+
+### 0.3.0 needs the prebuild step
+
+`expo-audio` was added for the countdown beep, which means a NEW NATIVE MODULE:
+a JS-only rebuild will bundle code that calls into something the old APK does not
+contain. Run the `prebuild` line above (or `npx expo prebuild -p android`) before
+`assembleRelease` for this version. `app.json` also gained
+`recordAudioAndroid: false` — the audio plugin requests the MICROPHONE by
+default, and an app that plays two 200 ms tones has no business asking for it.
+
+### Verify permissions on the APK, never on the source manifest
+
+`expo-audio` ships recording and playback in one module, and its AAR manifest
+declares `RECORD_AUDIO`. Android's manifest merger takes the **union** of every
+library's permissions, so that line reaches the APK no matter what
+`android/app/src/main/AndroidManifest.xml` says — `recordAudioAndroid: false`
+only stops expo-audio's own plugin from adding it to the *app* manifest, which is
+a different file from the one that ships.
+
+`plugins/withoutMicrophone.js` is what actually removes it, via
+`tools:node="remove"`. Because this is a merge-time behaviour, the only honest
+check reads the built artifact:
+
+```bash
+aapt2 dump badging android/app/build/outputs/apk/release/app-release.apk \
+  | grep -E "permission|microphone"
+```
+
+Expect **no** `RECORD_AUDIO` and **no** `uses-implied-feature ... microphone`.
+`FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_MEDIA_PLAYBACK` are expected and
+left in place: same library manifest, but they grant no hardware or personal-data
+access and prompt for nothing.
+
+Grepping the source manifest proves nothing and will happily report success while
+the APK asks for the mic.
 
 The APK lands at `android/app/build/outputs/apk/release/app-release.apk`.
 

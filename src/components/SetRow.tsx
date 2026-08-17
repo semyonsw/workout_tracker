@@ -27,8 +27,8 @@
 
 import { memo } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
 
+import { commit, tap, undo } from '../lib/feedback';
 import type { DraftSet } from '../lib/draft';
 import type { Exercise, UnitSystem } from '../types/models';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
@@ -76,16 +76,15 @@ function SetRowComponent({
 
   const handleComplete = () => {
     // Medium impact on completion, light on undo — the hand can tell them apart.
-    Haptics.impactAsync(
-      done ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Medium,
-    ).catch(() => {});
+    if (done) undo();
+    else commit();
     onToggleComplete();
   };
 
   // The get-ready count and the stop both have their own feedback (see
   // `useSetTimer`), so pressing ▶ only needs to acknowledge the tap itself.
   const handleTimer = () => {
-    Haptics.selectionAsync().catch(() => {});
+    tap();
     onPressTimer?.();
   };
 

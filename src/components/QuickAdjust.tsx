@@ -22,8 +22,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
 
+import { tap } from '../lib/feedback';
 import type { DraftSet } from '../lib/draft';
 import type { Exercise, UnitSystem } from '../types/models';
 import {
@@ -86,7 +86,7 @@ export function QuickAdjust({
 
   /** Apply a relative nudge, clamped at zero and snapped to a loadable step. */
   const bump = (delta: number) => {
-    Haptics.selectionAsync().catch(() => {});
+    tap();
 
     if (isWeight) {
       const currentDisplay =
