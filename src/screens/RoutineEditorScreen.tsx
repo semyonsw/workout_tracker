@@ -49,6 +49,12 @@ import type { Exercise, ID, Routine, RoutineItem } from '../types/models';
 interface RoutineEditorScreenProps {
   routine: Routine;
   exercisesById: Record<ID, Exercise>;
+  /**
+   * This routine was created by opening this screen. It renames the header and
+   * opens the keyboard on the name, because the placeholder name is the first
+   * thing anyone wants to change.
+   */
+  isNew?: boolean;
   onBack: () => void;
   /** Commits the working name and order together — this screen is one draft. */
   onSave: (patch: { name: string; items: RoutineItem[] }) => void;
@@ -60,6 +66,7 @@ interface RoutineEditorScreenProps {
 export function RoutineEditorScreen({
   routine,
   exercisesById,
+  isNew = false,
   onBack,
   onSave,
   onOpenItem,
@@ -109,7 +116,9 @@ export function RoutineEditorScreen({
         kicker={
           moving && movingExercise
             ? `Moving · ${movingExercise.name}`
-            : 'Edit routine'
+            : isNew
+              ? 'New routine'
+              : 'Edit routine'
         }
         kickerTone={moving ? 'green' : 'faint'}
         onBack={moving ? undefined : onBack}
@@ -136,6 +145,8 @@ export function RoutineEditorScreen({
                 value={name}
                 placeholder="Routine name"
                 onChangeText={setName}
+                selectAllOnFocus={isNew}
+                autoFocus={isNew}
                 accessibilityLabel="Routine name"
               />
             </View>

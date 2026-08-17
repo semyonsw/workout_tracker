@@ -178,6 +178,8 @@ export function FieldWell({
   placeholder,
   onChangeText,
   onPress,
+  autoFocus = false,
+  selectAllOnFocus = false,
   accessibilityLabel,
 }: {
   value: string;
@@ -189,6 +191,13 @@ export function FieldWell({
   /** Present = editable. Absent = a drawn, read-only field. */
   onChangeText?: (value: string) => void;
   onPress?: () => void;
+  /** Open the keyboard on mount. For a field that exists to be filled in. */
+  autoFocus?: boolean;
+  /**
+   * Select the whole value on focus, so the first keystroke replaces a
+   * placeholder name instead of appending to it.
+   */
+  selectAllOnFocus?: boolean;
   accessibilityLabel: string;
 }) {
   const box = [
@@ -211,6 +220,8 @@ export function FieldWell({
           // the same either way.
           cursorColor={palette.greenBright}
           selectionColor={palette.greenBright}
+          autoFocus={autoFocus}
+          selectTextOnFocus={selectAllOnFocus}
           accessibilityLabel={accessibilityLabel}
           returnKeyType="done"
           className={`flex-1 ${textClass}`}

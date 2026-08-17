@@ -31,7 +31,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { seedExercises, seedRoutines } from '../data/seed';
+import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import type { Exercise, ID, MuscleGroup, Routine, RoutineItem } from '../types/models';
 
 interface LibraryState {
@@ -41,6 +41,12 @@ interface LibraryState {
   addExercise: (exercise: Exercise) => void;
   /** Removes the exercise and every routine item pointing at it. */
   deleteExercise: (exerciseId: ID) => void;
+  /**
+   * A new, empty routine, appended to the list and returned so the caller can
+   * open it. Empty on purpose: a routine is defined by the exercises in it, and
+   * those are picked in the editor from the library.
+   */
+  createRoutine: (name?: string) => Routine;
   /** Replaces name + items on one routine. */
   updateRoutine: (routineId: ID, patch: { name: string; items: RoutineItem[] }) => void;
   deleteRoutine: (routineId: ID) => void;
@@ -57,6 +63,23 @@ export function routineUsageCount(routines: Routine[], exerciseId: ID): number {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+/**
+ * "New routine", or "New routine 2" if that name is taken.
+ *
+ * A placeholder rather than a prompt: the editor opens on the name field, so the
+ * fastest path is to type over it. The counter exists because two untitled
+ * routines in a list are indistinguishable, and the list is how you find them.
+ */
+function nextUntitledName(routines: readonly Routine[]): string {
+  const base = 'New routine';
+  const taken = new Set(routines.map((r) => r.name));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n += 1) {
+    if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
+  }
+  return base;
 }
 
 export const useLibrary = create<LibraryState>()(
@@ -83,6 +106,20 @@ export const useLibrary = create<LibraryState>()(
             };
           }),
         });
+      },
+
+      createRoutine: (name) => {
+        const { routines } = get();
+        const routine: Routine = {
+          id: `r_${Date.now().toString(36)}`,
+          ownerId: seedUser.id,
+          name: name?.trim() || nextUntitledName(routines),
+          items: [],
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        };
+        set({ routines: [...routines, routine] });
+        return routine;
       },
 
       updateRoutine: (routineId, patch) =>

@@ -56,7 +56,15 @@ import type { Exercise, ID, MuscleGroup, SplitDay } from '../types/models';
 /** Screens pushed on top of a tab. `session` is pushed and owns the screen. */
 type Route =
   | { name: 'session' }
-  | { name: 'routineEditor'; routineId: ID }
+  | {
+      name: 'routineEditor';
+      routineId: ID;
+      /**
+       * This routine was created by opening this screen, so backing out without
+       * putting anything in it should not leave it behind. See `handleLeaveEditor`.
+       */
+      isNew?: boolean;
+    }
   | { name: 'addExercise'; routineId: ID | null }
   | { name: 'createExercise'; draft: ExerciseDraft }
   | { name: 'exerciseHistory'; exerciseId: ID };
@@ -79,6 +87,7 @@ export function AppShell() {
   const routines = useLibrary((s) => s.routines);
   const addExercise = useLibrary((s) => s.addExercise);
   const deleteExercise = useLibrary((s) => s.deleteExercise);
+  const createRoutine = useLibrary((s) => s.createRoutine);
   const updateRoutine = useLibrary((s) => s.updateRoutine);
   const deleteRoutine = useLibrary((s) => s.deleteRoutine);
   const appendToRoutine = useLibrary((s) => s.appendToRoutine);
@@ -116,6 +125,8 @@ export function AppShell() {
   const top = stack[stack.length - 1] ?? null;
   const push = useCallback((route: Route) => setStack((s) => [...s, route]), []);
   const pop = useCallback(() => setStack((s) => s.slice(0, -1)), []);
+  /** Filled in below, once the editor's exit rule exists. See `leaveTop`. */
+  const leaveRoutineEditor = useRef<(route: { routineId: ID; isNew?: boolean }) => void>(pop);
 
   const toggleExpanded = useCallback((key: string) => {
     setExpanded((current) => {
@@ -126,15 +137,33 @@ export function AppShell() {
     });
   }, []);
 
+  /**
+   * Leaving the top screen, by either route out of it.
+   *
+   * Declared before the back handler so hardware back and the `‹` chevron go
+   * through the SAME path — otherwise the two gestures leave different state
+   * behind, which is the kind of difference nobody finds until it has already lost
+   * something.
+   */
+  const leaveTop = useRef<() => void>(pop);
+  leaveTop.current = () => {
+    const route = stack[stack.length - 1];
+    if (route?.name === 'routineEditor') {
+      leaveRoutineEditor.current(route);
+      return;
+    }
+    pop();
+  };
+
   /* Android hardware back pops the stack before it leaves the app. */
   useEffect(() => {
     if (stack.length === 0) return undefined;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      pop();
+      leaveTop.current();
       return true;
     });
     return () => sub.remove();
-  }, [pop, stack.length]);
+  }, [stack.length]);
 
   /*
    * A session claims the screen exactly ONCE per session — on the render after it
@@ -301,6 +330,45 @@ export function AppShell() {
   );
 
   /**
+   * `+ Add routine`.
+   *
+   * This button did nothing at all — it was wired to an empty handler with a TODO
+   * in it, so tapping it was indistinguishable from a dead app. There is no
+   * separate create-routine screen and there does not need to be: the editor
+   * already owns the name, the exercise list and the order, so creating one is
+   * "make an empty routine, then open the thing that edits routines".
+   *
+   * The routine is created BEFORE the editor opens rather than on Save, because
+   * adding an exercise writes straight to the store (`appendToRoutine`), which
+   * needs a routine to write into. `handleLeaveEditor` is what keeps that from
+   * littering the list.
+   */
+  const handleAddRoutine = useCallback(() => {
+    const routine = createRoutine();
+    push({ name: 'routineEditor', routineId: routine.id, isNew: true });
+  }, [createRoutine, push]);
+
+  /**
+   * Leaving the routine editor.
+   *
+   * A routine that was just created and still has nothing in it is a cancelled
+   * create, not a routine — so it is removed on the way out. One with exercises in
+   * it survives: those were already committed to the store when they were added,
+   * and silently discarding them would be worse than an unsaved name.
+   */
+  const handleLeaveEditor = useCallback(
+    (route: { routineId: ID; isNew?: boolean }) => {
+      const routine = routinesById[route.routineId];
+      if (route.isNew && routine && routine.items.length === 0) deleteRoutine(route.routineId);
+      pop();
+    },
+    [deleteRoutine, pop, routinesById],
+  );
+  // Held in a ref so the back handler above — which is set up before this exists —
+  // always calls the current one rather than a stale closure.
+  leaveRoutineEditor.current = handleLeaveEditor;
+
+  /**
    * Open the create flow, optionally pre-filed under a muscle group.
    *
    * Also opens that group's disclosure, so the new exercise is visible the moment
@@ -348,13 +416,15 @@ export function AppShell() {
   }
 
   if (top?.name === 'routineEditor') {
-    const routine = routinesById[top.routineId];
+    const route = top;
+    const routine = routinesById[route.routineId];
     if (!routine) return <Fallback onBack={pop} />;
     return (
       <RoutineEditorScreen
         routine={routine}
         exercisesById={exercisesById}
-        onBack={pop}
+        isNew={route.isNew}
+        onBack={() => handleLeaveEditor(route)}
         onSave={({ name, items }) => {
           updateRoutine(routine.id, { name, items });
           pop();
@@ -456,9 +526,7 @@ export function AppShell() {
             exercisesById={exercisesById}
             onOpen={(routineId) => push({ name: 'routineEditor', routineId })}
             onStart={handleStart}
-            onCreate={() => {
-              // TODO: create-routine flow; not one of the 14 frames.
-            }}
+            onCreate={handleAddRoutine}
           />
         ) : null}
 

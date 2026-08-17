@@ -88,8 +88,15 @@ export function HomeScreen({
   onOpenSession,
 }: HomeScreenProps) {
   const insets = useSafeAreaInsets();
-  // The suggested routine already has a button of its own two inches above.
-  const others = choices.filter((choice) => choice.routineId !== today?.routineId);
+  /*
+   * The suggested routine already has a button of its own two inches above, and an
+   * empty routine has nothing to start — a ▶ that opens an editor instead of
+   * starting a workout is a button that lies. Empty ones live in the `Routines`
+   * tab, which is where they get filled in.
+   */
+  const others = choices.filter(
+    (choice) => choice.routineId !== today?.routineId && choice.exerciseCount > 0,
+  );
 
   return (
     <View className="flex-1 bg-bg">

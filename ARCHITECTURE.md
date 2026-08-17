@@ -434,7 +434,10 @@ app.
   settings the user can actually reach, which made both look broken. The field is
   still in the model and comes back the day the editor can SET it, at which point
   an override is a visible choice rather than a hidden default.
-- Routine/exercise editor screens (the models and store support them fully).
+- Editing a routine ITEM: target sets, rep range and per-item rest are still only
+  settable in code. The editor owns the name, the order and which exercises are in
+  it; `+ Add exercise` uses the routine defaults from `appendToRoutine`. Creating a
+  routine works (`+ Add routine` → an empty routine, opened in the editor).
 - Superset grouping in the UI (`RoutineItem.supersetGroup` is modelled).
 - Editing an existing exercise: the muscle picker and every other field only
   exist on the create screen, so the library can add and delete but not rename or

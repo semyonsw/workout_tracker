@@ -22,6 +22,57 @@ beforeEach(() => {
   useLibrary.getState().restoreSeedLibrary();
 });
 
+/**
+ * `+ Add routine` was wired to an empty handler, so the button did nothing at all.
+ * These are the rules the fix has to hold to.
+ */
+describe('creating a routine', () => {
+  it('appends an empty routine and returns it', () => {
+    const before = useLibrary.getState().routines.length;
+    const created = useLibrary.getState().createRoutine();
+
+    // Returned, because the caller's next move is to open its editor.
+    expect(created.id).toBeTruthy();
+    expect(created.items).toEqual([]);
+    expect(useLibrary.getState().routines).toHaveLength(before + 1);
+    expect(useLibrary.getState().routines.at(-1)?.id).toBe(created.id);
+  });
+
+  it('names it, and never twice the same', () => {
+    const first = useLibrary.getState().createRoutine();
+    const second = useLibrary.getState().createRoutine();
+
+    expect(first.name).toBe('New routine');
+    // Two rows reading "New routine" are two rows you cannot tell apart, and the
+    // list is how you find the one you just made.
+    expect(second.name).toBe('New routine 2');
+  });
+
+  it('takes a name when one is given, and ignores an empty one', () => {
+    expect(useLibrary.getState().createRoutine('Legs, heavy').name).toBe('Legs, heavy');
+    expect(useLibrary.getState().createRoutine('   ').name).toBe('New routine');
+  });
+
+  it('is immediately editable — the editor writes into a real routine', () => {
+    const created = useLibrary.getState().createRoutine();
+    const exerciseId = seedExercises[0].id;
+
+    // This is why the routine is created BEFORE the editor opens: adding an
+    // exercise writes straight to the store.
+    useLibrary.getState().appendToRoutine(created.id, exerciseId);
+
+    const stored = useLibrary.getState().routines.find((r) => r.id === created.id);
+    expect(stored?.items.map((i) => i.exerciseId)).toEqual([exerciseId]);
+  });
+
+  it('can be deleted again, which is how a cancelled create is undone', () => {
+    const created = useLibrary.getState().createRoutine();
+    useLibrary.getState().deleteRoutine(created.id);
+
+    expect(useLibrary.getState().routines.some((r) => r.id === created.id)).toBe(false);
+  });
+});
+
 describe('add and delete', () => {
   it('adds an exercise to the library', () => {
     useLibrary.getState().addExercise(newExercise());
