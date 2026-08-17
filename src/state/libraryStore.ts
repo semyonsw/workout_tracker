@@ -137,14 +137,25 @@ export const useLibrary = create<LibraryState>()(
        * `targetRepsMax` holds SECONDS for time-counted work, so a shared default of
        * 10 would add a ten-second plank and a ten-second boxing round — and on a
        * timed exercise that number is what the countdown counts down.
+       *
+       * The EXERCISE's own target wins where it has one. That number is what the
+       * user set on the create screen ("target reps 12", "2:00 plank"), and adding
+       * the exercise to a routine and getting a made-up 10 instead is the create
+       * screen quietly not meaning it.
        */
       appendToRoutine: (routineId, exerciseId) => {
         const { exercises, routines } = get();
         const exercise = exercises.find((e) => e.id === exerciseId);
         if (!exercise) return;
 
-        const target =
+        const fallback =
           exercise.countUnit === 'rounds' ? 180 : exercise.countUnit === 'seconds' ? 60 : 10;
+        const target =
+          typeof exercise.defaultCount === 'number' &&
+          Number.isFinite(exercise.defaultCount) &&
+          exercise.defaultCount > 0
+            ? Math.round(exercise.defaultCount)
+            : fallback;
         const sets = exercise.countUnit === 'rounds' ? 12 : 4;
 
         set({

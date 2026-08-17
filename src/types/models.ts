@@ -171,6 +171,22 @@ export interface Exercise {
 
   /** Smallest plate/pin jump available for THIS movement (dumbbells: 2.5, cable stack: 5). */
   incrementKg?: number;
+
+  /**
+   * Where to START, the first time this exercise is ever performed.
+   *
+   * Prefills come from HISTORY as soon as there is any — that is the whole
+   * one-tap promise — so these two only matter for a movement that has never been
+   * logged. Without them a brand-new exercise opens its first session with an
+   * empty weight cell and a made-up rep target, and the number the user typed on
+   * the create screen ("this machine starts at 30") is thrown away.
+   *
+   * `defaultCount` is in the exercise's own `countUnit`: reps, seconds, metres or
+   * the number of rounds.
+   */
+  defaultWeightKg?: number;
+  defaultCount?: number;
+
   defaultRestSeconds?: number;
 
   equipment?: string;

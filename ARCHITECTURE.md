@@ -199,7 +199,7 @@ is the difference between an app and an instrument.
 | [src/lib/beeper.ts](src/lib/beeper.ts) | Two tones, two players, never throws |
 | [src/lib/feedback.ts](src/lib/feedback.ts) | Every buzz and beep, behind the user's two switches |
 | [src/lib/notify.ts](src/lib/notify.ts) | The out-of-app cue: two scheduled alerts per timer, on two channels carrying the app's own tones. All failures swallowed |
-| [src/lib/draft.ts](src/lib/draft.ts) | Prefill from history; draft → `SetHistory` on save |
+| [src/lib/draft.ts](src/lib/draft.ts) | Prefill from history, then from the exercise's own starting numbers; draft → `SetHistory` on save |
 | [src/lib/completedWorkout.ts](src/lib/completedWorkout.ts) | Draft → the history record; snapshots the exercise, merges logged sets back into history |
 | [src/hooks/useRestTimer.ts](src/hooks/useRestTimer.ts) | Deadline-based timer, background-safe |
 | [src/hooks/useSetTimer.ts](src/hooks/useSetTimer.ts) | Ticks, haptics, the bell, and auto-logging |

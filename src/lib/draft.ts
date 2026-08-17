@@ -80,6 +80,17 @@ export function uid(prefix = 'd'): ID {
   return `${prefix}_${Date.now().toString(36)}_${counter.toString(36)}`;
 }
 
+/**
+ * A usable positive number, or null.
+ *
+ * Used on the exercise's optional starting numbers, which come from a persisted
+ * library row: `undefined`, `null` and a `NaN` that survived a JSON round-trip must
+ * all read as "not set" rather than reaching a set row as a weight.
+ */
+function finiteOrNull(value: number | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 /* ------------------------------------------------------------------ */
 /* History lookup                                                      */
 /* ------------------------------------------------------------------ */
@@ -204,15 +215,29 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
        * Prefill strategy, in priority order:
        *  1. the same set index from last session (most accurate),
        *  2. the last set that DID exist last session (for added sets),
-       *  3. the routine's target reps at no weight (first ever performance).
+       *  3. the EXERCISE's own starting numbers — what the create screen was told
+       *     this movement starts at,
+       *  4. the routine's target, and a bare 10 as the last resort.
+       *
+       * 3 is what makes "default kg 30" on the create screen mean something. Before
+       * it, a movement with no history opened its first session with an empty weight
+       * cell — so the first set of anything new was always typed from scratch, which
+       * is the one case the one-tap promise cannot cover any other way.
        */
+      const startingWeightKg = finiteOrNull(exercise.defaultWeightKg);
+      const startingCount = finiteOrNull(exercise.defaultCount);
       const plannedSets = Math.max(item.targetSets, previous.length);
       const sets: DraftSet[] = Array.from({ length: plannedSets }, (_, i) => {
         const reference = previous[i] ?? previous[previous.length - 1];
         return {
           localId: uid('set'),
-          weightKg: exercise.requiresWeight ? (reference?.weightKg ?? null) : null,
-          count: reference?.count ?? item.targetRepsMax ?? item.targetRepsMin ?? 10,
+          weightKg: exercise.requiresWeight ? (reference?.weightKg ?? startingWeightKg) : null,
+          count:
+            reference?.count ??
+            item.targetRepsMax ??
+            item.targetRepsMin ??
+            startingCount ??
+            10,
           isWarmup: false,
           isCompleted: false,
           completedAt: null,

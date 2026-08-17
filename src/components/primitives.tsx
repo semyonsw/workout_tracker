@@ -250,26 +250,56 @@ export function FieldWell({
  * A 96-high well: micro label pinned top, the number pinned bottom at Display
  * size. Two of these side by side ARE the set-input preview — which is why they
  * are this big. You should be able to see what the exercise will ask you for.
+ *
+ * A well with an `onPress` says so, with a `±` beside its label. It used to look
+ * exactly like one without: the create screen's two wells were tappable-looking
+ * and inert, which is the worst of both — the affordance is the promise, so it only
+ * appears when there is something behind it. `selected` marks the one an open
+ * editor is pointing at, in the same green the rest of the app uses for "this is
+ * the live thing".
  */
 export function NumericWell({
   label,
   value,
   unit,
   onPress,
+  selected = false,
 }: {
   label: string;
   value: string;
   unit?: string;
   onPress?: () => void;
+  selected?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={!onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${label} ${value} ${unit ?? ''}`.trim()}
-      className="h-well flex-1 justify-between rounded-surface border border-hairline bg-surface-alt px-lg py-md"
+      accessibilityState={{ selected }}
+      accessibilityLabel={
+        onPress
+          ? `${label} ${value} ${unit ?? ''}, adjust`.replace(/\s+/g, ' ').trim()
+          : `${label} ${value} ${unit ?? ''}`.replace(/\s+/g, ' ').trim()
+      }
+      className={[
+        'h-well flex-1 justify-between rounded-surface border bg-surface-alt px-lg py-md',
+        selected ? 'border-green-bright' : 'border-hairline',
+      ].join(' ')}
     >
-      <Kicker>{label}</Kicker>
+      <View className="flex-row items-center justify-between">
+        <Kicker tone={selected ? 'green' : 'faint'}>{label}</Kicker>
+        {onPress ? (
+          <Text
+            className={[
+              'text-micro font-semibold',
+              selected ? 'text-green-bright' : 'text-ink-faint',
+            ].join(' ')}
+          >
+            ±
+          </Text>
+        ) : null}
+      </View>
       <View className="flex-row items-baseline">
         <Text className="text-display font-semibold tabular-nums text-ink">{value}</Text>
         {unit ? (

@@ -11,12 +11,15 @@
  *   │ ╭ Requires weight                    [ ●━] ╮ │
  *   │ │ A weight cell renders on every set       │ │
  *   │ SET INPUTS · WEIGHT + REPS                   │
- *   │ ╭ DEFAULT KG  ╮ ╭ TARGET REPS ╮              │
- *   │ │     30 KG   │ │    12 REPS  │              │
+ *   │ ╭ DEFAULT KG ±╮ ╭ TARGET REPS ±╮             │
+ *   │ │     30 KG   │ │    12 REPS   │             │
+ *   │ ╭──────────────────────────────────────────╮ │
+ *   │ │ −10  −2.5    30 KG    +2.5   +10         │ │  ← the tapped well
+ *   │ │ DEFAULT KG                        Done   │ │
  *   │ LOAD MODE                                    │
  *   │ ╭ External │ Added │ Assisted ╮               │
  *   │ ╭ Increment            ± 2.5 kg ╮             │
- *   │ ╰ Rest                    2:00 ╯              │
+ *   │ ╰ Rest       From Settings · 2:00 ╯           │
  *   └──────────────────────────────────────────────┘
  *
  * `Requires weight` is the key control in the app's data model, and this screen
@@ -41,11 +44,28 @@
  *
  * `Increment` lives on the EXERCISE, not on the user: a dumbbell movement offers
  * ±2.5 and a pin stack ±5, so the nudge can never suggest a weight that cannot
- * physically be loaded.
+ * physically be loaded. It cycles through the steps that exist on real equipment,
+ * for the same reason `Get ready` cycles: four sane answers is a tap, not a keypad.
+ *
+ * ── EVERY NUMBER ON THIS SCREEN IS ADJUSTABLE, IN PLACE ────────────────────
+ *
+ * The two wells and the increment row used to be inert unless the screen was
+ * handed an `onEditNumber` callback to open a keypad somewhere else — and nothing
+ * ever passed one, so tapping `DEFAULT KG` did nothing at all. The wells now open
+ * the same kind of inline ± panel a set row does (`QuickAdjust`), one at a time,
+ * directly under the pair. Same reason as in a session: the useful edit is "that
+ * but heavier", the chips are thumb-sized, and no keyboard covers what you are
+ * changing. The steps come from the exercise's own increment, so the default weight
+ * can only ever land on a number that can physically be loaded.
+ *
+ * `Rest` is the exception and is deliberately NOT editable here: rest lengths are
+ * two global settings now (see `activeWorkoutStore.completeSet`), so a per-exercise
+ * rest on this screen would be a control that quietly does nothing. It states where
+ * the number comes from instead.
  */
 
 import { useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import {
@@ -59,7 +79,8 @@ import {
   SettingRow,
   Toggle,
 } from '../components/primitives';
-import { describeSetInputs, wellsFor } from '../lib/exerciseShape';
+import { describeSetInputs, wellsFor, type WellSpec } from '../lib/exerciseShape';
+import { tap } from '../lib/feedback';
 import {
   CLUSTERS,
   CLUSTER_MUSCLES,
@@ -68,7 +89,8 @@ import {
   MUSCLE_CLUSTER,
 } from '../lib/muscles';
 import { DEFAULT_PREPARE_SECONDS } from '../lib/setTimer';
-import { formatClock, formatDuration } from '../lib/units';
+import { formatClock, formatDuration, roundToStep } from '../lib/units';
+import { currentSettings } from '../state/settingsStore';
 import type {
   CountUnit,
   Exercise,
@@ -106,6 +128,15 @@ const TIMER_MODES: readonly { value: TimerMode; label: string }[] = [
  */
 const PREPARE_CHOICES = [0, 3, 5, 10] as const;
 
+/**
+ * The plate and pin steps that exist on real equipment, cycled by tapping the row.
+ *
+ * 1.25 is a pair of change plates, 2.5 the smallest dumbbell jump, 5 a pin stack,
+ * 10 a plate per side on a bar. Nothing between them is loadable, which is exactly
+ * why this is a cycle and not a keypad.
+ */
+const INCREMENT_CHOICES = [1.25, 2.5, 5, 10] as const;
+
 /** The editable shape of a new exercise. A draft, not an `Exercise` yet. */
 export interface ExerciseDraft {
   name: string;
@@ -129,24 +160,26 @@ interface CreateExerciseScreenProps {
   initial: ExerciseDraft;
   onBack: () => void;
   onCreate: (draft: ExerciseDraft) => void;
-  /** Opens a keypad for one numeric field. The wells are read-only without it. */
-  onEditNumber?: (field: keyof ExerciseDraft) => void;
 }
 
-export function CreateExerciseScreen({
-  initial,
-  onBack,
-  onCreate,
-  onEditNumber,
-}: CreateExerciseScreenProps) {
+export function CreateExerciseScreen({ initial, onBack, onCreate }: CreateExerciseScreenProps) {
   const [draft, setDraft] = useState<ExerciseDraft>(initial);
   /** Which cluster's muscles are on show. A lens, never part of the draft. */
   const [pickerCluster, setPickerCluster] = useState<MuscleCluster>(
     () => clusterOf(initial) ?? 'push',
   );
+  /** Which well the ± panel is pointing at. Null = closed. */
+  const [editing, setEditing] = useState<WellSpec['field'] | null>(null);
   const patch = (next: Partial<ExerciseDraft>) => setDraft((d) => ({ ...d, ...next }));
 
   const wells = wellsFor(draft);
+  /*
+   * Derived, not stored: flipping `Requires weight` or the count unit changes WHICH
+   * wells exist, and an editor pointing at a well that is no longer on screen would
+   * be a panel editing something invisible. Reading it back out of the current wells
+   * means that state cannot exist.
+   */
+  const editingWell = wells.find((well) => well.field === editing) ?? null;
   const isRounds = draft.countUnit === 'rounds';
   const isTimeCounted = draft.countUnit === 'seconds' || draft.countUnit === 'rounds';
 
@@ -284,11 +317,28 @@ export function CreateExerciseScreen({
                 label={well.label}
                 value={wellValue(draft, well.field)}
                 unit={well.unit}
-                onPress={onEditNumber ? () => onEditNumber(wellField(well.field)) : undefined}
+                selected={editing === well.field}
+                onPress={() => {
+                  tap();
+                  // Tapping the open well again closes it, exactly as a set row's
+                  // value cell does.
+                  setEditing((current) => (current === well.field ? null : well.field));
+                }}
               />
             </View>
           ))}
         </View>
+
+        {editingWell ? (
+          <View className="mx-lg mt-sm">
+            <WellStepper
+              well={editingWell}
+              draft={draft}
+              onChange={patch}
+              onClose={() => setEditing(null)}
+            />
+          </View>
+        ) : null}
 
         {/* The timer. Only time-counted work has a clock to run, and this is
             what turns "2:00 plank" from a number you type into a set the phone
@@ -341,22 +391,26 @@ export function CreateExerciseScreen({
               <SettingRow
                 label="Increment"
                 value={`± ${draft.incrementKg} kg`}
-                onPress={onEditNumber ? () => onEditNumber('incrementKg') : undefined}
+                onPress={() => {
+                  tap();
+                  patch({ incrementKg: nextIncrement(draft.incrementKg) });
+                }}
               />
               <Separator />
-              <SettingRow
-                label="Rest"
-                value={formatClock(draft.restSeconds)}
-                onPress={onEditNumber ? () => onEditNumber('restSeconds') : undefined}
-              />
             </>
-          ) : (
+          ) : null}
+
+          {/* Stated as a fact, not offered as a control: both rest lengths are
+              global settings now, so an editable per-exercise rest here would be a
+              row that quietly does nothing. */}
+          <SettingRow
+            label={isRounds ? 'Rest between rounds' : 'Rest'}
+            value={`From Settings · ${formatClock(draft.restSeconds)}`}
+            valueTone="faint"
+          />
+
+          {draft.requiresWeight ? null : (
             <>
-              <SettingRow
-                label={isRounds ? 'Rest between rounds' : 'Rest'}
-                value={formatClock(draft.restSeconds)}
-                onPress={onEditNumber ? () => onEditNumber('restSeconds') : undefined}
-              />
               <Separator />
               {/* Stated, not hidden: the user should know why they'll never see
                   a nudge here, rather than wonder whether it's broken. */}
@@ -380,6 +434,185 @@ export function CreateExerciseScreen({
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * The ± panel for one well.
+ *
+ *   ┌────────────────────────────────────────────┐
+ *   │  −10   −2.5      30 KG     +2.5   +10      │
+ *   │  DEFAULT KG                        Done    │
+ *   └────────────────────────────────────────────┘
+ *
+ * Deliberately the same shape as `QuickAdjust` in a session — same chip sizes, same
+ * live value at Display size in the middle, same `Done` as the only way out and no
+ * Cancel, because edits apply as they are made. Learning one teaches the other.
+ *
+ * FOUR chips, not two: one step and four steps. Setting up an exercise is a coarse
+ * job ("this machine starts at 45, not 30"), unlike the ±1 plate nudge mid-workout,
+ * so the outer chips are big enough to cross the range in a couple of taps.
+ */
+function WellStepper({
+  well,
+  draft,
+  onChange,
+  onClose,
+}: {
+  well: WellSpec;
+  draft: ExerciseDraft;
+  onChange: (patch: Partial<ExerciseDraft>) => void;
+  onClose: () => void;
+}) {
+  const { small, large, min, isTime } = stepsFor(well.field, draft);
+  const deltas = [-large, -small, small, large];
+
+  const bump = (delta: number) => {
+    tap();
+
+    if (well.field === 'weight') {
+      // Snapped to the increment so a default weight is always loadable.
+      onChange({
+        defaultWeightKg: Math.max(min, roundToStep(draft.defaultWeightKg + delta, small)),
+      });
+      return;
+    }
+    if (well.field === 'duration') {
+      onChange({ durationSeconds: Math.max(min, draft.durationSeconds + delta) });
+      return;
+    }
+    onChange({ targetCount: Math.max(min, draft.targetCount + delta) });
+  };
+
+  return (
+    <View className="rounded-surface border border-hairline bg-surface p-md">
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row">
+          {deltas
+            .filter((d) => d < 0)
+            .map((delta, i) => (
+              <StepChip
+                key={delta}
+                label={formatDelta(delta, isTime)}
+                first={i === 0}
+                onPress={() => bump(delta)}
+              />
+            ))}
+        </View>
+
+        <View className="mx-xs flex-row items-baseline">
+          <Text className="text-display font-semibold tabular-nums text-ink">
+            {wellValue(draft, well.field)}
+          </Text>
+          {well.unit ? (
+            <Text className="ml-xs text-micro font-semibold uppercase text-ink-faint">
+              {well.unit}
+            </Text>
+          ) : null}
+        </View>
+
+        <View className="flex-row">
+          {deltas
+            .filter((d) => d > 0)
+            .map((delta, i) => (
+              <StepChip
+                key={delta}
+                label={formatDelta(delta, isTime)}
+                first={i === 0}
+                onPress={() => bump(delta)}
+              />
+            ))}
+        </View>
+      </View>
+
+      <View className="mt-md flex-row items-center justify-between">
+        <Kicker>{well.label}</Kicker>
+        <Pressable
+          onPress={onClose}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Done adjusting"
+          className="h-hit justify-center"
+        >
+          <Text className="text-label font-semibold text-green-bright">Done</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/** 44 high, 46 wide minimum — a thumb target, matching `QuickAdjust`'s chips. */
+function StepChip({
+  label,
+  first,
+  onPress,
+}: {
+  label: string;
+  first: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className={[
+        'h-hit min-w-[46px] items-center justify-center rounded-pill border border-hairline bg-surface-alt px-sm',
+        first ? '' : 'ml-sm',
+      ].join(' ')}
+    >
+      <Text className="text-label font-medium tabular-nums text-ink">{label}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * The two step sizes for a field, and the floor it cannot go below.
+ *
+ * Weight steps from the exercise's OWN increment, so the chips on a pin-stack
+ * machine are ±5 and ±20 while a dumbbell movement gets ±2.5 and ±10 — and a
+ * default weight can only ever be a number that exists on the equipment.
+ *
+ * The floors matter: 0 kg is a real answer (bodyweight plus nothing yet), 0 reps
+ * and a 0-second hold are not.
+ */
+function stepsFor(
+  field: WellSpec['field'],
+  draft: ExerciseDraft,
+): { small: number; large: number; min: number; isTime: boolean } {
+  if (field === 'weight') {
+    const step = draft.incrementKg > 0 ? draft.incrementKg : 2.5;
+    return { small: step, large: step * 4, min: 0, isTime: false };
+  }
+  if (field === 'duration') return { small: 15, large: 60, min: 5, isTime: true };
+
+  switch (draft.countUnit) {
+    case 'seconds':
+      // A weighted-but-time-counted set keeps its target in `count`.
+      return { small: 15, large: 60, min: 5, isTime: true };
+    case 'meters':
+      return { small: 25, large: 100, min: 25, isTime: false };
+    case 'rounds':
+      return { small: 1, large: 4, min: 1, isTime: false };
+    default:
+      return { small: 1, large: 5, min: 1, isTime: false };
+  }
+}
+
+/**
+ * "+2.5" / "−10" / "+15s" — a real minus sign (U+2212), not a hyphen, so it
+ * optically matches the plus at the same size.
+ */
+function formatDelta(delta: number, isTime: boolean): string {
+  const rounded = Number(delta.toFixed(2));
+  const body = `${Math.abs(rounded)}${isTime ? 's' : ''}`;
+  return rounded < 0 ? `−${body}` : `+${body}`;
+}
+
+/** Cycle to the next loadable increment, wrapping. */
+function nextIncrement(current: number): number {
+  const index = INCREMENT_CHOICES.indexOf(current as (typeof INCREMENT_CHOICES)[number]);
+  return INCREMENT_CHOICES[(index + 1) % INCREMENT_CHOICES.length];
+}
 
 /** " · PULL · back, biceps" — the filing decision, echoed back in pick order. */
 function describeMuscles(muscles: MuscleGroup[]): string {
@@ -413,14 +646,7 @@ function nextPrepare(current: number): number {
   return PREPARE_CHOICES[(index + 1) % PREPARE_CHOICES.length];
 }
 
-/** Which draft key a well edits. `duration` and `count` are separate numbers. */
-function wellField(field: 'weight' | 'count' | 'duration'): keyof ExerciseDraft {
-  if (field === 'weight') return 'defaultWeightKg';
-  if (field === 'duration') return 'durationSeconds';
-  return 'targetCount';
-}
-
-function wellValue(draft: ExerciseDraft, field: 'weight' | 'count' | 'duration'): string {
+function wellValue(draft: ExerciseDraft, field: WellSpec['field']): string {
   if (field === 'weight') return String(draft.defaultWeightKg);
   if (field === 'duration') return formatClock(draft.durationSeconds);
   return String(draft.targetCount);
@@ -435,6 +661,14 @@ function wellValue(draft: ExerciseDraft, field: 'weight' | 'count' | 'duration')
  */
 export function draftToExercise(draft: ExerciseDraft, id: string, ownerId: string): Exercise {
   const timed = draft.timerMode !== 'manual';
+  /*
+   * Which well holds the target, mirroring `wellsFor`: unweighted time-counted work
+   * puts it in the DURATION well (a plank's hold, a round's length); everything else
+   * puts it in the count well (reps, metres, or a weighted set's target time).
+   */
+  const targetIsDuration =
+    !draft.requiresWeight && (draft.countUnit === 'seconds' || draft.countUnit === 'rounds');
+
   return {
     id,
     ownerId,
@@ -449,6 +683,15 @@ export function draftToExercise(draft: ExerciseDraft, id: string, ownerId: strin
     prepareSeconds: timed ? draft.prepareSeconds : undefined,
     isUnilateral: false,
     incrementKg: draft.requiresWeight ? draft.incrementKg : undefined,
+    /*
+     * The two numbers the wells set. These used to be dropped on the floor here —
+     * the screen let you set a default weight and then no field carried it, so the
+     * first session of a new exercise opened with an empty weight cell whatever you
+     * had typed. `rounds` is the one shape where the target is the ROUND LENGTH
+     * rather than the count of them, which is the same collapse `SetHistory` makes.
+     */
+    defaultWeightKg: draft.requiresWeight ? draft.defaultWeightKg : undefined,
+    defaultCount: targetIsDuration ? draft.durationSeconds : draft.targetCount,
     defaultRestSeconds: draft.restSeconds,
     isArchived: false,
     createdAt: new Date().toISOString(),
@@ -479,6 +722,8 @@ export function emptyExerciseDraft(name: string, muscle?: MuscleGroup): Exercise
     targetCount: 12,
     durationSeconds: 180,
     incrementKg: 2.5,
-    restSeconds: 120,
+    // Read from Settings rather than hard-coded, so the number the screen SHOWS as
+    // the rest for this exercise is the one a session will actually run.
+    restSeconds: currentSettings().restSecondsBetweenSets,
   };
 }

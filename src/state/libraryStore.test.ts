@@ -65,6 +65,29 @@ describe('creating a routine', () => {
     expect(stored?.items.map((i) => i.exerciseId)).toEqual([exerciseId]);
   });
 
+  it("adding an exercise uses the exercise's own target, not a constant", () => {
+    const created = useLibrary.getState().createRoutine();
+    useLibrary.getState().addExercise(newExercise({ id: 'ex_target_12', defaultCount: 12 }));
+    useLibrary.getState().appendToRoutine(created.id, 'ex_target_12');
+
+    const item = useLibrary.getState().routines.find((r) => r.id === created.id)?.items[0];
+    // 12 is what the create screen's `TARGET REPS` well said; a hard-coded 10 here
+    // was the create screen quietly not meaning it.
+    expect(item?.targetRepsMax).toBe(12);
+  });
+
+  it('falls back to a sane target per count unit when the exercise has none', () => {
+    const created = useLibrary.getState().createRoutine();
+    useLibrary.getState().addExercise(
+      newExercise({ id: 'ex_round', countUnit: 'rounds', requiresWeight: false, loadMode: 'none' }),
+    );
+    useLibrary.getState().appendToRoutine(created.id, 'ex_round');
+
+    const item = useLibrary.getState().routines.find((r) => r.id === created.id)?.items[0];
+    // A ten-second boxing round is not a thing; rounds default to 3:00.
+    expect(item?.targetRepsMax).toBe(180);
+  });
+
   it('can be deleted again, which is how a cancelled create is undone', () => {
     const created = useLibrary.getState().createRoutine();
     useLibrary.getState().deleteRoutine(created.id);
