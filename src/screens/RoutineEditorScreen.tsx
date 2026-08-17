@@ -26,6 +26,22 @@
  * will fall into is drawn as a `green-dim` rule — the only place in the app
  * green marks a target rather than a fact. And the lifted row has NO SHADOW:
  * the app's one elevation belongs to the rest timer.
+ *
+ * ── THE DRAFT IS COMMITTED BEFORE THIS SCREEN NAVIGATES AWAY ────────────────
+ *
+ * The name and the order live in local state and used to be written to the store
+ * only on `Save`. That is a clean rule right up to the point where this screen
+ * sends the user somewhere else and comes back: `+ Add exercise` pushes the
+ * library, the library writes the picked exercise STRAIGHT to the store
+ * (`appendToRoutine`), and this screen is unmounted and rebuilt from props in the
+ * meantime. So a name you had just typed silently reverted to "New routine" while
+ * the exercise you added survived — half the edit kept, half thrown away, which is
+ * indistinguishable from a bug because it is one.
+ *
+ * Every callback that navigates therefore hands the working draft up
+ * (`{ name, items }`) so it can be committed first. `Save` still exists and still
+ * means "I'm done here"; it just is no longer the only thing standing between a
+ * typed name and losing it.
  */
 
 import { useState } from 'react';
@@ -57,10 +73,21 @@ interface RoutineEditorScreenProps {
   isNew?: boolean;
   onBack: () => void;
   /** Commits the working name and order together — this screen is one draft. */
-  onSave: (patch: { name: string; items: RoutineItem[] }) => void;
-  onOpenItem: (item: RoutineItem) => void;
-  onAddExercise: () => void;
+  onSave: (patch: RoutineDraft) => void;
+  /**
+   * Open one item. Handed the working draft because it navigates away, and
+   * anything not committed first is lost — see the file header.
+   */
+  onOpenItem: (item: RoutineItem, draft: RoutineDraft) => void;
+  /** Same contract as `onOpenItem`: commit the draft, then push the picker. */
+  onAddExercise: (draft: RoutineDraft) => void;
   onDelete: () => void;
+}
+
+/** The two things this screen edits. */
+export interface RoutineDraft {
+  name: string;
+  items: RoutineItem[];
 }
 
 export function RoutineEditorScreen({
@@ -84,6 +111,9 @@ export function RoutineEditorScreen({
   const movingIndex = moving ? items.findIndex((i) => i.id === moving.id) : -1;
   const movingItem = movingIndex >= 0 ? items[movingIndex] : null;
   const movingExercise = movingItem ? exercisesById[movingItem.exerciseId] : null;
+
+  /** What this screen would save right now. Handed to anything that navigates. */
+  const draft = (): RoutineDraft => ({ name, items });
 
   const lift = (item: RoutineItem, index: number) => {
     commit();
@@ -126,7 +156,7 @@ export function RoutineEditorScreen({
           label: 'Save',
           // Demoted mid-move: saving is not the thing to do with a row in the air.
           tone: moving ? 'muted' : 'primary',
-          onPress: moving ? drop : () => onSave({ name, items }),
+          onPress: moving ? drop : () => onSave(draft()),
         }}
       />
 
@@ -173,7 +203,11 @@ export function RoutineEditorScreen({
                   item={item}
                   exercise={exercise}
                   dimmed={moving != null}
-                  onPress={() => (moving ? setMoving({ ...moving, targetIndex: index }) : onOpenItem(item))}
+                  onPress={() =>
+                    moving
+                      ? setMoving({ ...moving, targetIndex: index })
+                      : onOpenItem(item, draft())
+                  }
                   onLongPress={() => (moving ? undefined : lift(item, index))}
                 />
               </View>
@@ -186,7 +220,7 @@ export function RoutineEditorScreen({
           {moving ? null : (
             <>
               <Separator inset={0} />
-              <AddRow label="Add exercise" onPress={onAddExercise} />
+              <AddRow label="Add exercise" onPress={() => onAddExercise(draft())} />
             </>
           )}
         </ListCard>

@@ -200,6 +200,7 @@ is the difference between an app and an instrument.
 | [src/lib/feedback.ts](src/lib/feedback.ts) | Every buzz and beep, behind the user's two switches |
 | [src/lib/notify.ts](src/lib/notify.ts) | The out-of-app cue: two scheduled alerts per timer, on two channels carrying the app's own tones. All failures swallowed |
 | [src/lib/draft.ts](src/lib/draft.ts) | Prefill from history, then from the exercise's own starting numbers; draft → `SetHistory` on save |
+| [src/lib/exerciseDraft.ts](src/lib/exerciseDraft.ts) | Library row ⇄ editable draft. Preserves identity, so an edit is not a delete |
 | [src/lib/completedWorkout.ts](src/lib/completedWorkout.ts) | Draft → the history record; snapshots the exercise, merges logged sets back into history |
 | [src/hooks/useRestTimer.ts](src/hooks/useRestTimer.ts) | Deadline-based timer, background-safe |
 | [src/hooks/useSetTimer.ts](src/hooks/useSetTimer.ts) | Ticks, haptics, the bell, and auto-logging |
@@ -439,10 +440,10 @@ app.
   it; `+ Add exercise` uses the routine defaults from `appendToRoutine`. Creating a
   routine works (`+ Add routine` → an empty routine, opened in the editor).
 - Superset grouping in the UI (`RoutineItem.supersetGroup` is modelled).
-- Editing an existing exercise: the muscle picker and every other field only
-  exist on the create screen, so the library can add and delete but not rename or
-  re-file. Unfiled rows show under `Unfiled` rather than disappearing, and the way
-  to move one today is delete-and-recreate.
+- ~~Editing an existing exercise~~ — done. The create screen takes a `mode`, the
+  conversions both ways live in [src/lib/exerciseDraft.ts](src/lib/exerciseDraft.ts),
+  and `libraryStore.updateExercise` replaces the row in place so the id — which every
+  logged set points at — survives a rename or a re-file.
 - ~~The shipped example history~~ — gone. `src/data/seed.ts` no longer carries
   logged sessions, `RECENT` rows or a hard-coded `Recently used` list; the fixture
   lives in `test/fixtures/history.ts` and is test-only. A fresh install has no

@@ -2,7 +2,8 @@
  * AppShell — five tabs and a stack, in about a hundred lines of state.
  *
  *   tab:  Today | History | Routines | Library | Settings   ← the roots
- *   stack: session · routineEditor · addExercise · createExercise · exerciseHistory
+ *   stack: session · routineEditor · addExercise · createExercise · editExercise
+ *          · exerciseHistory
  *
  * Why not a router library: the app has five roots and five pushable screens, none
  * of them deep-linked, none of them needing URL state. `expo-router` would add a
@@ -29,12 +30,7 @@ import { ConfirmSheet } from '../components/ConfirmSheet';
 import { PrimaryButton } from '../components/primitives';
 import { TabBar, type TabName } from '../components/TabBar';
 import { ActiveWorkoutScreen } from '../screens/ActiveWorkoutScreen';
-import {
-  CreateExerciseScreen,
-  draftToExercise,
-  emptyExerciseDraft,
-  type ExerciseDraft,
-} from '../screens/CreateExerciseScreen';
+import { CreateExerciseScreen } from '../screens/CreateExerciseScreen';
 import { ExerciseHistoryScreen } from '../screens/ExerciseHistoryScreen';
 import { ExerciseLibraryScreen, clusterKey, muscleKey } from '../screens/ExerciseLibraryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
@@ -43,6 +39,13 @@ import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { historyByExerciseId, recentlyUsedExerciseIds } from '../lib/completedWorkout';
+import {
+  applyDraftToExercise,
+  draftToExercise,
+  emptyExerciseDraft,
+  exerciseToDraft,
+  type ExerciseDraft,
+} from '../lib/exerciseDraft';
 import { MUSCLE_CLUSTER, describeItemsFocus } from '../lib/muscles';
 import { evaluateOverloadBatch } from '../lib/progressiveOverload';
 import { searchExercises } from '../lib/search';
@@ -67,6 +70,7 @@ type Route =
     }
   | { name: 'addExercise'; routineId: ID | null }
   | { name: 'createExercise'; draft: ExerciseDraft }
+  | { name: 'editExercise'; exerciseId: ID }
   | { name: 'exerciseHistory'; exerciseId: ID };
 
 export function AppShell() {
@@ -86,6 +90,7 @@ export function AppShell() {
   const exercises = useLibrary((s) => s.exercises);
   const routines = useLibrary((s) => s.routines);
   const addExercise = useLibrary((s) => s.addExercise);
+  const updateExercise = useLibrary((s) => s.updateExercise);
   const deleteExercise = useLibrary((s) => s.deleteExercise);
   const createRoutine = useLibrary((s) => s.createRoutine);
   const updateRoutine = useLibrary((s) => s.updateRoutine);
@@ -381,7 +386,10 @@ export function AppShell() {
         const cluster = MUSCLE_CLUSTER[muscle];
         setExpanded((current) => new Set(current).add(muscleKey(muscle)).add(clusterKey(cluster)));
       }
-      push({ name: 'createExercise', draft: emptyExerciseDraft(name, muscle) });
+      push({
+        name: 'createExercise',
+        draft: emptyExerciseDraft(name, muscle, useSettings.getState().restSecondsBetweenSets),
+      });
     },
     [push],
   );
@@ -425,12 +433,25 @@ export function AppShell() {
         exercisesById={exercisesById}
         isNew={route.isNew}
         onBack={() => handleLeaveEditor(route)}
-        onSave={({ name, items }) => {
-          updateRoutine(routine.id, { name, items });
+        onSave={(draft) => {
+          updateRoutine(routine.id, draft);
           pop();
         }}
-        onOpenItem={(item) => push({ name: 'exerciseHistory', exerciseId: item.exerciseId })}
-        onAddExercise={() => push({ name: 'addExercise', routineId: routine.id })}
+        /*
+         * Both of these navigate, and this screen is rebuilt from the store when it
+         * comes back — so the working draft is committed on the way out. Without
+         * it, adding an exercise threw away a name that had just been typed while
+         * keeping the exercise, because `appendToRoutine` writes to the store and
+         * the name only lived in the screen. See the editor's file header.
+         */
+        onOpenItem={(item, draft) => {
+          updateRoutine(routine.id, draft);
+          push({ name: 'exerciseHistory', exerciseId: item.exerciseId });
+        }}
+        onAddExercise={(draft) => {
+          updateRoutine(routine.id, draft);
+          push({ name: 'addExercise', routineId: routine.id });
+        }}
         onDelete={() => {
           deleteRoutine(routine.id);
           pop();
@@ -471,8 +492,28 @@ export function AppShell() {
       <CreateExerciseScreen
         initial={top.draft}
         onBack={pop}
-        onCreate={(draft) => {
+        onSubmit={(draft) => {
           addExercise(draftToExercise(draft, `ex_${Date.now().toString(36)}`, seedUser.id));
+          pop();
+        }}
+      />
+    );
+  }
+
+  if (top?.name === 'editExercise') {
+    const exercise = exercisesById[top.exerciseId];
+    if (!exercise) return <Fallback onBack={pop} />;
+    return (
+      <CreateExerciseScreen
+        // Rebuilt from the row every time the screen opens, so what you see is what
+        // is stored — including anything changed from somewhere else since.
+        initial={exerciseToDraft(exercise, useSettings.getState().restSecondsBetweenSets)}
+        mode="edit"
+        onBack={pop}
+        onSubmit={(draft) => {
+          // In place, keeping the id: every set ever logged points at it, so the
+          // history follows the rename instead of being orphaned by it.
+          updateExercise(exercise.id, applyDraftToExercise(draft, exercise));
           pop();
         }}
       />
@@ -488,6 +529,7 @@ export function AppShell() {
         history={historyById[exercise.id] ?? []}
         verdict={verdicts[exercise.id]}
         onBack={pop}
+        onEdit={() => push({ name: 'editExercise', exerciseId: exercise.id })}
       />
     );
   }

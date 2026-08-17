@@ -96,6 +96,54 @@ describe('creating a routine', () => {
   });
 });
 
+describe('editing an exercise', () => {
+  it('replaces it in place, keeping the id', () => {
+    useLibrary.getState().addExercise(newExercise({ name: 'Typo prees' }));
+    const before = useLibrary.getState().exercises.length;
+
+    useLibrary
+      .getState()
+      .updateExercise('ex_test_1', newExercise({ name: 'Test press', defaultWeightKg: 16 }));
+
+    const after = useLibrary.getState().exercises;
+    // In place: one row, same id, so every set logged against it stays attached.
+    expect(after).toHaveLength(before);
+    expect(after.find((e) => e.id === 'ex_test_1')?.name).toBe('Test press');
+    expect(after.find((e) => e.id === 'ex_test_1')?.defaultWeightKg).toBe(16);
+  });
+
+  it('cannot change which exercise it is', () => {
+    useLibrary.getState().addExercise(newExercise());
+    useLibrary
+      .getState()
+      .updateExercise('ex_test_1', newExercise({ id: 'ex_something_else', name: 'Renamed' }));
+
+    const ids = useLibrary.getState().exercises.map((e) => e.id);
+    expect(ids).toContain('ex_test_1');
+    expect(ids).not.toContain('ex_something_else');
+  });
+
+  it('leaves the routines holding it alone', () => {
+    const held = seedRoutines[0].items[0].exerciseId;
+    const before = routineUsageCount(useLibrary.getState().routines, held);
+    const existing = useLibrary.getState().exercises.find((e) => e.id === held);
+    if (!existing) throw new Error('fixture exercise missing');
+
+    useLibrary.getState().updateExercise(held, { ...existing, name: 'Renamed movement' });
+
+    // A rename is not a delete: the routine keeps its item and follows the name.
+    expect(routineUsageCount(useLibrary.getState().routines, held)).toBe(before);
+  });
+
+  it('is a no-op for an id that is not there', () => {
+    const before = useLibrary.getState().exercises;
+    useLibrary.getState().updateExercise('ex_ghost', newExercise({ id: 'ex_ghost' }));
+
+    expect(useLibrary.getState().exercises).toHaveLength(before.length);
+    expect(useLibrary.getState().exercises.some((e) => e.id === 'ex_ghost')).toBe(false);
+  });
+});
+
 describe('add and delete', () => {
   it('adds an exercise to the library', () => {
     useLibrary.getState().addExercise(newExercise());

@@ -1,8 +1,19 @@
 /**
- * CreateExerciseScreen — define what a set of this thing even is.
+ * CreateExerciseScreen — define what a set of this thing even is, or change it.
+ *
+ * ONE SCREEN FOR BOTH. `mode: 'edit'` relabels the header and the action and
+ * nothing else, because "what is this exercise" is the same question the second
+ * time you answer it. The alternative — a separate edit screen — is two screens
+ * that have to agree about a data model with three interacting axes
+ * (`requiresWeight` × `countUnit` × `loadMode`), and they would stop agreeing.
+ *
+ * Editing was the missing half of the library: you could add an exercise and delete
+ * one, so fixing a typo or a wrong starting weight meant deleting the exercise and
+ * making it again — which, before this, silently cost the history filed under its id.
  *
  *   ┌──────────────────────────────────────────────┐
  *   │ ‹  NEW EXERCISE                    [ Create ]│
+ *   │ ‹  EDIT EXERCISE                     [ Save ]│
  *   │ NAME                                         │
  *   │ ╭ Weighted dips                            ╮ │
  *   │ MUSCLES · PULL · BACK, BICEPS                │
@@ -14,7 +25,7 @@
  *   │ ╭ DEFAULT KG ±╮ ╭ TARGET REPS ±╮             │
  *   │ │     30 KG   │ │    12 REPS   │             │
  *   │ ╭──────────────────────────────────────────╮ │
- *   │ │ −10  −2.5    30 KG    +2.5   +10         │ │  ← the tapped well
+ *   │ │ −10   −1     16 KG      +1    +10        │ │  ← the tapped well
  *   │ │ DEFAULT KG                        Done   │ │
  *   │ LOAD MODE                                    │
  *   │ ╭ External │ Added │ Assisted ╮               │
@@ -55,13 +66,19 @@
  * the same kind of inline ± panel a set row does (`QuickAdjust`), one at a time,
  * directly under the pair. Same reason as in a session: the useful edit is "that
  * but heavier", the chips are thumb-sized, and no keyboard covers what you are
- * changing. The steps come from the exercise's own increment, so the default weight
- * can only ever land on a number that can physically be loaded.
+ * changing. Weight steps by ±1 and ±10 so every whole kilo is reachable: a machine
+ * whose pin reads 16 is a fact, and rounding the starting weight to the exercise's
+ * 2.5 kg progression step made that number impossible to enter.
  *
  * `Rest` is the exception and is deliberately NOT editable here: rest lengths are
  * two global settings now (see `activeWorkoutStore.completeSet`), so a per-exercise
  * rest on this screen would be a control that quietly does nothing. It states where
  * the number comes from instead.
+ *
+ * What this file does NOT own: the draft itself, and the two conversions between a
+ * draft and a library row. Those became load-bearing the moment this screen could
+ * edit an existing exercise — a mistake in them rewrites a row with history against
+ * it — so they live in `lib/exerciseDraft.ts`, pure and tested.
  */
 
 import { useState } from 'react';
@@ -79,6 +96,7 @@ import {
   SettingRow,
   Toggle,
 } from '../components/primitives';
+import { type ExerciseDraft } from '../lib/exerciseDraft';
 import { describeSetInputs, wellsFor, type WellSpec } from '../lib/exerciseShape';
 import { tap } from '../lib/feedback';
 import {
@@ -88,17 +106,8 @@ import {
   clusterOf,
   MUSCLE_CLUSTER,
 } from '../lib/muscles';
-import { DEFAULT_PREPARE_SECONDS } from '../lib/setTimer';
-import { formatClock, formatDuration, roundToStep } from '../lib/units';
-import { currentSettings } from '../state/settingsStore';
-import type {
-  CountUnit,
-  Exercise,
-  LoadMode,
-  MuscleCluster,
-  MuscleGroup,
-  TimerMode,
-} from '../types/models';
+import { formatClock, formatDuration } from '../lib/units';
+import type { CountUnit, LoadMode, MuscleCluster, MuscleGroup, TimerMode } from '../types/models';
 
 const LOAD_MODES: readonly { value: LoadMode; label: string }[] = [
   { value: 'external', label: 'External' },
@@ -131,38 +140,32 @@ const PREPARE_CHOICES = [0, 3, 5, 10] as const;
 /**
  * The plate and pin steps that exist on real equipment, cycled by tapping the row.
  *
- * 1.25 is a pair of change plates, 2.5 the smallest dumbbell jump, 5 a pin stack,
- * 10 a plate per side on a bar. Nothing between them is loadable, which is exactly
- * why this is a cycle and not a keypad.
+ * 1 and 2 are what many cable and machine stacks actually step by, 1.25 is a pair
+ * of change plates, 2.5 the smallest dumbbell jump, 5 a pin stack, 10 a plate per
+ * side on a bar. Nothing between them is loadable, which is exactly why this is a
+ * cycle and not a keypad.
+ *
+ * This number is the PROGRESSION step — what the overload nudge is allowed to add,
+ * and the ± on a set row mid-workout. It deliberately does not constrain the
+ * starting weight below, which is a fact about a machine rather than a plan.
  */
-const INCREMENT_CHOICES = [1.25, 2.5, 5, 10] as const;
-
-/** The editable shape of a new exercise. A draft, not an `Exercise` yet. */
-export interface ExerciseDraft {
-  name: string;
-  /** Primary first — the first one picked decides the cluster. */
-  muscleGroups: MuscleGroup[];
-  requiresWeight: boolean;
-  countUnit: CountUnit;
-  loadMode: LoadMode;
-  timerMode: TimerMode;
-  prepareSeconds: number;
-  defaultWeightKg: number;
-  /** Reps, metres, or the number of rounds — whatever `countUnit` counts. */
-  targetCount: number;
-  /** Seconds per set: a round length, or a swim duration. */
-  durationSeconds: number;
-  incrementKg: number;
-  restSeconds: number;
-}
+const INCREMENT_CHOICES = [1, 1.25, 2, 2.5, 5, 10] as const;
 
 interface CreateExerciseScreenProps {
   initial: ExerciseDraft;
+  /** `edit` relabels the header and the action. Everything else is identical. */
+  mode?: 'create' | 'edit';
   onBack: () => void;
-  onCreate: (draft: ExerciseDraft) => void;
+  /** Create it, or save the changes — the caller knows which. */
+  onSubmit: (draft: ExerciseDraft) => void;
 }
 
-export function CreateExerciseScreen({ initial, onBack, onCreate }: CreateExerciseScreenProps) {
+export function CreateExerciseScreen({
+  initial,
+  mode = 'create',
+  onBack,
+  onSubmit,
+}: CreateExerciseScreenProps) {
   const [draft, setDraft] = useState<ExerciseDraft>(initial);
   /** Which cluster's muscles are on show. A lens, never part of the draft. */
   const [pickerCluster, setPickerCluster] = useState<MuscleCluster>(
@@ -194,9 +197,18 @@ export function CreateExerciseScreen({ initial, onBack, onCreate }: CreateExerci
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
-        kicker="New exercise"
+        kicker={mode === 'edit' ? 'Edit exercise' : 'New exercise'}
         onBack={onBack}
-        action={{ label: 'Create', onPress: () => onCreate(draft) }}
+        action={{
+          label: mode === 'edit' ? 'Save' : 'Create',
+          // Demoted while the name is empty: an exercise with no name is a row you
+          // cannot find again.
+          tone: draft.name.trim() === '' ? 'muted' : 'primary',
+          onPress: () => {
+            if (draft.name.trim() === '') return;
+            onSubmit(draft);
+          },
+        }}
       />
 
       <ScrollView
@@ -447,9 +459,10 @@ export function CreateExerciseScreen({ initial, onBack, onCreate }: CreateExerci
  * live value at Display size in the middle, same `Done` as the only way out and no
  * Cancel, because edits apply as they are made. Learning one teaches the other.
  *
- * FOUR chips, not two: one step and four steps. Setting up an exercise is a coarse
- * job ("this machine starts at 45, not 30"), unlike the ±1 plate nudge mid-workout,
- * so the outer chips are big enough to cross the range in a couple of taps.
+ * FOUR chips, not two: a fine step and a coarse one. Setting up an exercise is a
+ * coarse job ("this machine starts at 45, not 30") that still has to be able to land
+ * on an exact number, so weight offers ±1 and ±10 — every whole kilo is reachable,
+ * and 16 kg takes two taps from 30 rather than being impossible.
  */
 function WellStepper({
   well,
@@ -469,9 +482,18 @@ function WellStepper({
     tap();
 
     if (well.field === 'weight') {
-      // Snapped to the increment so a default weight is always loadable.
+      /*
+       * NOT snapped to the exercise's increment. This used to round to it, which
+       * meant a movement with a 2.5 increment could not be started at 16 kg at
+       * all — and 16 is exactly what a rope-machine pin says. The starting weight
+       * is an observation about a machine; the increment is a plan for adding to
+       * it, and only the second one has to land on a plate.
+       *
+       * `toFixed(2)` because 0.1-style float drift on a number the user typed in
+       * whole kilos would be visible in a 40 px numeral.
+       */
       onChange({
-        defaultWeightKg: Math.max(min, roundToStep(draft.defaultWeightKg + delta, small)),
+        defaultWeightKg: Math.max(min, Number((draft.defaultWeightKg + delta).toFixed(2))),
       });
       return;
     }
@@ -568,9 +590,12 @@ function StepChip({
 /**
  * The two step sizes for a field, and the floor it cannot go below.
  *
- * Weight steps from the exercise's OWN increment, so the chips on a pin-stack
- * machine are ±5 and ±20 while a dumbbell movement gets ±2.5 and ±10 — and a
- * default weight can only ever be a number that exists on the equipment.
+ * WEIGHT STEPS BY 1 AND 10, always. It used to step by the exercise's increment,
+ * which sounds tidier and makes whole ranges of real weights unreachable: with a
+ * 2.5 increment you can produce 15 and 17.5 but never 16, and 16 is what the pin on
+ * a rope machine says. ±1 reaches every whole kilo and ±10 crosses the range in a
+ * couple of taps; a half-kilo starting value stays on its own grid because nothing
+ * is rounded (see `bump`).
  *
  * The floors matter: 0 kg is a real answer (bodyweight plus nothing yet), 0 reps
  * and a 0-second hold are not.
@@ -579,10 +604,7 @@ function stepsFor(
   field: WellSpec['field'],
   draft: ExerciseDraft,
 ): { small: number; large: number; min: number; isTime: boolean } {
-  if (field === 'weight') {
-    const step = draft.incrementKg > 0 ? draft.incrementKg : 2.5;
-    return { small: step, large: step * 4, min: 0, isTime: false };
-  }
+  if (field === 'weight') return { small: 1, large: 10, min: 0, isTime: false };
   if (field === 'duration') return { small: 15, large: 60, min: 5, isTime: true };
 
   switch (draft.countUnit) {
@@ -650,80 +672,4 @@ function wellValue(draft: ExerciseDraft, field: WellSpec['field']): string {
   if (field === 'weight') return String(draft.defaultWeightKg);
   if (field === 'duration') return formatClock(draft.durationSeconds);
   return String(draft.targetCount);
-}
-
-/**
- * Turn a finished draft into a library row.
- *
- * `durationSeconds` collapses into `count` for time-based units, because in
- * `SetHistory` a round IS its length — one row, one number, no second column to
- * keep in sync.
- */
-export function draftToExercise(draft: ExerciseDraft, id: string, ownerId: string): Exercise {
-  const timed = draft.timerMode !== 'manual';
-  /*
-   * Which well holds the target, mirroring `wellsFor`: unweighted time-counted work
-   * puts it in the DURATION well (a plank's hold, a round's length); everything else
-   * puts it in the count well (reps, metres, or a weighted set's target time).
-   */
-  const targetIsDuration =
-    !draft.requiresWeight && (draft.countUnit === 'seconds' || draft.countUnit === 'rounds');
-
-  return {
-    id,
-    ownerId,
-    name: draft.name.trim(),
-    muscleGroups: draft.muscleGroups,
-    requiresWeight: draft.requiresWeight,
-    countUnit: draft.countUnit,
-    loadMode: draft.requiresWeight ? draft.loadMode : 'none',
-    // Omitted rather than stored as 'manual': absent is the default, and a row
-    // that says nothing about a timer is easier to read than one that says "off".
-    timerMode: timed ? draft.timerMode : undefined,
-    prepareSeconds: timed ? draft.prepareSeconds : undefined,
-    isUnilateral: false,
-    incrementKg: draft.requiresWeight ? draft.incrementKg : undefined,
-    /*
-     * The two numbers the wells set. These used to be dropped on the floor here —
-     * the screen let you set a default weight and then no field carried it, so the
-     * first session of a new exercise opened with an empty weight cell whatever you
-     * had typed. `rounds` is the one shape where the target is the ROUND LENGTH
-     * rather than the count of them, which is the same collapse `SetHistory` makes.
-     */
-    defaultWeightKg: draft.requiresWeight ? draft.defaultWeightKg : undefined,
-    defaultCount: targetIsDuration ? draft.durationSeconds : draft.targetCount,
-    defaultRestSeconds: draft.restSeconds,
-    isArchived: false,
-    createdAt: new Date().toISOString(),
-  };
-}
-
-/**
- * A blank draft, named from whatever the user typed into the library search.
- *
- * `muscle` is the group the create flow was opened FROM — the library's tree
- * hangs an `+ Add exercise to chest` row off every muscle group, and arriving here
- * with `chest` already picked is the whole point of that row. It lands first in
- * `muscleGroups`, which makes it the primary and therefore decides where the
- * exercise files: the user is returned to exactly the group they were looking at.
- *
- * The chips are still live, so it is a starting point rather than a lock-in.
- */
-export function emptyExerciseDraft(name: string, muscle?: MuscleGroup): ExerciseDraft {
-  return {
-    name,
-    muscleGroups: muscle ? [muscle] : [],
-    requiresWeight: true,
-    countUnit: 'reps',
-    loadMode: 'external',
-    timerMode: 'manual',
-    prepareSeconds: DEFAULT_PREPARE_SECONDS,
-    defaultWeightKg: 30,
-    targetCount: 12,
-    durationSeconds: 180,
-    incrementKg: 2.5,
-    // Read from Settings rather than hard-coded, so the number the screen SHOWS as
-    // the rest for this exercise is the one a session will actually run.
-    restSeconds: currentSettings().restSecondsBetweenSets,
-  };
 }

@@ -35,6 +35,15 @@ interface ExerciseHistoryScreenProps {
   /** Supplies the "same weight for N days" clause. */
   verdict?: OverloadVerdict;
   onBack: () => void;
+  /**
+   * Open this exercise in the editor.
+   *
+   * This screen is where the header action belongs: tapping an exercise anywhere in
+   * the app lands here, so it is the one place that is always "about" one exercise —
+   * and looking at a wrong name or a wrong starting weight is exactly when you want
+   * to fix it.
+   */
+  onEdit?: () => void;
   onOpenSession?: (sessionId: ID) => void;
 }
 
@@ -43,6 +52,7 @@ export function ExerciseHistoryScreen({
   history,
   verdict,
   onBack,
+  onEdit,
   onOpenSession,
 }: ExerciseHistoryScreenProps) {
   const rows = sessionRows(history, exercise);
@@ -59,7 +69,11 @@ export function ExerciseHistoryScreen({
 
   return (
     <View className="flex-1 bg-bg">
-      <ScreenHeader kicker="History" onBack={onBack} />
+      <ScreenHeader
+        kicker="History"
+        onBack={onBack}
+        action={onEdit ? { label: 'Edit', tone: 'muted', onPress: onEdit } : undefined}
+      />
 
       <ScrollView
         className="flex-1"

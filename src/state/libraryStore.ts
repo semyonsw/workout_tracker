@@ -39,6 +39,15 @@ interface LibraryState {
   routines: Routine[];
 
   addExercise: (exercise: Exercise) => void;
+  /**
+   * Replace one exercise in place.
+   *
+   * IN PLACE is the point: the row keeps its id, so every set ever logged against
+   * it stays attached and the history, the chart and the overload verdict all follow
+   * the rename. Editing by delete-and-recreate — which is what the app forced before
+   * this existed — silently orphans all of it.
+   */
+  updateExercise: (exerciseId: ID, next: Exercise) => void;
   /** Removes the exercise and every routine item pointing at it. */
   deleteExercise: (exerciseId: ID) => void;
   /**
@@ -89,6 +98,15 @@ export const useLibrary = create<LibraryState>()(
       routines: seedRoutines,
 
       addExercise: (exercise) => set({ exercises: [...get().exercises, exercise] }),
+
+      updateExercise: (exerciseId, next) =>
+        set({
+          exercises: get().exercises.map((e) =>
+            // `next.id` is ignored in favour of the key being replaced: an edit can
+            // change everything about an exercise except which exercise it is.
+            e.id === exerciseId ? { ...next, id: exerciseId } : e,
+          ),
+        }),
 
       deleteExercise: (exerciseId) => {
         const { exercises, routines } = get();
