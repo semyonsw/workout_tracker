@@ -58,7 +58,7 @@ module.exports = {
       hit: '44px', // minimum tap target
       row: '56px', // set rows, list rows
       'row-lg': '64px', // editor / library rows (two lines of text)
-      timer: '54px', // the content row of a floating timer pill
+      timer: '66px', // the content row of a floating timer pill — keep in sync with `size.timer`
       well: '96px', // numeric wells
     },
     extend: {

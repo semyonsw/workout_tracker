@@ -28,7 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
-import { commit, countFinal, success, tap, undo } from '../lib/feedback';
+import { commit, countFinal, tap, undo } from '../lib/feedback';
 import { cancelTimerAlert, scheduleTimerAlert } from '../lib/notify';
 import { readSetTimer, workEndsAt, type SetTimerReading } from '../lib/setTimer';
 import { useActiveWorkout, type SetTimerState } from '../state/activeWorkoutStore';
@@ -87,8 +87,25 @@ export function useSetTimer(): SetTimerApi {
     finalTone: false,
   });
   useCountdownBeeps({
+    /*
+     * `readSetTimer` never reports 0 while the phase is `work` — it ceils the
+     * remainder, so the clock reads 1 and the next tick is already `over`. Zero
+     * has to be handed over explicitly or the count-in ticks 3 · 2 · 1 and then
+     * says nothing, which is a plank that ends in silence: the bell was the whole
+     * reason the phone was running the clock.
+     *
+     * A timer rehydrated after the app was killed mid-plank is `over` on its FIRST
+     * reading, and `nextCue` only arms on a first sighting — so this cannot ring a
+     * bell for a hold that finished in the user's pocket.
+     */
     secondsLeft:
-      reading?.phase === 'work' && timer?.mode === 'countdown' ? reading.display : null,
+      timer?.mode === 'countdown' && reading
+        ? reading.phase === 'work'
+          ? reading.display
+          : reading.phase === 'over'
+            ? 0
+            : null
+        : null,
     // `workSeconds` is in the id so a `+15` mid-hold re-arms the count: the user
     // moved the target, and the seconds already spoken are no longer the last ones.
     id: timer?.mode === 'countdown' ? `work:${timer.startedAt}:${timer.workSeconds}` : null,
@@ -131,9 +148,12 @@ export function useSetTimer(): SetTimerApi {
 
     if (reading.phase === 'over' && committedFor.current !== timer.startedAt) {
       committedFor.current = timer.startedAt;
-      // The bell's tone is sounded by `useCountdownBeeps` reaching zero; this is
-      // the wrist-level confirmation that the set went into the log.
-      success();
+      /*
+       * No haptic here: the bell IS `useCountdownBeeps` reaching zero, and its
+       * `countFinal` already buzzes the success pattern. Firing one from both
+       * places was two buzzes and — with the beeper's duplicate guard — a
+       * confusing half-cue for the same single event.
+       */
       commitSetTimer();
     }
   }, [commitSetTimer, reading, timer]);

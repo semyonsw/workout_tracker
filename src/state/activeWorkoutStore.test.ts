@@ -260,6 +260,145 @@ describe('rest: pause, resume, skip', () => {
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * The two rest lengths in Settings, and whether they are actually the numbers the
+ * timer uses.
+ *
+ * They were not. Rest was resolved once, at session start, from a cascade that
+ * checked the routine item and the exercise first — and nearly every shipped
+ * routine item carries its own rest, so both settings were shadowed on almost
+ * every exercise. Setting "Between sets" to 1:30 and then watching a 3:00
+ * countdown is a setting that does nothing.
+ */
+describe('rest lengths come from settings, live', () => {
+  function withSettings(values: Partial<Record<'sets' | 'exercises', number>>, run: () => void) {
+    const settings = useSettings.getState();
+    if (values.sets != null) settings.setNumber('restSecondsBetweenSets', values.sets);
+    if (values.exercises != null) {
+      settings.setNumber('restSecondsBetweenExercises', values.exercises);
+    }
+    try {
+      run();
+    } finally {
+      useSettings.getState().resetToDefaults();
+    }
+  }
+
+  it('a set that is not the last uses "between sets"', () => {
+    withSettings({ sets: 45 }, () => {
+      const session = startRoutine();
+      const entry = session.entries[0];
+      useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+      const { rest } = useActiveWorkout.getState();
+      expect(rest.source).toBe('set');
+      expect(rest.totalSeconds).toBe(45);
+    });
+  });
+
+  it('the last set of an exercise uses "between exercises"', () => {
+    withSettings({ sets: 45, exercises: 300 }, () => {
+      const session = startRoutine();
+      const entry = session.entries[0];
+      for (const s of entry.sets) useActiveWorkout.getState().completeSet(entry.localId, s.localId);
+
+      const { rest } = useActiveWorkout.getState();
+      expect(rest.source).toBe('transition');
+      expect(rest.totalSeconds).toBe(300);
+    });
+  });
+
+  it('changing a setting mid-session applies to the next set, not the next session', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    withSettings({ sets: 30 }, () => {
+      useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(30);
+
+      useSettings.getState().setNumber('restSecondsBetweenSets', 90);
+      useActiveWorkout.getState().completeSet(entry.localId, entry.sets[1].localId);
+      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(90);
+    });
+  });
+
+  it('no rest starts after the last set of the LAST exercise', () => {
+    withSettings({ sets: 60, exercises: 60 }, () => {
+      const session = startRoutine();
+      const entries = session.entries;
+      const last = entries[entries.length - 1];
+      const lastSet = last.sets[last.sets.length - 1];
+
+      // Everything except the very last set of the very last exercise.
+      for (const entry of entries) {
+        for (const s of entry.sets) {
+          if (entry.localId === last.localId && s.localId === lastSet.localId) continue;
+          useActiveWorkout.getState().completeSet(entry.localId, s.localId);
+        }
+      }
+
+      // Clear the board so the assertion is about THIS set and nothing else.
+      useActiveWorkout.getState().skipRest();
+      useActiveWorkout.getState().completeSet(last.localId, lastSet.localId);
+
+      // "Rest between exercises" is the walk to the next machine, and there is no
+      // next machine — the next action is Finish.
+      expect(isResting(useActiveWorkout.getState().rest)).toBe(false);
+      const progress = selectProgress(useActiveWorkout.getState());
+      expect(progress.done).toBe(progress.total);
+    });
+  });
+
+  it('still rests after the last exercise if an earlier one is unfinished', () => {
+    withSettings({ exercises: 120 }, () => {
+      const session = startRoutine();
+      const last = session.entries[session.entries.length - 1];
+
+      // Straight to the last exercise, skipping everything before it — which is
+      // what people do when a machine is taken.
+      useActiveWorkout.getState().skipRest();
+      for (const s of last.sets) useActiveWorkout.getState().completeSet(last.localId, s.localId);
+
+      // There is still work to walk back to, so this IS a transition.
+      const { rest } = useActiveWorkout.getState();
+      expect(rest.source).toBe('transition');
+      expect(rest.totalSeconds).toBe(120);
+    });
+  });
+
+  it('completing a set does not clear a rest it did not start', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useSettings.getState().setFlag('autoStartRest', false);
+    try {
+      // Auto-rest off is the whole reason `startRestNow` exists.
+      useActiveWorkout.getState().startRestNow();
+      const before = useActiveWorkout.getState().rest;
+      expect(isResting(before)).toBe(true);
+
+      useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+      expect(useActiveWorkout.getState().rest).toBe(before);
+    } finally {
+      useSettings.getState().setFlag('autoStartRest', true);
+    }
+  });
+
+  it('startRestNow runs the user\'s between-sets length', () => {
+    withSettings({ sets: 75 }, () => {
+      startRoutine();
+      useActiveWorkout.getState().startRestNow();
+
+      const { rest } = useActiveWorkout.getState();
+      expect(rest.totalSeconds).toBe(75);
+      expect(rest.source).toBe('set');
+      expect(rest.endsAt).toBeGreaterThan(Date.now());
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
 describe('set timer', () => {
   /** The first timed exercise in the fixtures, whatever routine it lives in. */
   function timedEntry() {

@@ -1,10 +1,10 @@
 /**
- * AppShell — four tabs and a stack, in about a hundred lines of state.
+ * AppShell — five tabs and a stack, in about a hundred lines of state.
  *
- *   tab:  Today  |  Routines  |  Library  |  Settings     ← the roots
- *   stack: session · routineEditor · addExercise · createExercise · history
+ *   tab:  Today | History | Routines | Library | Settings   ← the roots
+ *   stack: session · routineEditor · addExercise · createExercise · exerciseHistory
  *
- * Why not a router library: the app has four roots and five pushable screens, none
+ * Why not a router library: the app has five roots and five pushable screens, none
  * of them deep-linked, none of them needing URL state. `expo-router` would add a
  * dependency, a file-system convention and a navigator config to express a
  * `Route[]` and two functions. When deep links or a native back-stack are actually
@@ -36,16 +36,19 @@ import {
 } from '../screens/CreateExerciseScreen';
 import { ExerciseHistoryScreen } from '../screens/ExerciseHistoryScreen';
 import { ExerciseLibraryScreen, clusterKey, muscleKey } from '../screens/ExerciseLibraryScreen';
+import { HistoryScreen } from '../screens/HistoryScreen';
 import { HomeScreen, type TodayPlan } from '../screens/HomeScreen';
 import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { historyByExerciseId } from '../lib/completedWorkout';
 import { MUSCLE_CLUSTER, describeItemsFocus } from '../lib/muscles';
 import { evaluateOverloadBatch } from '../lib/progressiveOverload';
 import { searchExercises } from '../lib/search';
 import { useActiveWorkout } from '../state/activeWorkoutStore';
 import { routineUsageCount, useLibrary } from '../state/libraryStore';
 import { useSettings } from '../state/settingsStore';
+import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore';
 import {
   seedHistoryByExerciseId,
   seedRecentSessions,
@@ -89,6 +92,10 @@ export function AppShell() {
 
   const session = useActiveWorkout((s) => s.session);
   const startSession = useActiveWorkout((s) => s.startSession);
+
+  const workouts = useWorkoutHistory((s) => s.workouts);
+  const saveSession = useWorkoutHistory((s) => s.saveSession);
+  const deleteWorkout = useWorkoutHistory((s) => s.deleteWorkout);
 
   const exercisesById = useMemo<Record<ID, Exercise>>(
     () => Object.fromEntries(exercises.map((e) => [e.id, e])),
@@ -153,14 +160,35 @@ export function AppShell() {
     push({ name: 'session' });
   }, [push, session]);
 
-  /* --- derived: today's plan and the nudge count ---------------------- */
+  /* --- derived: history, today's plan, the nudge count ----------------- */
+  /*
+   * Everything that reads history reads THIS, not the seed fixture.
+   *
+   * The sets the user has actually logged are merged on top of the shipped
+   * fixture, so a workout finished five minutes ago is what the next session
+   * prefills from, what the overload engine judges, and what the exercise-history
+   * chart plots. Before this, finishing a workout changed nothing anywhere: the
+   * next session offered the same prefills and the same nudges, which made the
+   * app's one job — noticing that a weight has gone stale — impossible.
+   */
+  const historyById = useMemo(
+    () => historyByExerciseId(workouts, seedHistoryByExerciseId),
+    [workouts],
+  );
+
+  /** Real workouts if there are any; the shipped examples until then. */
+  const recent = useMemo(
+    () => (workouts.length > 0 ? recentSummaries(workouts) : seedRecentSessions),
+    [workouts],
+  );
+
   const verdicts = useMemo(
     () =>
-      evaluateOverloadBatch(exercises, seedHistoryByExerciseId, {
+      evaluateOverloadBatch(exercises, historyById, {
         policy: seedUser.overloadPolicy,
         unitSystem,
       }),
-    [exercises, unitSystem],
+    [exercises, historyById, unitSystem],
   );
 
   const today = useMemo<TodayPlan | null>(() => {
@@ -214,14 +242,14 @@ export function AppShell() {
       startSession({
         routine,
         exercisesById,
-        historyByExerciseId: seedHistoryByExerciseId,
+        historyByExerciseId: historyById,
         policy: seedUser.overloadPolicy,
         unitSystem: settings.unitSystem,
         defaultRestSeconds: settings.restSecondsBetweenSets,
         defaultTransitionRestSeconds: settings.restSecondsBetweenExercises,
       });
     },
-    [exercisesById, push, routinesById, session, startSession],
+    [exercisesById, historyById, push, routinesById, session, startSession],
   );
 
   /**
@@ -253,9 +281,17 @@ export function AppShell() {
         <ActiveWorkoutScreen
           unitSystem={unitSystem}
           policy={seedUser.overloadPolicy}
-          onFinish={async ({ setHistory, totalVolumeKg }) => {
-            // TODO: persist via Drizzle, then advance the split cursor.
-            console.log(`Saved ${setHistory.length} sets · ${totalVolumeKg} kg volume`);
+          onFinish={(finished) => {
+            /*
+             * The one write to permanent history. Everything downstream —
+             * the History tab, the prefills, the overload verdicts — reads what
+             * this stores; nothing else in the app writes a logged set.
+             *
+             * A session with nothing logged stores nothing (`saveSession` returns
+             * null), so "start a workout, change your mind, finish" leaves no row
+             * claiming a workout happened.
+             */
+            saveSession(finished);
           }}
           onExit={pop}
         />
@@ -331,7 +367,7 @@ export function AppShell() {
     return (
       <ExerciseHistoryScreen
         exercise={exercise}
-        history={seedHistoryByExerciseId[exercise.id] ?? []}
+        history={historyById[exercise.id] ?? []}
         verdict={verdicts[exercise.id]}
         onBack={pop}
       />
@@ -351,15 +387,19 @@ export function AppShell() {
           <HomeScreen
             split={seedSplit}
             today={today}
-            recent={seedRecentSessions}
+            recent={recent}
             onStart={handleStart}
             onSelectDay={(day) => {
               if (day.routineId) push({ name: 'routineEditor', routineId: day.routineId });
             }}
-            onOpenSession={() => {
-              // TODO: a past-session detail screen; not one of the 14 frames.
-            }}
+            // A past session opens where past sessions live. The History row is
+            // the detail view — it expands in place — so there is nothing to push.
+            onOpenSession={() => setTab('History')}
           />
+        ) : null}
+
+        {tab === 'History' ? (
+          <HistoryScreen workouts={workouts} onDelete={deleteWorkout} />
         ) : null}
 
         {tab === 'Routines' ? (

@@ -18,6 +18,19 @@
  *  • TWO PLAYERS, NOT ONE. A shared player would have to seek back to zero
  *    between a tick and the final tone, and at a one-second cadence that race is
  *    audible as a swallowed beep.
+ *  • ONE CUE IS ONE SOUND. Two independent things used to be able to turn one cue
+ *    into two audible beeps, which is what made the count-in sound like it was
+ *    counting faster than the clock:
+ *      – REWIND WHILE PLAYING. `seekTo(0)` was fired and not awaited, so a seek
+ *        that resolved while the 110 ms tick was still sounding restarted it
+ *        mid-tail. The player is paused first now, and `play()` waits for the
+ *        rewind (see `restart`).
+ *      – THE SAME CUE ARRIVING TWICE. Any caller can double-fire — a remounted
+ *        pill, an effect that runs again, two countdowns landing on the same
+ *        instant — and no amount of care upstream can prove it never happens. So
+ *        the floor is enforced HERE: a cue of the same kind inside `MIN_GAP_MS`
+ *        is the same cue and is dropped. The cadence is one per second, so the
+ *        gap is far below anything real.
  *  • IT NEVER THROWS. Audio is the least important thing in a gym app: if the
  *    native module is missing, the session is muted by the OS, or the player was
  *    released under us, the workout must carry on in silence. Every entry point
@@ -29,22 +42,25 @@
 
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 
-export type BeepKind = 'tick' | 'final';
+import { beepSource } from './beepSources';
 
-/*
- * `require` rather than `import`: these are Metro asset references (numeric
- * module ids), which is exactly what `createAudioPlayer` wants, and keeping them
- * lazy means the WAVs are only decoded once something actually beeps.
- */
-const SOURCES: Record<BeepKind, () => unknown> = {
-  tick: () => require('../../assets/beep.wav'),
-  final: () => require('../../assets/beep-final.wav'),
-};
+export type BeepKind = 'tick' | 'final';
 
 const players: Partial<Record<BeepKind, AudioPlayer>> = {};
 /** Set once audio has proven unusable on this device — stops per-tick retries. */
 let disabled = false;
 let audioModeRequested = false;
+
+/**
+ * Two cues of the same kind closer together than this are the same cue arriving
+ * twice, and the second one is dropped.
+ *
+ * 220 ms: comfortably longer than the 110 ms tick (so a duplicate can never be
+ * heard as a stutter) and comfortably shorter than the one-second cadence a real
+ * count-in runs at (so no legitimate cue is ever swallowed).
+ */
+const MIN_GAP_MS = 220;
+const lastPlayedAt: Partial<Record<BeepKind, number>> = {};
 
 /**
  * Put the audio session in the right mode for short cues.
@@ -77,7 +93,7 @@ function playerFor(kind: BeepKind): AudioPlayer | null {
   const existing = players[kind];
   if (existing) return existing;
   try {
-    const player = createAudioPlayer(SOURCES[kind]() as never);
+    const player = createAudioPlayer(beepSource(kind) as never);
     player.volume = 1;
     players[kind] = player;
     return player;
@@ -92,14 +108,39 @@ function playerFor(kind: BeepKind): AudioPlayer | null {
  * Play one cue. Fire-and-forget by design: nothing upstream should ever await a
  * beep, and nothing should branch on whether it was audible.
  *
- * The rewind is unconditional because the previous tick may still be mid-tail;
- * `play()` on a finished player would otherwise be a no-op at the end position.
+ * Duplicate cues inside `MIN_GAP_MS` are dropped — see the file header.
  */
 export function playBeep(kind: BeepKind): void {
+  const now = Date.now();
+  if (now - (lastPlayedAt[kind] ?? 0) < MIN_GAP_MS) return;
+
   const player = playerFor(kind);
   if (!player) return;
+  lastPlayedAt[kind] = now;
+  void restart(player);
+}
+
+/**
+ * Rewind to the start, then play.
+ *
+ * The rewind is unconditional because the previous cue may still be mid-tail;
+ * `play()` on a finished player would otherwise be a no-op at the end position.
+ * The ORDER is what matters: pause, then wait for the seek, then play. Seeking a
+ * sounding player and playing without waiting lets the seek land mid-tail and
+ * restart the tone — one cue, two beeps.
+ */
+async function restart(player: AudioPlayer): Promise<void> {
   try {
-    void player.seekTo(0).catch(() => {});
+    player.pause();
+  } catch {
+    // Nothing was playing, or the player is gone. Either way, try to play.
+  }
+  try {
+    await player.seekTo(0);
+  } catch {
+    // A player that cannot seek can still make a sound from wherever it is.
+  }
+  try {
     player.play();
   } catch {
     // A released or busy player is not a reason to interrupt a set.
@@ -122,6 +163,7 @@ export function releaseBeeper(): void {
       // Already gone.
     }
     delete players[kind];
+    delete lastPlayedAt[kind];
   }
   disabled = false;
   audioModeRequested = false;

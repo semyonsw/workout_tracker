@@ -21,7 +21,7 @@
  */
 
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 
@@ -32,21 +32,31 @@ import { prepareAudio } from './src/lib/beeper';
 import { ensureTimerChannel, requestNotificationPermission } from './src/lib/notify';
 
 /*
- * Timer alerts — rest ending, and the bell on a timed hold — must show even with
- * the app foregrounded: the phone is usually face-up on a bench or on the floor
- * under a plank, not in the user's hand.
+ * Timer alerts — rest ending, and the bell on a timed hold.
+ *
+ * The alert is a BACKUP for a phone that isn't being looked at, so it stays
+ * silent while the app is in the foreground: the pill already counted the last
+ * seconds out loud and buzzed at zero, and adding the notification's own sound on
+ * top of that is the same event announced twice — which is heard as the countdown
+ * beeping more times than it counted.
+ *
+ * Backgrounded, it is the only thing that can reach the user, so it gets the
+ * banner and the sound.
  *
  * Wrapped because this runs at module scope, before any boundary exists. A throw
  * here would be a crash on launch with no screen to report it on.
  */
 try {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: false,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+    handleNotification: async () => {
+      const foreground = AppState.currentState === 'active';
+      return {
+        shouldShowBanner: !foreground,
+        shouldShowList: false,
+        shouldPlaySound: !foreground,
+        shouldSetBadge: false,
+      };
+    },
   });
 } catch {
   // Alerts will be silent-but-scheduled, or absent. The pill is unaffected.

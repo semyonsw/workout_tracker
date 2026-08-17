@@ -37,19 +37,24 @@ import { FinishSheet } from '../components/FinishSheet';
 import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
-import { draftToSetHistory, totalVolumeKg, type DraftSet } from '../lib/draft';
+import type { DraftSession, DraftSet } from '../lib/draft';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
+import { useSettings } from '../state/settingsStore';
 import { PrimaryButton } from '../components/primitives';
 import type { ID, OverloadPolicy, UnitSystem } from '../types/models';
 
 interface ActiveWorkoutScreenProps {
   unitSystem: UnitSystem;
   policy: OverloadPolicy;
-  /** Persist the finished session; navigation happens after it resolves. */
-  onFinish: (payload: {
-    setHistory: ReturnType<typeof draftToSetHistory>;
-    totalVolumeKg: number;
-  }) => Promise<void> | void;
+  /**
+   * Persist the finished session; navigation happens after it resolves.
+   *
+   * Handed the whole draft rather than pre-flattened rows: history keeps a record
+   * of the WORKOUT — its title, how long it took, which exercises were in it — and
+   * a screen whose job is logging sets should not be the thing that decides what
+   * that record looks like. `lib/completedWorkout.ts` owns that shape.
+   */
+  onFinish: (session: DraftSession) => Promise<void> | void;
   onExit: () => void;
 }
 
@@ -98,6 +103,14 @@ export function ActiveWorkoutScreen({
   const finishSession = useActiveWorkout((s) => s.finishSession);
   const startSetTimer = useActiveWorkout((s) => s.startSetTimer);
   const commitSetTimer = useActiveWorkout((s) => s.commitSetTimer);
+  const startRestNow = useActiveWorkout((s) => s.startRestNow);
+
+  /*
+   * The live between-sets length, for the card's `Rest` button. Read here rather
+   * than from the entry so the label always matches what Settings says right now —
+   * which is also what `completeSet` will use.
+   */
+  const restSeconds = useSettings((s) => s.restSecondsBetweenSets);
 
   const elapsedMinutes = useElapsedMinutes(session?.startedAt);
 
@@ -132,10 +145,7 @@ export function ActiveWorkoutScreen({
     setConfirmingFinish(false);
     const finished = finishSession();
     if (!finished) return;
-    await onFinish({
-      setHistory: draftToSetHistory(finished),
-      totalVolumeKg: totalVolumeKg(finished),
-    });
+    await onFinish(finished);
     onExit();
   }, [finishSession, onExit, onFinish]);
 
@@ -222,6 +232,8 @@ export function ActiveWorkoutScreen({
                 unitSystem={unitSystem}
                 policyIncrementKg={policy.incrementKg}
                 timingSetId={setTimer?.entryId === entry.localId ? setTimer.setId : null}
+                restSeconds={restSeconds}
+                onStartRest={entry.localId === activeEntryId ? startRestNow : undefined}
                 onActivate={() => setActiveEntry(entry.localId)}
                 onPressTimer={(setId) => handlePressTimer(entry.localId, setId)}
                 onToggleSet={(setId) => {

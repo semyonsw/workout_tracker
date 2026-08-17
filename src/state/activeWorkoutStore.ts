@@ -99,6 +99,12 @@ interface ActiveWorkoutState {
 
   /* --- rest timer --- */
   startRest: (seconds: number, source?: RestSource, originSetId?: ID | null) => void;
+  /**
+   * Start the user's between-sets rest by hand, at whatever Settings currently
+   * says. This is the other half of `autoStartRest: false`: without it, turning
+   * auto-rest off left the app with no way to run a rest timer at all.
+   */
+  startRestNow: () => void;
   adjustRest: (deltaSeconds: number) => void;
   /** Freeze the countdown where it stands. The pill stays; the clock doesn't move. */
   pauseRest: () => void;
@@ -162,59 +168,80 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
 
       /**
        * The one-tap path. Marks the set done, then starts the appropriate rest:
-       * the longer transition rest if this was the last set of the exercise, the
-       * normal inter-set rest otherwise.
+       * the longer BETWEEN-EXERCISES rest if this was the last set of the
+       * exercise, the BETWEEN-SETS rest otherwise.
        *
-       * `autoStartRest` off makes rest entirely manual — some people superset,
-       * and a pill that appears over the next exercise's rows is in the way.
+       * Three rules this function encodes, all of them things that were wrong:
+       *
+       *  1. BOTH LENGTHS ARE READ FROM SETTINGS, AT THE MOMENT REST STARTS. Not
+       *     captured at session start, and not taken from the routine. They are
+       *     the only two rest controls the user can actually reach, so a number
+       *     that shadows them is a setting that silently does nothing — see
+       *     `buildDraftSession` for the whole argument. Reading them here also
+       *     means changing one mid-workout takes effect on the very next set,
+       *     rather than at the start of a session the user has to remember to
+       *     restart.
+       *  2. THE LAST SET OF THE LAST EXERCISE STARTS NO REST. "Rest between
+       *     exercises" is time to walk to the next machine, and there isn't one:
+       *     the next thing to do is Finish. Starting a 2:30 countdown there was a
+       *     pill sitting over the Finish button counting down to nothing.
+       *  3. COMPLETING A SET NEVER CLEARS A REST IT DIDN'T START. With
+       *     `autoStartRest` off — some people superset, and a pill over the next
+       *     exercise's rows is in the way — a rest the user started by hand used
+       *     to be wiped by the next ✓. Now rest is only ever REPLACED, by a rest
+       *     this set actually earned.
        */
       completeSet: (entryId, setId) => {
-        const { session } = get();
+        const { session, rest } = get();
         if (!session) return;
 
-        let restSeconds = 0;
-        let advanceTo: ID | null = null;
-        let matched = false;
+        const index = session.entries.findIndex((e) => e.localId === entryId);
+        if (index === -1) return;
 
-        const entries = session.entries.map((entry) => {
-          if (entry.localId !== entryId) return entry;
-          matched = true;
-
-          const sets = entry.sets.map((s) =>
-            s.localId === setId
-              ? { ...s, isCompleted: true, completedAt: new Date().toISOString(), isPrefilled: false }
-              : s,
-          );
-
-          const allDone = sets.every((s) => s.isCompleted);
-          restSeconds = allDone ? entry.transitionRestSeconds : entry.restSeconds;
-
-          if (allDone) {
-            const i = session.entries.findIndex((e) => e.localId === entryId);
-            advanceTo = session.entries[i + 1]?.localId ?? null;
-          }
-
-          return { ...entry, sets };
-        });
-
-        // A set that isn't in the session can't be completed, and must not clear
+        const target = session.entries[index];
+        // A set that isn't in the session can't be completed, and must not touch
         // a rest the user is currently watching.
-        if (!matched) return;
+        if (!target.sets.some((s) => s.localId === setId)) return;
 
-        const autoRest = currentSettings().autoStartRest && restSeconds > 0;
+        const sets = target.sets.map((s) =>
+          s.localId === setId
+            ? { ...s, isCompleted: true, completedAt: new Date().toISOString(), isPrefilled: false }
+            : s,
+        );
+        const entries = [...session.entries];
+        entries[index] = { ...target, sets };
+
+        const exerciseDone = sets.every((s) => s.isCompleted);
+        const advanceTo = exerciseDone ? (session.entries[index + 1]?.localId ?? null) : null;
+        /*
+         * The workout is over: every set of every exercise is logged, so there is
+         * nothing to rest FOR. Deliberately not "this was the last exercise in the
+         * list" — people skip an exercise and come back to it, and in that case
+         * there is still work to walk to.
+         */
+        const workoutDone = exerciseDone && entries.every((e) => e.sets.every((s) => s.isCompleted));
+
+        const settings = currentSettings();
+        const restSeconds = exerciseDone
+          ? settings.restSecondsBetweenExercises
+          : settings.restSecondsBetweenSets;
+        const startsRest = settings.autoStartRest && restSeconds > 0 && !workoutDone;
 
         set({
           session: { ...session, entries },
           activeEntryId: advanceTo ?? get().activeEntryId,
-          rest: autoRest
+          rest: startsRest
             ? {
                 endsAt: Date.now() + restSeconds * 1000,
                 totalSeconds: restSeconds,
-                source: advanceTo ? 'transition' : 'set',
+                // The source is what the pill labels itself with, so it has to
+                // name the length that was actually used — `transition` whenever
+                // the exercise is finished, whether or not the cursor moved.
+                source: exerciseDone ? 'transition' : 'set',
                 originSetId: setId,
                 pausedRemainingMs: null,
               }
-            : NO_REST,
+            : rest,
         });
       },
 
@@ -326,6 +353,11 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
             pausedRemainingMs: null,
           },
         });
+      },
+
+      startRestNow: () => {
+        const { restSecondsBetweenSets } = currentSettings();
+        get().startRest(restSecondsBetweenSets, 'set');
       },
 
       /**

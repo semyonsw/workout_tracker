@@ -190,6 +190,7 @@ is the difference between an app and an instrument.
 | [src/components/ErrorBoundary.tsx](src/components/ErrorBoundary.tsx) | Turns a crash into a readable message with a way out |
 | [src/components/ConfirmSheet.tsx](src/components/ConfirmSheet.tsx) | "Are you sure", in the bottom third where the thumb is |
 | [src/screens/ExerciseLibraryScreen.tsx](src/screens/ExerciseLibraryScreen.tsx) | The muscle tree: browse, add per group, delete per row |
+| [src/screens/HistoryScreen.tsx](src/screens/HistoryScreen.tsx) | Finished workouts by month; a row opens in place |
 | [src/screens/SettingsScreen.tsx](src/screens/SettingsScreen.tsx) | Every duration the app counts |
 | [src/lib/progressiveOverload.ts](src/lib/progressiveOverload.ts) | The engine — pure, injectable clock, zero deps |
 | [src/lib/setTimer.ts](src/lib/setTimer.ts) | Two-phase set clock — pure, one stored fact |
@@ -199,10 +200,12 @@ is the difference between an app and an instrument.
 | [src/lib/feedback.ts](src/lib/feedback.ts) | Every buzz and beep, behind the user's two switches |
 | [src/lib/notify.ts](src/lib/notify.ts) | Notifications, channel included, all failures swallowed |
 | [src/lib/draft.ts](src/lib/draft.ts) | Prefill from history; draft → `SetHistory` on save |
+| [src/lib/completedWorkout.ts](src/lib/completedWorkout.ts) | Draft → the history record; snapshots the exercise, merges logged sets back into history |
 | [src/hooks/useRestTimer.ts](src/hooks/useRestTimer.ts) | Deadline-based timer, background-safe |
 | [src/hooks/useSetTimer.ts](src/hooks/useSetTimer.ts) | Ticks, haptics, the bell, and auto-logging |
 | [src/hooks/useCountdownBeeps.ts](src/hooks/useCountdownBeeps.ts) | The count-in — holds the latch, plays the cue |
 | [src/state/activeWorkoutStore.ts](src/state/activeWorkoutStore.ts) | The live session |
+| [src/state/workoutHistoryStore.ts](src/state/workoutHistoryStore.ts) | Finished workouts, persisted and validated — the app's only write to permanent history |
 | [src/state/libraryStore.ts](src/state/libraryStore.ts) | Exercises and routines, persisted and validated |
 | [src/state/settingsStore.ts](src/state/settingsStore.ts) | The durations, clamped on the way in |
 
@@ -416,18 +419,28 @@ app.
 
 ## Not built yet (deliberate next steps)
 
-- Persistence wiring: `draftToSetHistory()` → Drizzle insert → advance
-  `split.cursor`. The seam exists (`onFinish`), the writer does not.
+- SQLite: finished workouts persist, but to AsyncStorage
+  (`workoutHistoryStore`), not yet through Drizzle. The shapes are already the
+  ones `src/db/schema.ts` models, and `historyByExerciseId()` is the single read
+  every consumer goes through, so the move is one file deep. Until then a cap of
+  250 workouts keeps the blob inside what one AsyncStorage key can hold.
+- Advancing `split.cursor` when a workout completes. The write seam exists
+  (`saveSession`); the split is still a fixture.
+- Per-exercise rest in the routine editor. Rest now comes from Settings for every
+  exercise, deliberately: the routine items' own `restSeconds` shadowed the two
+  settings the user can actually reach, which made both look broken. The field is
+  still in the model and comes back the day the editor can SET it, at which point
+  an override is a visible choice rather than a hidden default.
 - Routine/exercise editor screens (the models and store support them fully).
 - Superset grouping in the UI (`RoutineItem.supersetGroup` is modelled).
 - Editing an existing exercise: the muscle picker and every other field only
   exist on the create screen, so the library can add and delete but not rename or
   re-file. Unfiled rows show under `Unfiled` rather than disappearing, and the way
   to move one today is delete-and-recreate.
-- History and the split are still fixtures (`src/data/seed.ts`), so `Recently
-  used` and the overload verdicts describe seeded sessions rather than the
-  exercises you just created. The library and routines are real and persisted;
-  these two are the remaining reads to move.
+- The SHIPPED example history is still a fixture (`src/data/seed.ts`): a fresh
+  install starts from seeded sessions, and `Recently used` is a hard-coded list.
+  What the user logs is real and merged on top, so the overload verdicts and
+  prefills now move when they train.
 - A per-cluster volume view ("sets of back this week"). The cluster hierarchy is
   what that feature needs and it is now in place.
 - Plate-math helper for barbell loading.

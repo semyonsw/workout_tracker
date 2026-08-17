@@ -1,0 +1,151 @@
+/**
+ * A finished workout, as history keeps it.
+ *
+ *   ┌ Pull + swimming ─────────────── 17 Aug · 74 min ┐
+ *   │ 6 exercises · 18 sets · 4 720 kg                │
+ *   │ Weighted 90° pull-ups      +40 kg · 4 4 4 3     │
+ *   │ Plank                      2:00 · 2:00 · 1:31   │
+ *   └─────────────────────────────────────────────────┘
+ *
+ * Turning the live draft into this shape is the last thing a session does, and it
+ * is pure so that the one write the app makes to permanent history can be tested
+ * without a phone.
+ *
+ * ── WHY THIS IS A SNAPSHOT, NOT A SET OF FOREIGN KEYS ──────────────────────
+ *
+ * Each exercise's NAME, count unit and load mode are copied into the record
+ * rather than looked up when the history screen renders. An exercise can be
+ * renamed or deleted afterwards, and a log that silently re-renders itself to
+ * match today's library — or shows "Unknown exercise" for work that definitely
+ * happened — is a log that is no longer a record. `libraryStore` already promises
+ * that deleting an exercise never touches its history; this is what makes that
+ * promise renderable.
+ *
+ * The raw `SetHistory` rows ride along too, because they are what the prefill and
+ * the overload engine read. The summary line beside them is derived from those
+ * same rows through the shared shorthand (`summarizeSessionSets`), so a workout in
+ * the history list and the same workout on the exercise-history screen can never
+ * word themselves differently.
+ */
+
+import type { CountUnit, ID, ISODateTime, LoadMode, SetHistory } from '../types/models';
+import { draftToSetHistory, totalVolumeKg, type DraftSession } from './draft';
+import { summarizeSessionSets } from './history';
+
+/** One exercise inside a finished workout. */
+export interface CompletedExercise {
+  exerciseId: ID;
+  /** Snapshot — see the file header. */
+  name: string;
+  countUnit: CountUnit;
+  loadMode: LoadMode;
+  /** Completed sets only. A planned set that never happened is not history. */
+  setCount: number;
+  /** "+40 kg · 4 4 4 3" — the same shorthand every other screen uses. */
+  summary: string;
+  topWeightKg: number | null;
+}
+
+export interface CompletedWorkout {
+  id: ID;
+  title: string;
+  routineId?: ID;
+  startedAt: ISODateTime;
+  endedAt: ISODateTime;
+  /** Whole minutes, floor 1: a workout that happened took at least a minute. */
+  durationMinutes: number;
+  setCount: number;
+  totalVolumeKg: number;
+  exercises: CompletedExercise[];
+  /** The rows the overload engine and next session's prefills read. */
+  sets: SetHistory[];
+}
+
+/**
+ * Build the record for a finished session, or null if there is nothing to record.
+ *
+ * A session with no completed sets returns null: the user started something and
+ * logged nothing, and an empty row in the history list is worse than no row —
+ * it claims a workout happened.
+ */
+export function buildCompletedWorkout(
+  session: DraftSession,
+  endedAt: Date = new Date(),
+): CompletedWorkout | null {
+  const sets = draftToSetHistory(session);
+  if (sets.length === 0) return null;
+
+  const startedMs = new Date(session.startedAt).getTime();
+  const endedMs = endedAt.getTime();
+  const durationMinutes =
+    Number.isFinite(startedMs) && endedMs > startedMs
+      ? Math.max(1, Math.round((endedMs - startedMs) / 60_000))
+      : 1;
+
+  const exercises: CompletedExercise[] = [];
+  for (const entry of session.entries) {
+    // Same rule as `draftToSetHistory`: only what actually happened.
+    const done = entry.sets.filter((s) => s.isCompleted);
+    if (done.length === 0) continue;
+
+    const rows = sets.filter((row) => row.exerciseId === entry.exercise.id);
+    const { lead, drops, topWeightKg } = summarizeSessionSets(rows, entry.exercise);
+
+    exercises.push({
+      exerciseId: entry.exercise.id,
+      name: entry.exercise.name,
+      countUnit: entry.exercise.countUnit,
+      loadMode: entry.exercise.loadMode,
+      setCount: rows.length,
+      summary: drops ? `${lead}${drops}` : lead,
+      topWeightKg,
+    });
+  }
+
+  return {
+    // The draft's own id: a session is one thing from first set to history row,
+    // and `SetHistory.sessionId` already points at it.
+    id: session.localId,
+    title: session.title,
+    ...(session.routineId ? { routineId: session.routineId } : {}),
+    startedAt: session.startedAt,
+    endedAt: endedAt.toISOString(),
+    durationMinutes,
+    setCount: sets.length,
+    totalVolumeKg: totalVolumeKg(session),
+    exercises,
+    sets,
+  };
+}
+
+/**
+ * Every logged set, keyed by exercise — the shape `buildDraftSession` and the
+ * overload engine want.
+ *
+ * `seed` is merged in underneath so the shipped fixture history and what the user
+ * has actually logged read as one timeline. The day the seed goes away this is
+ * called with nothing but the real rows and nothing else changes.
+ */
+export function historyByExerciseId(
+  workouts: readonly CompletedWorkout[],
+  seed: Record<ID, SetHistory[]> = {},
+): Record<ID, SetHistory[]> {
+  const merged: Record<ID, SetHistory[]> = {};
+  for (const [exerciseId, rows] of Object.entries(seed)) merged[exerciseId] = [...rows];
+
+  for (const workout of workouts) {
+    for (const row of workout.sets) {
+      const bucket = merged[row.exerciseId];
+      if (bucket) bucket.push(row);
+      else merged[row.exerciseId] = [row];
+    }
+  }
+
+  return merged;
+}
+
+/** "17 Aug" grouping key for the history list: the month a workout belongs to. */
+export function monthKey(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}

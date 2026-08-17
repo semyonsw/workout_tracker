@@ -30,7 +30,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 import { tap, undo } from '../lib/feedback';
 import { cancelTimerAlert, scheduleTimerAlert } from '../lib/notify';
-import { useActiveWorkout } from '../state/activeWorkoutStore';
+import { useActiveWorkout, type RestSource } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
 import { useCountdownBeeps } from './useCountdownBeeps';
 
@@ -52,6 +52,8 @@ export interface RestTimerApi {
   /** The clock is moving. False while paused, false at zero. */
   isRunning: boolean;
   isPaused: boolean;
+  /** Which rest this is, so the pill can name it. */
+  source: RestSource | null;
   totalSeconds: number;
   /** The user's ± step, so the pill and Settings can never disagree. */
   stepSeconds: number;
@@ -76,7 +78,23 @@ export function useRestTimer(): RestTimerApi {
 
   const isPaused = rest.pausedRemainingMs != null;
 
-  const [ticked, setTicked] = useState(() => remainingSeconds(rest.endsAt));
+  /*
+   * The ticking clock, and WHICH DEADLINE IT BELONGS TO.
+   *
+   * The pairing is the point. With a bare number, the first render after a new
+   * rest starts still holds the previous timer's remainder — the interval that
+   * corrects it is an effect, and effects run after render. That one stale frame
+   * is what the count-in arms its latch from (`nextCue` treats a countdown's first
+   * reading as "arm, stay silent"), so a fresh 2:00 rest could arm at whatever the
+   * last one ended on and then skip or duplicate a second on the way down. Reading
+   * the deadline directly whenever the pair is stale makes the first frame of a
+   * countdown as correct as every frame after it.
+   */
+  const [clock, setClock] = useState(() => ({
+    forEndsAt: rest.endsAt,
+    left: remainingSeconds(rest.endsAt),
+  }));
+  const ticked = clock.forEndsAt === rest.endsAt ? clock.left : remainingSeconds(rest.endsAt);
   const notificationId = useRef<string | null>(null);
 
   /*
@@ -109,16 +127,17 @@ export function useRestTimer(): RestTimerApi {
 
   /* --- tick ---------------------------------------------------------- */
   useEffect(() => {
-    if (!rest.endsAt) {
-      setTicked(0);
+    const endsAt = rest.endsAt;
+    if (!endsAt) {
+      setClock({ forEndsAt: null, left: 0 });
       return undefined;
     }
 
-    setTicked(remainingSeconds(rest.endsAt));
+    setClock({ forEndsAt: endsAt, left: remainingSeconds(endsAt) });
 
     const interval = setInterval(() => {
-      const next = remainingSeconds(rest.endsAt);
-      setTicked(next);
+      const next = remainingSeconds(endsAt);
+      setClock({ forEndsAt: endsAt, left: next });
       // Nothing left to recompute; the deadline stays in the store so the pill
       // keeps showing 0:00 until the user moves on.
       if (next <= 0) clearInterval(interval);
@@ -129,8 +148,9 @@ export function useRestTimer(): RestTimerApi {
 
   /* --- resync when returning from background ------------------------- */
   useEffect(() => {
+    const endsAt = rest.endsAt;
     const onChange = (state: AppStateStatus) => {
-      if (state === 'active') setTicked(remainingSeconds(rest.endsAt));
+      if (state === 'active') setClock({ forEndsAt: endsAt, left: remainingSeconds(endsAt) });
     };
     const sub = AppState.addEventListener('change', onChange);
     return () => sub.remove();
@@ -213,6 +233,7 @@ export function useRestTimer(): RestTimerApi {
     isActive,
     isRunning,
     isPaused,
+    source: rest.source,
     totalSeconds: rest.totalSeconds,
     stepSeconds,
     add,

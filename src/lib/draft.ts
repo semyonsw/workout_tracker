@@ -43,6 +43,15 @@ export interface DraftEntry {
   targetSets: number;
   targetRepsMin?: number;
   targetRepsMax?: number;
+  /**
+   * The two rest lengths this session was BUILT with, in seconds.
+   *
+   * Recorded, not obeyed: rest is started by `completeSet`, which reads the live
+   * Settings values at the moment it starts one, so changing a rest length
+   * mid-workout takes effect on the next set instead of the next session. These
+   * fields are what the session began with — useful in a log or a test, and the
+   * shape older persisted sessions already have.
+   */
   restSeconds: number;
   transitionRestSeconds: number;
   sets: DraftSet[];
@@ -155,12 +164,15 @@ export interface BuildDraftParams {
   historyByExerciseId: Record<ID, SetHistory[]>;
   policy: OverloadPolicy;
   unitSystem: UnitSystem;
-  /** Rest between sets when neither the routine item nor the exercise says. */
+  /**
+   * Rest between sets, from Settings. THE value, not a fallback — see the note on
+   * rest in `buildDraftSession`.
+   */
   defaultRestSeconds: number;
   /**
-   * Rest after the last set of an exercise when the routine item doesn't
-   * override it. A separate setting rather than `defaultRestSeconds + 30`: the
-   * walk to the next machine is its own length, and the user owns both numbers.
+   * Rest after the last set of an exercise. A separate setting rather than
+   * `defaultRestSeconds + 30`: the walk to the next machine is its own length,
+   * and the user owns both numbers.
    */
   defaultTransitionRestSeconds?: number;
   now?: Date;
@@ -214,8 +226,24 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
         targetSets: item.targetSets,
         targetRepsMin: item.targetRepsMin,
         targetRepsMax: item.targetRepsMax,
-        restSeconds: item.restSeconds ?? exercise.defaultRestSeconds ?? defaultRestSeconds,
-        transitionRestSeconds: item.transitionRestSeconds ?? defaultTransitionRestSeconds,
+        /*
+         * REST COMES FROM SETTINGS, NOT FROM THE ROUTINE.
+         *
+         * This used to read `item.restSeconds ?? exercise.defaultRestSeconds ??
+         * defaultRestSeconds`, which sounds like a sensible cascade and is, in
+         * practice, a bug: nearly every shipped routine item and exercise carries
+         * its own rest, so the two numbers in Settings — the only rest controls
+         * anywhere in the app the user can actually reach — were shadowed on
+         * almost every exercise. Setting "Between sets" to 1:30 and then watching
+         * a 3:00 countdown is indistinguishable from a broken setting.
+         *
+         * Per-exercise rest can come back the day the routine editor lets someone
+         * SET it, at which point an override is a choice the user made and can
+         * see. Until then the honest rule is that the setting wins. It is also
+         * live: `completeSet` re-reads it each time rest starts.
+         */
+        restSeconds: defaultRestSeconds,
+        transitionRestSeconds: defaultTransitionRestSeconds,
         sets,
         overload,
         overloadAccepted: false,

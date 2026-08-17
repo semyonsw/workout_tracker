@@ -7,6 +7,13 @@
  * outside a native runtime. One alias to an in-memory stub buys the whole state
  * layer without pulling in a React Native test harness.
  *
+ * The BEEPER earns the same treatment for the same reason: it is the file that
+ * turned one cue into two audible beeps, the bug is about the order and the timing
+ * of calls into a native player, and that is exactly what a stub can assert and a
+ * human ear cannot. That needs one more alias, for the native audio module; the
+ * asset requires are handled by mocking `lib/beepSources` in the suite itself,
+ * because an alias does not reach a `require()` specifier — only an `import`.
+ *
  * Nothing here mocks `react-native` itself, deliberately: a test that needs it is
  * a test of a component, and components are verified by running the app.
  */
@@ -16,12 +23,13 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   resolve: {
-    alias: {
-      '@react-native-async-storage/async-storage': resolve(
-        __dirname,
-        'test/asyncStorageStub.ts',
-      ),
-    },
+    alias: [
+      {
+        find: '@react-native-async-storage/async-storage',
+        replacement: resolve(__dirname, 'test/asyncStorageStub.ts'),
+      },
+      { find: 'expo-audio', replacement: resolve(__dirname, 'test/expoAudioStub.ts') },
+    ],
   },
   test: {
     include: ['src/**/*.test.ts'],

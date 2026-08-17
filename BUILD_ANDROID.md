@@ -4,6 +4,27 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
+## ⚠️ 0.4.0 must be installed over an UNINSTALL, once
+
+Android identifies an app by **package name + signing key**, and 0.4.0 is signed
+with a different key than 0.3.0 was: the 0.3.0 keystore lived on the Linux
+machine that built it and is not on this one. There is no way to re-create a lost
+key, so 0.4.0 cannot install *over* 0.3.0 — Android refuses with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE` (Samsung words it "app not installed").
+
+So, one time only:
+
+1. Uninstall **Workout Tracker** on the phone (long-press the icon → Uninstall).
+2. Install `app-release.apk` from this build.
+
+What that costs: the settings you had changed, any exercise you created and any
+routine you edited on the phone. It costs no workout history — 0.3.0 never
+persisted a finished workout, which is one of the things 0.4.0 fixes.
+
+**From 0.4.0 onwards, updates install straight over the top**, because the
+keystore now lives at `~/.workout-tracker-signing/` on this machine and every
+later build reuses it. Back that file up — see [Signing](#signing--read-this-before-you-lose-it).
+
 ## Install it on the phone
 
 1. Copy `workout-tracker-<version>.apk` to the phone (USB, Drive, Telegram —
@@ -25,16 +46,86 @@ Minimum Android 24 (7.0); the S24 ships far newer.
 
 ## Rebuild after a code change
 
-```bash
-export ANDROID_HOME=/root/android-sdk
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+On the Windows machine this is now built on (PowerShell), with the portable
+toolchain under `C:\Users\user\dev-tools`:
 
-npx expo prebuild -p android --clean     # only if app.json or deps changed
+```powershell
+$env:JAVA_HOME  = "C:\Users\user\dev-tools\jdk17"
+$env:ANDROID_HOME = "C:\Users\user\dev-tools\android-sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+
+npm ci                                   # NOT `npm install --legacy-peer-deps`, see below
+npx expo prebuild -p android             # only if app.json or deps changed
 cd android
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+.\gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a
 ```
 
-### 0.3.0 needs the prebuild step
+On Linux the same three lines are `export JAVA_HOME=…/java-17-openjdk`,
+`export ANDROID_HOME=…/android-sdk`, `./gradlew assembleRelease …`.
+
+### Install dependencies with `npm ci`
+
+`npm install --legacy-peer-deps` **silently breaks this project**:
+`react-native-reanimated@4` declares `react-native-worklets` as a peer dependency
+rather than a dependency, and `--legacy-peer-deps` means "do not install peers".
+The result installs and typechecks fine, then produces an APK whose animation
+runtime has no native part. `npm ci` installs exactly the tree in
+`package-lock.json`, worklets included, which is what a reproducible APK needs.
+
+If npm ever refuses the tree outright, the command that actually fixes it is
+`npx expo install --fix` (it aligns native versions with the Expo SDK), not
+`--legacy-peer-deps`.
+
+### Windows: the 260-character path limit, and the one fix that works
+
+The first 0.4.0 build failed after 30 minutes with:
+
+```
+ninja: error: Stat(safeareacontext_autolinked_build/CMakeFiles/…/
+  safeareacontextJSI-generated.cpp.o): Filename longer than 260 characters
+```
+
+That object path is ~300 characters, and no amount of moving the project up the
+tree fixes it: most of the length is the New Architecture codegen path *inside*
+`node_modules/react-native-safe-area-context/android/build/generated/…`, and the
+same again for `react-native-svg`. Shortening the project directory buys ~30
+characters against a ~40-character overrun.
+
+What actually matters is two settings, and only one of them was in place:
+
+1. **`LongPathsEnabled = 1`** in
+   `HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem` — already on, on this
+   machine. Without it nothing below helps.
+2. **A long-path-aware `ninja`.** The Android SDK's `cmake;3.22.1` bundles ninja
+   **1.10.2**, which refuses any path over `MAX_PATH` in its own `Stat()`
+   regardless of what the OS allows. Ninja gained the `longPathAware` manifest in
+   1.11, so the fix is to swap the binary:
+
+```powershell
+$cmakeBin = "$env:ANDROID_HOME\cmake\3.22.1\bin"
+Copy-Item "$cmakeBin\ninja.exe" "$cmakeBin\ninja-1.10.2-bundled.exe"   # keep the original
+# from https://github.com/ninja-build/ninja/releases (v1.12.1, ninja-win.zip)
+Copy-Item "C:\Users\user\dev-tools\ninja\ninja.exe" "$cmakeBin\ninja.exe" -Force
+```
+
+Nothing in the repo changes: CMake invokes whatever `ninja.exe` sits beside it,
+so this is a property of the machine's toolchain rather than of the project. It
+also survives `expo prebuild`, which a patched `android/app/build.gradle` would
+not.
+
+The alternative — passing `-DCMAKE_OBJECT_PATH_MAX=200` so CMake hashes the long
+object names — would mean a config plugin to survive prebuild, and it changes what
+the build produces on every platform to work around one platform. The swapped
+binary is the smaller change.
+
+### 0.4.0 does not need a prebuild for its own sake
+
+No new native module: everything in 0.4.0 is JS (rest fixes, the beeper, the
+History section). A prebuild is still harmless, and this build ran one because
+`android/` did not exist on this machine yet.
+
+### 0.3.0 needed the prebuild step
 
 `expo-audio` was added for the countdown beep, which means a NEW NATIVE MODULE:
 a JS-only rebuild will bundle code that calls into something the old APK does not
@@ -88,17 +179,31 @@ anything; `versionCode` is what Android compares.
 Android identifies an app by **package name + signing key**. An APK signed with
 a different key than the one already installed **cannot update it**: Android
 refuses the install, and the only way through is uninstall-then-install, which
-**deletes your entire workout history**.
+**deletes your entire workout history**. That is not hypothetical — it is exactly
+what happened between 0.3.0 and 0.4.0, and it is why the box at the top of this
+file exists.
 
-This app's key:
+This app's key (regenerated for 0.4.0 on the Windows machine):
 
 | | |
 | --- | --- |
-| Keystore | `~/.workout-tracker-signing/workout-tracker-release.keystore` |
+| Keystore | `C:\Users\user\.workout-tracker-signing\workout-tracker-release.keystore` |
 | Alias | `workout-tracker` |
 | Store / key password | `workouttracker` |
-| Valid until | 2056 |
+| Valid until | 2056 (11 000 days) |
 | Package | `com.semyonsw.workouttracker` |
+
+Recreate it, if it is ever lost again, with:
+
+```powershell
+& "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -v `
+  -keystore "$env:USERPROFILE\.workout-tracker-signing\workout-tracker-release.keystore" `
+  -alias workout-tracker -keyalg RSA -keysize 2048 -validity 11000 `
+  -storepass workouttracker -keypass workouttracker `
+  -dname "CN=Workout Tracker, OU=Personal, O=semyonsw, L=Yerevan, C=AM"
+```
+
+…knowing that a recreated key is a NEW key, and costs another uninstall.
 
 **Back that keystore file up somewhere off this machine.** If it is lost, every
 future build is a different app as far as the phone is concerned.
@@ -117,6 +222,23 @@ WT_KEY_PASSWORD=workouttracker
 Those four properties are consumed by `plugins/withReleaseSigning.js`. Without
 them the release build still succeeds but falls back to the debug key and prints
 a warning — which is the wrong key to hand a phone, for the reason above.
+
+> **Windows trap: write that file WITHOUT a BOM.** `Set-Content -Encoding utf8`
+> and `>` in PowerShell 5.1 both prepend a UTF-8 BOM, and Java's `Properties`
+> loader reads the file as raw bytes — so the BOM becomes part of the FIRST key
+> name and `WT_STORE_FILE` silently does not exist. The build then succeeds, signs
+> with the debug key, and produces an APK that cannot update the real app. This
+> happened on the first 0.4.0 build. Write it with
+> `[System.IO.File]::WriteAllLines($path, $lines, (New-Object System.Text.UTF8Encoding($false)))`,
+> and **verify the key on the artifact, never on the config**:
+>
+> ```powershell
+> & "$env:ANDROID_HOME\build-tools\36.0.0\apksigner.bat" verify --print-certs `
+>   android\app\build\outputs\apk\release\app-release.apk
+> ```
+>
+> Expect `CN=Workout Tracker`. `CN=Android Debug` means the properties did not
+> load, whatever the file looks like in an editor.
 
 The password is weak on purpose: it protects a key for a personal app that is
 never published, and it lives on the same machine as the keystore, so a strong
@@ -137,7 +259,7 @@ every regeneration rather than being a manual step someone forgets.
 | JDK | 17 (Temurin/OpenJDK) — RN 0.81 requires 17 |
 | Android SDK | platform 36, build-tools 36.0.0 |
 | NDK | 27.1.12297006 |
-| CMake | 3.22.1 |
+| CMake | 3.22.1, with its bundled ninja replaced by **1.12.1** (see the path-limit section) |
 | Expo | SDK 54 · React Native 0.81.5 |
 
 `npm install` needs `--legacy-peer-deps` on some trees; `npx expo install --fix`

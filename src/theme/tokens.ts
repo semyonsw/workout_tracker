@@ -59,8 +59,14 @@ export const size = {
   rowLarge: 64,
   /** Big numeric wells on the create-exercise screen. */
   well: 96,
-  /** The inner row of the floating rest timer. */
-  timer: 54,
+  /**
+   * The inner row of the floating rest timer.
+   *
+   * 66, not the spec's 54: the numerals inside it are the thing you read from
+   * three feet away with a bar on your back, and at 54 they could not be made
+   * bigger without the row clipping them.
+   */
+  timer: 66,
   /** Bottom tab bar — exists only outside a session. */
   tabBar: 64,
 } as const;

@@ -13,7 +13,8 @@ that repeats last session costs one tap.**
   overload nudges derived from real set history, **timed sets** (a get-ready
   count, then a countdown or an open hold — planks, dead hangs, boxing rounds),
   a **browsable muscle tree** (`push → chest → dips`) with add and delete per
-  group, and a **Settings** tab where every duration the app counts is yours
+  group, a **History** tab holding every workout you have finished, and a
+  **Settings** tab where every duration the app counts is yours
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the stack rationale, data model,
 design system and overload rules.
@@ -58,7 +59,8 @@ Built on top of those, in the same system:
 | --- | --- |
 | Timed sets | ▶ on the set row, a get-ready count, then a countdown that logs itself at the bell or an open hold you stop — one floating pill shared with the rest timer |
 | Count-in | the last N seconds of any countdown tick out loud and land on a long tone; a haptic buzz doesn't travel to a phone on a bench, and a notification arrives too late to get set |
-| Rest controls | `+15`, `⏸` and `Skip` on the pill. Pausing freezes the clock and keeps the pill; skipping ends rest. Both work on the between-exercises rest too |
+| Rest controls | `+15`, `⏸` and `Skip` on the pill, which names the rest it is running (`BETWEEN SETS` / `NEXT EXERCISE`). Both lengths come from Settings, live. `Rest 2:00` in the card footer starts one by hand |
+| History | every finished workout, newest first, grouped by month: date, duration, sets, volume, and each exercise in the shorthand the rest of the app uses. Its sets feed the next session's prefills and the overload nudges |
 | Muscle tree | the library opens `push → chest → dips`, with `+ Add exercise to chest` and a `−` delete on every row |
 | Settings | rest between sets and between exercises, get-ready length, how many seconds beep, the ± step, and switches for sound, vibration, screen-on and notifications |
 
@@ -66,27 +68,28 @@ Built on top of those, in the same system:
 
 ```
 App.tsx                     providers, the error boundary, notifications, audio
-src/navigation/AppShell     four tabs and a stack; no tab bar during a session
+src/navigation/AppShell     five tabs and a stack; no tab bar during a session
 src/screens/                one file per screen, all plain props-and-callbacks
 src/components/             SetRow, ExerciseCard, the timer pills, primitives,
                             ErrorBoundary, ConfirmSheet…
 src/hooks/                  the two timers and the count-in
 src/lib/                    the decisions: overload, set timer, count-in cue,
-                            muscles, draft, history, shape, units — all pure,
-                            all tested. Plus beeper/notify/feedback, the three
-                            wrappers around native side effects that must never
-                            throw mid-set
-src/state/                  the live session, the library, the settings
-                            (zustand + AsyncStorage, all three validated on
-                            rehydration)
-src/data/seed.ts            real logged sessions, used until SQLite is wired
+                            muscles, draft, completed workout, history, shape,
+                            units — all pure, all tested. Plus
+                            beeper/notify/feedback, the three wrappers around
+                            native side effects that must never throw mid-set
+src/state/                  the live session, the finished workouts, the library,
+                            the settings (zustand + AsyncStorage, all four
+                            validated on rehydration)
+src/data/seed.ts            the shipped example history, until SQLite is wired
 src/theme/tokens.ts         the values className can't reach
 plugins/                    Expo config plugins (release signing)
 test/                       AsyncStorage stub, so the stores are testable
 ```
 
-Not yet wired: finished sessions are logged to the console rather than written
-to SQLite, and history + the split are still fixtures. Everything else persists —
-an in-progress session survives a force-quit, and exercises, routines and
-settings survive a reinstall-free relaunch. See the end of
-[BUILD_ANDROID.md](BUILD_ANDROID.md).
+Everything the user does now persists: finished workouts (History), an
+in-progress session across a force-quit, and exercises, routines and settings
+across a relaunch — all of it AsyncStorage, in the shapes `src/db/schema.ts`
+already models. Still fixtures: the shipped example history that a fresh install
+starts from, and the split, whose cursor does not yet advance when a workout
+completes. See the end of [BUILD_ANDROID.md](BUILD_ANDROID.md).

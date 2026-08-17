@@ -58,6 +58,7 @@ import {
   type NumericSetting,
 } from '../state/settingsStore';
 import { useLibrary } from '../state/libraryStore';
+import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import type { UnitSystem } from '../types/models';
 
@@ -83,7 +84,9 @@ function formatSeconds(seconds: number, zeroLabel = 'Off'): string {
 export function SettingsScreen() {
   const settings = useSettings();
   const restoreSeedLibrary = useLibrary((s) => s.restoreSeedLibrary);
-  const [confirming, setConfirming] = useState<'reset' | 'library' | null>(null);
+  const clearHistory = useWorkoutHistory((s) => s.clearHistory);
+  const workoutCount = useWorkoutHistory((s) => s.workouts.length);
+  const [confirming, setConfirming] = useState<'reset' | 'library' | 'history' | null>(null);
 
   const bump = (key: NumericSetting, direction: 1 | -1) => {
     tap();
@@ -209,6 +212,17 @@ export function SettingsScreen() {
               label="Restore the shipped exercise library"
               onPress={() => setConfirming('library')}
             />
+            {/* Last, and only when there is something to lose. One workout at a
+                time is deleted from the History tab; this is the whole log. */}
+            {workoutCount > 0 ? (
+              <>
+                <Separator inset={0} />
+                <TextButton
+                  label="Delete all workout history"
+                  onPress={() => setConfirming('history')}
+                />
+              </>
+            ) : null}
           </View>
         </ScrollView>
       </View>
@@ -235,6 +249,20 @@ export function SettingsScreen() {
           cancelLabel="Keep mine"
           onConfirm={() => {
             restoreSeedLibrary();
+            setConfirming(null);
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      ) : null}
+
+      {confirming === 'history' ? (
+        <ConfirmSheet
+          title="Delete all workout history?"
+          body={`All ${workoutCount} finished ${workoutCount === 1 ? 'workout' : 'workouts'} go, and so do the sets in them — which is what the prefills and the overload suggestions read. This cannot be undone.`}
+          confirmLabel="Delete everything"
+          cancelLabel="Keep my history"
+          onConfirm={() => {
+            clearHistory();
             setConfirming(null);
           }}
           onCancel={() => setConfirming(null)}

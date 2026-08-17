@@ -24,6 +24,7 @@ import { Pressable, Text, View } from 'react-native';
 import type { DraftEntry, DraftSet } from '../lib/draft';
 import { formatTarget } from '../lib/draft';
 import { isTimed as isTimedExercise } from '../lib/setTimer';
+import { formatClock } from '../lib/units';
 import type { ID, UnitSystem } from '../types/models';
 import { palette } from '../theme/tokens';
 import { Icon } from './Icon';
@@ -47,6 +48,18 @@ interface ExerciseCardProps {
   onDismissOverload: () => void;
   /** Start the clock for a set, or stop the one already running on it. */
   onPressTimer: (setId: ID) => void;
+  /**
+   * The user's between-sets rest, in seconds — what the `Rest` button will run.
+   * Read live from Settings by the screen, so the button's label and the timer it
+   * starts are the same number.
+   */
+  restSeconds?: number;
+  /**
+   * Start a rest by hand. Only the expanded card gets it, and it is the answer to
+   * "auto-rest is off, so how do I run a rest at all" — plus the way back from a
+   * `Skip` you didn't mean.
+   */
+  onStartRest?: () => void;
 }
 
 function ExerciseCardComponent({
@@ -63,6 +76,8 @@ function ExerciseCardComponent({
   onAcceptOverload,
   onDismissOverload,
   onPressTimer,
+  restSeconds = 0,
+  onStartRest,
 }: ExerciseCardProps) {
   /** Which set row has the editor open, and on which field. Card-local state. */
   const [focus, setFocus] = useState<{ setId: ID; field: SetField } | null>(null);
@@ -210,17 +225,38 @@ function ExerciseCardComponent({
 
         {/* Full-bleed hairline: the footer is not a set, so its rule isn't inset. */}
         <View className="h-hairline bg-hairline" />
-        <Pressable
-          onPress={onAddSet}
-          accessibilityRole="button"
-          accessibilityLabel={isRounds ? 'Add round' : 'Add set'}
-          className="h-row flex-row items-center justify-center"
-        >
-          <Icon name="plus" size={14} color={palette.inkFaint} />
-          <Text className="ml-sm text-label text-ink-muted">
-            {isRounds ? 'Add round' : 'Add set'}
-          </Text>
-        </Pressable>
+        <View className="flex-row">
+          <Pressable
+            onPress={onAddSet}
+            accessibilityRole="button"
+            accessibilityLabel={isRounds ? 'Add round' : 'Add set'}
+            className="h-row flex-1 flex-row items-center justify-center"
+          >
+            <Icon name="plus" size={14} color={palette.inkFaint} />
+            <Text className="ml-sm text-label text-ink-muted">
+              {isRounds ? 'Add round' : 'Add set'}
+            </Text>
+          </Pressable>
+
+          {/* Rest, on demand. Half the footer rather than a control on the pill,
+              because the pill does not exist when there is no rest to show. */}
+          {onStartRest && restSeconds > 0 ? (
+            <>
+              <View className="w-hairline bg-hairline" />
+              <Pressable
+                onPress={onStartRest}
+                accessibilityRole="button"
+                accessibilityLabel={`Start a ${formatClock(restSeconds)} rest`}
+                className="h-row flex-1 flex-row items-center justify-center"
+              >
+                <Icon name="pause" size={13} color={palette.inkFaint} />
+                <Text className="ml-sm text-label tabular-nums text-ink-muted">
+                  Rest {formatClock(restSeconds)}
+                </Text>
+              </Pressable>
+            </>
+          ) : null}
+        </View>
       </View>
     </View>
   );
