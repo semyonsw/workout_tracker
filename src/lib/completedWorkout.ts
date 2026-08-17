@@ -122,16 +122,17 @@ export function buildCompletedWorkout(
  * Every logged set, keyed by exercise — the shape `buildDraftSession` and the
  * overload engine want.
  *
- * `seed` is merged in underneath so the shipped fixture history and what the user
- * has actually logged read as one timeline. The day the seed goes away this is
- * called with nothing but the real rows and nothing else changes.
+ * This is the ONE read every consumer of history goes through: the prefills, the
+ * nudges, the exercise chart. `extra` used to carry the shipped fixture sessions
+ * and now carries nothing in the app — the parameter stays because the tests feed
+ * the fixture through it, and because it is the seam a SQLite read slots into.
  */
 export function historyByExerciseId(
   workouts: readonly CompletedWorkout[],
-  seed: Record<ID, SetHistory[]> = {},
+  extra: Record<ID, SetHistory[]> = {},
 ): Record<ID, SetHistory[]> {
   const merged: Record<ID, SetHistory[]> = {};
-  for (const [exerciseId, rows] of Object.entries(seed)) merged[exerciseId] = [...rows];
+  for (const [exerciseId, rows] of Object.entries(extra)) merged[exerciseId] = [...rows];
 
   for (const workout of workouts) {
     for (const row of workout.sets) {
@@ -142,6 +143,30 @@ export function historyByExerciseId(
   }
 
   return merged;
+}
+
+/**
+ * Exercise ids in the order they were last trained, newest first — the library's
+ * `RECENTLY USED` card.
+ *
+ * Derived rather than listed. This was a hard-coded array of three ids, which is a
+ * reasonable fixture and a lie the moment the user trains: "recently used" that
+ * never changes is worse than no card, because it looks like a feature.
+ *
+ * Workouts arrive newest-first, so first sighting wins and no sorting is needed.
+ */
+export function recentlyUsedExerciseIds(
+  workouts: readonly CompletedWorkout[],
+  limit = 6,
+): ID[] {
+  const seen: ID[] = [];
+  for (const workout of workouts) {
+    for (const exercise of workout.exercises) {
+      if (seen.length >= limit) return seen;
+      if (!seen.includes(exercise.exerciseId)) seen.push(exercise.exerciseId);
+    }
+  }
+  return seen;
 }
 
 /** "17 Aug" grouping key for the history list: the month a workout belongs to. */

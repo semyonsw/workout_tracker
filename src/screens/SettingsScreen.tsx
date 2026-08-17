@@ -181,7 +181,7 @@ export function SettingsScreen() {
             <Separator />
             <SwitchRow
               label="Notify when a timer ends"
-              hint="For a phone in a pocket"
+              hint="How the beep reaches you when the app isn't open — a tick 5 s out, then the tone"
               value={settings.notifyOnTimerEnd}
               onChange={(v) => settings.setFlag('notifyOnTimerEnd', v)}
             />

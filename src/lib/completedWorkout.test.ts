@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCompletedWorkout, historyByExerciseId, monthKey } from './completedWorkout';
+import {
+  buildCompletedWorkout,
+  historyByExerciseId,
+  monthKey,
+  recentlyUsedExerciseIds,
+} from './completedWorkout';
 import { buildDraftSession, type DraftSession } from './draft';
-import { seedExercises, seedHistoryByExerciseId, seedRoutine, seedUser } from '../data/seed';
+import { seedExercises, seedRoutine, seedUser } from '../data/seed';
+import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
 import type { Exercise, ID } from '../types/models';
 
 const exercisesById = Object.fromEntries(seedExercises.map((e) => [e.id, e])) as Record<
@@ -14,7 +20,7 @@ function draft(startedAt = '2026-08-17T17:00:00.000Z'): DraftSession {
   return buildDraftSession({
     routine: seedRoutine,
     exercisesById,
-    historyByExerciseId: seedHistoryByExerciseId,
+    historyByExerciseId: fixtureHistoryByExerciseId,
     policy: seedUser.overloadPolicy,
     unitSystem: 'metric',
     defaultRestSeconds: 120,
@@ -117,24 +123,72 @@ describe('buildCompletedWorkout', () => {
 
 /* ------------------------------------------------------------------ */
 
+describe('recentlyUsedExerciseIds', () => {
+  /** A workout carrying exactly these exercises, in this order. */
+  function workoutWith(id: string, startedAt: string, exerciseIds: string[]) {
+    return {
+      id,
+      title: 'Session',
+      startedAt,
+      endedAt: startedAt,
+      durationMinutes: 40,
+      setCount: exerciseIds.length,
+      totalVolumeKg: 0,
+      sets: [],
+      exercises: exerciseIds.map((exerciseId) => ({
+        exerciseId,
+        name: exerciseId,
+        countUnit: 'reps' as const,
+        loadMode: 'none' as const,
+        setCount: 1,
+        summary: '10',
+        topWeightKg: null,
+      })),
+    };
+  }
+
+  it('is newest-first and lists each exercise once', () => {
+    const workouts = [
+      workoutWith('w2', '2026-08-17T17:00:00.000Z', ['ex_plank', 'ex_pushups']),
+      workoutWith('w1', '2026-08-10T17:00:00.000Z', ['ex_pushups', 'ex_swim']),
+    ];
+
+    // `ex_pushups` was in both; it belongs where it was LAST trained.
+    expect(recentlyUsedExerciseIds(workouts)).toEqual(['ex_plank', 'ex_pushups', 'ex_swim']);
+  });
+
+  it('stops at the limit', () => {
+    const workouts = [workoutWith('w1', '2026-08-17T17:00:00.000Z', ['a', 'b', 'c', 'd'])];
+    expect(recentlyUsedExerciseIds(workouts, 2)).toEqual(['a', 'b']);
+  });
+
+  it('is empty before anything has been trained', () => {
+    // The card it feeds hides itself rather than showing three exercises the user
+    // has never done — which is what the hard-coded list used to do.
+    expect(recentlyUsedExerciseIds([])).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
 describe('historyByExerciseId', () => {
-  it('merges logged sets on top of the seed without mutating it', () => {
+  it('merges logged sets on top of extra rows without mutating them', () => {
     const session = logFirstEntry(draft(), 2);
     const workout = buildCompletedWorkout(session);
     if (!workout) throw new Error('fixture logged nothing');
 
     const exerciseId = workout.sets[0].exerciseId;
-    const seedCount = seedHistoryByExerciseId[exerciseId]?.length ?? 0;
+    const seedCount = fixtureHistoryByExerciseId[exerciseId]?.length ?? 0;
 
-    const merged = historyByExerciseId([workout], seedHistoryByExerciseId);
+    const merged = historyByExerciseId([workout], fixtureHistoryByExerciseId);
     expect(merged[exerciseId]).toHaveLength(seedCount + 2);
     // The fixture is a module-level constant shared by every screen; copying it is
     // the difference between "merged view" and "quietly appended to the seed on
     // every render".
-    expect(seedHistoryByExerciseId[exerciseId]?.length ?? 0).toBe(seedCount);
+    expect(fixtureHistoryByExerciseId[exerciseId]?.length ?? 0).toBe(seedCount);
   });
 
-  it('works with no seed at all — the state after the fixtures are gone', () => {
+  it('works with nothing extra — which is how the app now calls it', () => {
     const session = logFirstEntry(draft(), 1);
     const workout = buildCompletedWorkout(session);
     if (!workout) throw new Error('fixture logged nothing');

@@ -10,9 +10,12 @@
  * The three side effects set up here are all "make the phone able to reach the
  * user", and all three are allowed to fail:
  *
- *   • the notification handler, so a timer alert shows with the app foregrounded
- *   • the Android notification channel, without which a scheduled alert on
- *     Android 8+ has no sound, no vibration, and nothing the user can tune
+ *   • the notification handler, which decides what a timer alert does when it
+ *     arrives with the app already on screen
+ *   • the Android notification channels, without which a scheduled alert on
+ *     Android 8+ has no sound, no vibration, and nothing the user can tune — and
+ *     which is where the app's own two tones are attached, because on Android the
+ *     sound belongs to the channel and not to the notification
  *   • the audio session, so the countdown's beeps play over their music and
  *     through a silent switch
  *
@@ -29,7 +32,7 @@ import './global.css';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { AppShell } from './src/navigation/AppShell';
 import { prepareAudio } from './src/lib/beeper';
-import { ensureTimerChannel, requestNotificationPermission } from './src/lib/notify';
+import { ensureTimerChannels, requestNotificationPermission } from './src/lib/notify';
 
 /*
  * Timer alerts — rest ending, and the bell on a timed hold.
@@ -65,7 +68,7 @@ try {
 export default function App() {
   useEffect(() => {
     void requestNotificationPermission();
-    void ensureTimerChannel();
+    void ensureTimerChannels();
     // Warmed here rather than on the first beep, so 0:05 of a plank isn't where
     // the audio session gets configured.
     void prepareAudio();

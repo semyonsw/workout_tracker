@@ -19,16 +19,24 @@
 
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
-import type { SplitDay, WorkoutSplit } from '../types/models';
+import type { ID, SplitDay, WorkoutSplit } from '../types/models';
 import { Kicker } from './primitives';
 
 interface SplitTimelineProps {
   split: WorkoutSplit;
   /** Tapping a day starts (or previews) that routine. */
   onSelectDay: (day: SplitDay) => void;
+  /**
+   * Days whose routine no longer exists — deleted out from under the split.
+   *
+   * They render like a rest day and say so out loud, because the alternative is a
+   * chip labelled `Pull` that leads nowhere: the split stores a `routineId`, and
+   * deleting the routine leaves the label behind.
+   */
+  emptyDayIds?: ReadonlySet<ID>;
 }
 
-export function SplitTimeline({ split, onSelectDay }: SplitTimelineProps) {
+export function SplitTimeline({ split, onSelectDay, emptyDayIds }: SplitTimelineProps) {
   const days = [...split.days].sort((a, b) => a.order - b.order);
   const todayIndex =
     split.cycleMode === 'rolling'
@@ -50,14 +58,19 @@ export function SplitTimeline({ split, onSelectDay }: SplitTimelineProps) {
         {days.map((day, index) => {
           const state: 'past' | 'today' | 'upcoming' =
             index < todayIndex ? 'past' : index === todayIndex ? 'today' : 'upcoming';
-          const isRest = day.kind === 'rest';
+          const gone = emptyDayIds?.has(day.id) ?? false;
+          const isRest = day.kind === 'rest' || gone;
 
           return (
             <Pressable
               key={day.id}
               onPress={() => onSelectDay(day)}
               accessibilityRole="button"
-              accessibilityLabel={`${day.label}${state === 'today' ? ', today' : ''}`}
+              accessibilityLabel={[
+                day.label,
+                state === 'today' ? ', today' : '',
+                gone ? ', routine deleted' : '',
+              ].join('')}
               className="w-[74px] items-center"
             >
               {/*
@@ -81,13 +94,14 @@ export function SplitTimeline({ split, onSelectDay }: SplitTimelineProps) {
                   ].join(' ')}
                 />
 
-                {/* Filled = done, ring = today, hollow = upcoming. */}
+                {/* Filled = done, ring = today, hollow = upcoming or empty. */}
                 <View
                   className={[
                     'h-[14px] w-[14px] rounded-pill',
-                    state === 'past' ? 'bg-green' : '',
-                    state === 'today' ? 'border-[3px] border-green-bright bg-bg' : '',
-                    state === 'upcoming'
+                    gone ? 'border border-hairline bg-transparent' : '',
+                    !gone && state === 'past' ? 'bg-green' : '',
+                    !gone && state === 'today' ? 'border-[3px] border-green-bright bg-bg' : '',
+                    !gone && state === 'upcoming'
                       ? `border border-hairline ${isRest ? 'bg-transparent' : 'bg-surface'}`
                       : '',
                   ].join(' ')}
@@ -109,15 +123,20 @@ export function SplitTimeline({ split, onSelectDay }: SplitTimelineProps) {
                 numberOfLines={1}
                 className={[
                   'mt-sm text-label',
-                  state === 'today' ? 'font-semibold text-ink' : '',
-                  state === 'past' ? 'text-ink-faint' : '',
-                  state === 'upcoming' ? 'text-ink-muted' : '',
+                  gone ? 'text-ink-faint' : '',
+                  !gone && state === 'today' ? 'font-semibold text-ink' : '',
+                  !gone && state === 'past' ? 'text-ink-faint' : '',
+                  !gone && state === 'upcoming' ? 'text-ink-muted' : '',
                 ].join(' ')}
               >
                 {day.label}
               </Text>
 
-              {state === 'today' ? <Kicker tone="green" className="mt-xs">today</Kicker> : null}
+              {gone ? (
+                <Kicker className="mt-xs">gone</Kicker>
+              ) : state === 'today' ? (
+                <Kicker tone="green" className="mt-xs">today</Kicker>
+              ) : null}
             </Pressable>
           );
         })}

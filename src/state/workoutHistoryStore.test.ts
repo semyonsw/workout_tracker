@@ -8,7 +8,8 @@ import {
   useWorkoutHistory,
 } from './workoutHistoryStore';
 import { buildDraftSession, type DraftSession } from '../lib/draft';
-import { seedExercises, seedHistoryByExerciseId, seedRoutine, seedUser } from '../data/seed';
+import { seedExercises, seedRoutine, seedUser } from '../data/seed';
+import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
 import type { Exercise, ID } from '../types/models';
 
 const exercisesById = Object.fromEntries(seedExercises.map((e) => [e.id, e])) as Record<
@@ -21,7 +22,7 @@ function loggedDraft(startedAt: string, count = 2, weightKg = 40): DraftSession 
   const session = buildDraftSession({
     routine: seedRoutine,
     exercisesById,
-    historyByExerciseId: seedHistoryByExerciseId,
+    historyByExerciseId: fixtureHistoryByExerciseId,
     policy: seedUser.overloadPolicy,
     unitSystem: 'metric',
     defaultRestSeconds: 120,

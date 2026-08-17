@@ -16,7 +16,8 @@ import { formatTarget, summarizeLastSession } from './draft';
 import { describeSetInputs, describeShape, wellsFor } from './exerciseShape';
 import { sessionRows, summarizeSessionSets, topWeightSeries } from './history';
 import { formatCount, formatDuration, formatShortDate } from './units';
-import { seedExercisesById, seedHistoryByExerciseId } from '../data/seed';
+import { seedExercisesById } from '../data/seed';
+import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
 import type { Exercise, SetHistory } from '../types/models';
 
 /** One session's sets for an exercise, in set order. */
@@ -126,7 +127,7 @@ describe('exercise shape', () => {
 });
 
 describe('sessionRows', () => {
-  const rows = sessionRows(seedHistoryByExerciseId[pulldown.id], pulldown);
+  const rows = sessionRows(fixtureHistoryByExerciseId[pulldown.id], pulldown);
 
   it('splits drop sets off the lead so they stay out of the chart line', () => {
     const dropDay = rows.find((r) => r.performedAt.startsWith('2026-07-23'));
@@ -153,7 +154,7 @@ describe('sessionRows', () => {
   });
 
   it('has nothing to plot for an exercise with no load', () => {
-    expect(topWeightSeries(sessionRows(seedHistoryByExerciseId[swim.id], swim))).toEqual([]);
+    expect(topWeightSeries(sessionRows(fixtureHistoryByExerciseId[swim.id], swim))).toEqual([]);
   });
 });
 

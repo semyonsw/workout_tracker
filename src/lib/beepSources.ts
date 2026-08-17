@@ -12,12 +12,16 @@
  * broken, and is now tested — can be exercised with this module mocked, while the
  * app keeps the asset resolution that is known to work on the phone. The lookup
  * stays lazy: the WAVs are decoded the first time something beeps, not at import.
+ *
+ * The file names are `beep_tick` / `beep_final`, with underscores, because the same
+ * two files are ALSO shipped as Android notification sounds (see `NOTIFICATION_SOUND`
+ * in `lib/notify.ts`), and an Android resource name cannot contain a hyphen.
  */
 
 import type { BeepKind } from './beeper';
 
 export function beepSource(kind: BeepKind): unknown {
   return kind === 'tick'
-    ? require('../../assets/beep.wav')
-    : require('../../assets/beep-final.wav');
+    ? require('../../assets/beep_tick.wav')
+    : require('../../assets/beep_final.wav');
 }

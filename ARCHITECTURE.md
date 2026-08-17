@@ -198,7 +198,7 @@ is the difference between an app and an instrument.
 | [src/lib/countdownCue.ts](src/lib/countdownCue.ts) | When a countdown speaks — pure, latched, tested |
 | [src/lib/beeper.ts](src/lib/beeper.ts) | Two tones, two players, never throws |
 | [src/lib/feedback.ts](src/lib/feedback.ts) | Every buzz and beep, behind the user's two switches |
-| [src/lib/notify.ts](src/lib/notify.ts) | Notifications, channel included, all failures swallowed |
+| [src/lib/notify.ts](src/lib/notify.ts) | The out-of-app cue: two scheduled alerts per timer, on two channels carrying the app's own tones. All failures swallowed |
 | [src/lib/draft.ts](src/lib/draft.ts) | Prefill from history; draft → `SetHistory` on save |
 | [src/lib/completedWorkout.ts](src/lib/completedWorkout.ts) | Draft → the history record; snapshots the exercise, merges logged sets back into history |
 | [src/hooks/useRestTimer.ts](src/hooks/useRestTimer.ts) | Deadline-based timer, background-safe |
@@ -425,7 +425,10 @@ app.
   every consumer goes through, so the move is one file deep. Until then a cap of
   250 workouts keeps the blob inside what one AsyncStorage key can hold.
 - Advancing `split.cursor` when a workout completes. The write seam exists
-  (`saveSession`); the split is still a fixture.
+  (`saveSession`); the split is still a fixture. Note this is now a convenience
+  rather than a correctness problem: the split only SUGGESTS a session, and any
+  routine can be started from the home screen or the `Routines` tab, so a stale
+  cursor costs a tap rather than blocking the workout.
 - Per-exercise rest in the routine editor. Rest now comes from Settings for every
   exercise, deliberately: the routine items' own `restSeconds` shadowed the two
   settings the user can actually reach, which made both look broken. The field is
@@ -437,10 +440,12 @@ app.
   exist on the create screen, so the library can add and delete but not rename or
   re-file. Unfiled rows show under `Unfiled` rather than disappearing, and the way
   to move one today is delete-and-recreate.
-- The SHIPPED example history is still a fixture (`src/data/seed.ts`): a fresh
-  install starts from seeded sessions, and `Recently used` is a hard-coded list.
-  What the user logs is real and merged on top, so the overload verdicts and
-  prefills now move when they train.
+- ~~The shipped example history~~ — gone. `src/data/seed.ts` no longer carries
+  logged sessions, `RECENT` rows or a hard-coded `Recently used` list; the fixture
+  lives in `test/fixtures/history.ts` and is test-only. A fresh install has no
+  history, and every chart, nudge and prefill describes something the user did.
+  What remains seeded is the starting LIBRARY (exercises, routines, split), which
+  is a starting point rather than a fake past.
 - A per-cluster volume view ("sets of back this week"). The cluster hierarchy is
   what that feature needs and it is now in place.
 - Plate-math helper for barbell loading.

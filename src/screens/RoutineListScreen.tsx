@@ -6,6 +6,12 @@
  * primitives the designed screens already establish — 64-high two-line rows, an
  * `Add routine` footer — so it inherits the system rather than inventing a
  * fifteenth layout to maintain.
+ *
+ * TWO TARGETS PER ROW, and they answer different questions. The row opens the
+ * routine to edit it; the ▶ on the right STARTS it. This is the other half of
+ * "don't force me into today's workout": the home screen suggests one and lists the
+ * rest, and this tab — where someone is already looking at their routines — can
+ * start any of them without a detour.
  */
 
 import { Pressable, ScrollView, Text, View } from 'react-native';
@@ -21,6 +27,8 @@ interface RoutineListScreenProps {
   routines: Routine[];
   exercisesById: Record<ID, Exercise>;
   onOpen: (routineId: ID) => void;
+  /** Start this routine now. Absent for a routine with nothing in it. */
+  onStart: (routineId: ID) => void;
   onCreate: () => void;
 }
 
@@ -28,6 +36,7 @@ export function RoutineListScreen({
   routines,
   exercisesById,
   onOpen,
+  onStart,
   onCreate,
 }: RoutineListScreenProps) {
   const insets = useSafeAreaInsets();
@@ -42,29 +51,53 @@ export function RoutineListScreen({
         <Kicker className="mx-lg mb-sm">Routines · {routines.length}</Kicker>
 
         <ListCard className="mx-lg">
-          {routines.map((routine, index) => (
-            <View key={routine.id}>
-              {index > 0 ? <Separator /> : null}
-              <Pressable
-                onPress={() => onOpen(routine.id)}
-                accessibilityRole="button"
-                accessibilityLabel={routine.name}
-                className="h-row-lg flex-row items-center px-lg"
-              >
-                <View className="flex-1">
-                  <Text numberOfLines={1} className="text-body font-medium text-ink">
-                    {routine.name}
-                  </Text>
-                  <Text className="mt-[2px] text-label tabular-nums text-ink-faint">
-                    {summarize(routine, exercisesById)}
-                  </Text>
+          {routines.map((routine, index) => {
+            // A routine whose every exercise was deleted has nothing to start.
+            const startable = routine.items.some((item) => exercisesById[item.exerciseId]);
+
+            return (
+              <View key={routine.id}>
+                {index > 0 ? <Separator /> : null}
+                <View className="flex-row items-center">
+                  <Pressable
+                    onPress={() => onOpen(routine.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${routine.name}`}
+                    className="h-row-lg flex-1 flex-row items-center pl-lg"
+                  >
+                    <View className="flex-1">
+                      <Text numberOfLines={1} className="text-body font-medium text-ink">
+                        {routine.name}
+                      </Text>
+                      <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
+                        {summarize(routine, exercisesById)}
+                      </Text>
+                    </View>
+                    <View className="ml-md">
+                      <Icon name="chevron-right" size={18} color={palette.inkFaint} />
+                    </View>
+                  </Pressable>
+
+                  {/* 44 wide, full row height, and its own hit area: `Start` must
+                      not be reachable by a thumb aiming at `Edit`. */}
+                  {startable ? (
+                    <Pressable
+                      onPress={() => onStart(routine.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Start ${routine.name}`}
+                      className="h-row-lg w-[52px] items-center justify-center"
+                    >
+                      <View className="h-[32px] w-[32px] items-center justify-center rounded-pill border border-hairline bg-surface-alt">
+                        <Icon name="play" size={14} color={palette.greenBright} />
+                      </View>
+                    </Pressable>
+                  ) : (
+                    <View className="w-lg" />
+                  )}
                 </View>
-                <View className="ml-md">
-                  <Icon name="chevron-right" size={18} color={palette.inkFaint} />
-                </View>
-              </Pressable>
-            </View>
-          ))}
+              </View>
+            );
+          })}
 
           <Separator inset={0} />
           <AddRow label="Add routine" onPress={onCreate} />

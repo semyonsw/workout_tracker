@@ -29,7 +29,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 import { commit, countFinal, tap, undo } from '../lib/feedback';
-import { cancelTimerAlert, scheduleTimerAlert } from '../lib/notify';
+import { cancelTimerAlerts, scheduleTimerAlertPair } from '../lib/notify';
 import { readSetTimer, workEndsAt, type SetTimerReading } from '../lib/setTimer';
 import { useActiveWorkout, type SetTimerState } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
@@ -67,7 +67,8 @@ export function useSetTimer(): SetTimerApi {
   const notifyOnTimerEnd = useSettings((s) => s.notifyOnTimerEnd);
 
   const [now, setNow] = useState(() => Date.now());
-  const notificationId = useRef<string | null>(null);
+  /** The scheduled alerts for the bell: the tick and the tone. */
+  const notificationIds = useRef<string[]>([]);
   /** Guards the one-shot events against a second tick for the same timer. */
   const committedFor = useRef<number | null>(null);
   const wentToWorkFor = useRef<number | null>(null);
@@ -159,13 +160,19 @@ export function useSetTimer(): SetTimerApi {
   }, [commitSetTimer, reading, timer]);
 
   /* --- the bell, for a phone in a pocket ------------------------------ */
+  /*
+   * A plank is the case that needs this most: the phone is on the floor under you,
+   * the screen is off, and the JS interval that plays the in-app count-in may not
+   * be running at all. The scheduled pair — a tick five seconds out, the bell at
+   * zero — is what actually rings. See `lib/notify.ts`.
+   */
   useEffect(() => {
     let cancelled = false;
 
     const clearPending = async () => {
-      const id = notificationId.current;
-      notificationId.current = null;
-      await cancelTimerAlert(id);
+      const ids = notificationIds.current;
+      notificationIds.current = [];
+      await cancelTimerAlerts(ids);
     };
 
     void (async () => {
@@ -175,16 +182,18 @@ export function useSetTimer(): SetTimerApi {
       const endsAt = workEndsAt(timer);
       if (endsAt == null) return; // an open hold has no bell to ring
 
-      const id = await scheduleTimerAlert({
-        title: 'Time',
-        body: 'Set logged — rest.',
+      const ids = await scheduleTimerAlertPair({
         at: endsAt,
+        getSetTitle: 'Almost',
+        getSetBody: '5 seconds left.',
+        goTitle: 'Time',
+        goBody: 'Set logged — rest.',
       });
       if (cancelled) {
-        await cancelTimerAlert(id);
+        await cancelTimerAlerts(ids);
         return;
       }
-      if (id) notificationId.current = id;
+      notificationIds.current = ids;
     })();
 
     return () => {

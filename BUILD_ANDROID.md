@@ -4,7 +4,23 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
-## ⚠️ 0.4.0 must be installed over an UNINSTALL, once
+## 0.5.0 installs straight over 0.4.0
+
+Same signing key, `versionCode` 5. Copy it over, tap install, keep your data.
+
+Two things about it worth knowing on the phone:
+
+- **The timer cue when the app isn't open is a notification now**, carrying the
+  app's own two tones (a tick 5 s out, the long tone at zero). A JS interval
+  playing a WAV cannot survive Doze, a Restricted battery setting, or a
+  swipe-away; a scheduled alarm can. That means notifications must be **allowed**,
+  and on Samsung the app should be **Unrestricted** under battery usage and NOT in
+  the *Sleeping apps* list — otherwise Android is free to drop the alarm.
+- The app now starts with **no history at all**. The ten fake logged sessions that
+  used to ship are gone, so `RECENT`, the exercise charts and the overload nudges
+  are empty until you finish workouts of your own.
+
+## ⚠️ 0.4.0 needed to be installed over an UNINSTALL, once
 
 Android identifies an app by **package name + signing key**, and 0.4.0 is signed
 with a different key than 0.3.0 was: the 0.3.0 keystore lived on the Linux
@@ -34,9 +50,14 @@ later build reuses it. Back that file up — see [Signing](#signing--read-this-b
 3. Play Protect will warn that the developer is unknown, because the APK is
    signed with a personal key rather than one Google has seen. **More details →
    Install anyway.**
-4. On first launch, allow notifications — that's how both timers reach you with
-   the phone in a pocket or on the floor under a plank: rest ending, and the bell
-   at the end of a timed hold. They also work without it, just silently.
+4. On first launch, **allow notifications**. This is not a nicety: it is the ONLY
+   way either timer reaches you once the app leaves the screen — the in-app beep
+   is a JS timer, and Android stops those in the background. You get a tick five
+   seconds before the deadline and the long tone at zero, both in the app's own
+   voice. While the app is open, nothing is posted; the pill and its beeps do the
+   work.
+   On Samsung, also set **Battery → Unrestricted** for the app and make sure it is
+   not in **Sleeping apps** — a restricted app's alarms are dropped.
 5. Check the beep once, in **Settings → Countdown → Test the beep**. It plays the
    real 3 · 2 · 1 · go. If it's silent, the phone's media volume is down — the
    cue plays on the media stream so it can be heard over music, which also means
@@ -119,11 +140,32 @@ object names — would mean a config plugin to survive prebuild, and it changes 
 the build produces on every platform to work around one platform. The swapped
 binary is the smaller change.
 
-### 0.4.0 does not need a prebuild for its own sake
+### 0.5.0 needs the prebuild step
 
-No new native module: everything in 0.4.0 is JS (rest fixes, the beeper, the
-History section). A prebuild is still harmless, and this build ran one because
-`android/` did not exist on this machine yet.
+No new native module, but `app.json` changed in two ways that only reach the APK
+through a prebuild:
+
+- `android.permissions` gained **`USE_EXACT_ALARM`**, which is what makes a timer
+  notification land on time. Unlike `SCHEDULE_EXACT_ALARM` it is granted at install
+  and cannot be revoked, and unlike a foreground service it costs nothing while
+  idle. (Google Play restricts this permission to alarm-shaped apps; this one is
+  sideloaded, and a rest timer is exactly the intended case.)
+- `expo-notifications` gained `sounds: [...]`, which copies `assets/beep_tick.wav`
+  and `assets/beep_final.wav` into `android/app/src/main/res/raw/`. On Android 8+
+  the sound belongs to the CHANNEL, so those files are how a notification can play
+  the app's own tones instead of the system ding. Verify them after a prebuild:
+
+```powershell
+Get-ChildItem android\app\src\main\res\raw   # expect beep_tick.wav + beep_final.wav
+```
+
+The asset files are named with UNDERSCORES for this reason — an Android resource
+name cannot contain a hyphen, and `beep-final.wav` would fail the build.
+
+### 0.4.0 did not need a prebuild for its own sake
+
+Everything in 0.4.0 was JS (rest fixes, the beeper, the History section). That
+build ran one only because `android/` did not exist on this machine yet.
 
 ### 0.3.0 needed the prebuild step
 

@@ -22,10 +22,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, View } from 'react-native';
+import { BackHandler, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
+import { PrimaryButton } from '../components/primitives';
 import { TabBar, type TabName } from '../components/TabBar';
 import { ActiveWorkoutScreen } from '../screens/ActiveWorkoutScreen';
 import {
@@ -37,11 +38,11 @@ import {
 import { ExerciseHistoryScreen } from '../screens/ExerciseHistoryScreen';
 import { ExerciseLibraryScreen, clusterKey, muscleKey } from '../screens/ExerciseLibraryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
-import { HomeScreen, type TodayPlan } from '../screens/HomeScreen';
+import { HomeScreen, type RoutineChoice, type TodayPlan } from '../screens/HomeScreen';
 import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { historyByExerciseId } from '../lib/completedWorkout';
+import { historyByExerciseId, recentlyUsedExerciseIds } from '../lib/completedWorkout';
 import { MUSCLE_CLUSTER, describeItemsFocus } from '../lib/muscles';
 import { evaluateOverloadBatch } from '../lib/progressiveOverload';
 import { searchExercises } from '../lib/search';
@@ -49,14 +50,8 @@ import { useActiveWorkout } from '../state/activeWorkoutStore';
 import { routineUsageCount, useLibrary } from '../state/libraryStore';
 import { useSettings } from '../state/settingsStore';
 import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore';
-import {
-  seedHistoryByExerciseId,
-  seedRecentSessions,
-  seedRecentlyUsedExerciseIds,
-  seedSplit,
-  seedUser,
-} from '../data/seed';
-import type { Exercise, ID, MuscleGroup } from '../types/models';
+import { seedSplit, seedUser } from '../data/seed';
+import type { Exercise, ID, MuscleGroup, SplitDay } from '../types/models';
 
 /** Screens pushed on top of a tab. `session` is pushed and owns the screen. */
 type Route =
@@ -109,12 +104,13 @@ export function AppShell() {
   /** Search results. Browse mode builds its own tree from `exercises`. */
   const matches = useMemo(() => searchExercises(exercises, query), [exercises, query]);
 
+  /** The library's `RECENTLY USED` card — from what was actually trained. */
   const recentlyUsed = useMemo(
     () =>
-      seedRecentlyUsedExerciseIds
+      recentlyUsedExerciseIds(workouts)
         .map((id) => exercisesById[id])
         .filter((e): e is Exercise => e != null),
-    [exercisesById],
+    [exercisesById, workouts],
   );
 
   const top = stack[stack.length - 1] ?? null;
@@ -160,27 +156,19 @@ export function AppShell() {
     push({ name: 'session' });
   }, [push, session]);
 
-  /* --- derived: history, today's plan, the nudge count ----------------- */
+  /* --- derived: history, the choices, the nudge count ------------------- */
   /*
-   * Everything that reads history reads THIS, not the seed fixture.
-   *
-   * The sets the user has actually logged are merged on top of the shipped
-   * fixture, so a workout finished five minutes ago is what the next session
-   * prefills from, what the overload engine judges, and what the exercise-history
-   * chart plots. Before this, finishing a workout changed nothing anywhere: the
-   * next session offered the same prefills and the same nudges, which made the
-   * app's one job — noticing that a weight has gone stale — impossible.
+   * Everything that reads history reads THIS — and history is now ONLY what the
+   * user logged. The shipped fixture sessions are gone (see `src/data/seed.ts`):
+   * a fresh install used to open on four workouts nobody did, a chart of someone
+   * else's pull-downs, and nudges about weights never lifted, none of it
+   * distinguishable from real data. What remains is a `CompletedWorkout[]` on
+   * disk, flattened to the shape the prefills, the overload engine and the
+   * exercise chart all want.
    */
-  const historyById = useMemo(
-    () => historyByExerciseId(workouts, seedHistoryByExerciseId),
-    [workouts],
-  );
+  const historyById = useMemo(() => historyByExerciseId(workouts), [workouts]);
 
-  /** Real workouts if there are any; the shipped examples until then. */
-  const recent = useMemo(
-    () => (workouts.length > 0 ? recentSummaries(workouts) : seedRecentSessions),
-    [workouts],
-  );
+  const recent = useMemo(() => recentSummaries(workouts), [workouts]);
 
   const verdicts = useMemo(
     () =>
@@ -191,23 +179,61 @@ export function AppShell() {
     [exercises, historyById, unitSystem],
   );
 
+  /** Every routine, described well enough to pick one without opening it. */
+  const choices = useMemo<RoutineChoice[]>(
+    () =>
+      routines.map((routine) => {
+        const items = routine.items.filter((item) => exercisesById[item.exerciseId]);
+        return {
+          routineId: routine.id,
+          name: routine.name,
+          focus: describeItemsFocus(items, exercisesById),
+          exerciseCount: items.length,
+          setCount: items.reduce((total, item) => total + item.targetSets, 0),
+        };
+      }),
+    [exercisesById, routines],
+  );
+
+  /**
+   * What the split SUGGESTS today. A suggestion, not an assignment: the home
+   * screen lists `choices` underneath it, and either can be started.
+   */
   const today = useMemo<TodayPlan | null>(() => {
     const day = seedSplit.days.find((d) => d.order === seedSplit.cursor);
     const routine = day?.routineId ? routinesById[day.routineId] : undefined;
     if (!routine) return null;
 
+    const choice = choices.find((c) => c.routineId === routine.id);
+    if (!choice) return null;
+
     const items = routine.items.filter((item) => exercisesById[item.exerciseId]);
     return {
-      routineId: routine.id,
-      name: routine.name,
-      focus: describeItemsFocus(items, exercisesById),
-      exerciseCount: items.length,
-      setCount: items.reduce((total, item) => total + item.targetSets, 0),
+      ...choice,
       // Only counts what the engine would actually surface — an exercise with no
       // load can never contribute a nudge.
       nudgeCount: items.filter((item) => verdicts[item.exerciseId]?.shouldNudge).length,
     };
-  }, [exercisesById, routinesById, verdicts]);
+  }, [choices, exercisesById, routinesById, verdicts]);
+
+  /**
+   * Split days whose routine has been deleted.
+   *
+   * The split stores a `routineId` and the label lives beside it, so deleting a
+   * routine leaves a day still labelled `Pull` that resolves to nothing. Tapping
+   * one used to push the routine editor, which immediately popped itself — the
+   * screen "blinked" and nothing happened. The timeline now shows these days as
+   * empty, and `onSelectDay` sends them somewhere real.
+   */
+  const emptyDayIds = useMemo(
+    () =>
+      new Set(
+        seedSplit.days
+          .filter((day) => day.kind === 'routine' && !(day.routineId && routinesById[day.routineId]))
+          .map((day) => day.id),
+      ),
+    [routinesById],
+  );
 
   const handleStart = useCallback(
     (routineId: ID) => {
@@ -250,6 +276,28 @@ export function AppShell() {
       });
     },
     [exercisesById, historyById, push, routinesById, session, startSession],
+  );
+
+  /**
+   * Tapping a day on the split strip.
+   *
+   * Never pushes a route whose subject is missing. A day whose routine was deleted
+   * used to push the editor, which mounted, found nothing, and popped itself in an
+   * effect — a screen that blinked and left the user where they started, with no
+   * explanation. It goes to the Routines tab instead, which is where the routine
+   * would be if it existed and where a replacement gets made.
+   */
+  const handleSelectDay = useCallback(
+    (day: SplitDay) => {
+      const routine = day.routineId ? routinesById[day.routineId] : undefined;
+      if (routine) {
+        push({ name: 'routineEditor', routineId: routine.id });
+        return;
+      }
+      // A rest day has nothing to show; a deleted one has somewhere to send you.
+      if (day.kind === 'routine') setTab('Routines');
+    },
+    [push, routinesById],
   );
 
   /**
@@ -387,11 +435,11 @@ export function AppShell() {
           <HomeScreen
             split={seedSplit}
             today={today}
+            choices={choices}
+            emptyDayIds={emptyDayIds}
             recent={recent}
             onStart={handleStart}
-            onSelectDay={(day) => {
-              if (day.routineId) push({ name: 'routineEditor', routineId: day.routineId });
-            }}
+            onSelectDay={handleSelectDay}
             // A past session opens where past sessions live. The History row is
             // the detail view — it expands in place — so there is nothing to push.
             onOpenSession={() => setTab('History')}
@@ -407,6 +455,7 @@ export function AppShell() {
             routines={routines}
             exercisesById={exercisesById}
             onOpen={(routineId) => push({ name: 'routineEditor', routineId })}
+            onStart={handleStart}
             onCreate={() => {
               // TODO: create-routine flow; not one of the 14 frames.
             }}
@@ -495,8 +544,27 @@ function LibraryTab({
   );
 }
 
-/** A pushed route whose subject was deleted underneath it. */
+/**
+ * A pushed route whose subject was deleted underneath it.
+ *
+ * It used to pop itself in an effect, which is the right instinct and the wrong
+ * mechanism: mount, unmount, one frame of an empty screen — indistinguishable from
+ * a tap that did nothing, and a real "blink" bug when a route was pushed for a
+ * routine that had already been deleted. Callers now refuse to push such a route in
+ * the first place (see `handleSelectDay`), so reaching this screen means the
+ * subject vanished WHILE it was open — deleted from another tab. That deserves a
+ * sentence and a button, not a flicker.
+ */
 function Fallback({ onBack }: { onBack: () => void }) {
-  useEffect(() => onBack(), [onBack]);
-  return <View className="flex-1 bg-bg" />;
+  return (
+    <View className="flex-1 items-center justify-center bg-bg px-xl">
+      <Text className="text-title font-medium text-ink">It's gone</Text>
+      <Text className="mt-sm text-center text-body text-ink-muted">
+        This was deleted while you were looking at it.
+      </Text>
+      <View className="mt-xl w-full">
+        <PrimaryButton label="Back" variant="ghost" onPress={onBack} />
+      </View>
+    </View>
+  );
 }

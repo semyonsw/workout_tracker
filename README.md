@@ -60,6 +60,8 @@ Built on top of those, in the same system:
 | Timed sets | ▶ on the set row, a get-ready count, then a countdown that logs itself at the bell or an open hold you stop — one floating pill shared with the rest timer |
 | Count-in | the last N seconds of any countdown tick out loud and land on a long tone; a haptic buzz doesn't travel to a phone on a bench, and a notification arrives too late to get set |
 | Rest controls | `+15`, `⏸` and `Skip` on the pill, which names the rest it is running (`BETWEEN SETS` / `NEXT EXERCISE`). Both lengths come from Settings, live. `Rest 2:00` in the card footer starts one by hand |
+| Out-of-app cue | with the app off screen the count-in is a pair of scheduled notifications — a tick 5 s out, the long tone at zero — carrying the app's own WAVs on their own channels, because a JS interval does not survive Doze or a swipe-away |
+| Pick your session | the split SUGGESTS today and every routine is one tap from starting, from the home screen or the ▶ on a `Routines` row. A rest day is not a locked door |
 | History | every finished workout, newest first, grouped by month: date, duration, sets, volume, and each exercise in the shorthand the rest of the app uses. Its sets feed the next session's prefills and the overload nudges |
 | Muscle tree | the library opens `push → chest → dips`, with `+ Add exercise to chest` and a `−` delete on every row |
 | Settings | rest between sets and between exercises, get-ready length, how many seconds beep, the ± step, and switches for sound, vibration, screen-on and notifications |
@@ -81,7 +83,9 @@ src/lib/                    the decisions: overload, set timer, count-in cue,
 src/state/                  the live session, the finished workouts, the library,
                             the settings (zustand + AsyncStorage, all four
                             validated on rehydration)
-src/data/seed.ts            the shipped example history, until SQLite is wired
+src/data/seed.ts            the starting library, routines and split. NO history:
+                            everything in History is what you logged
+test/fixtures/history.ts    a real training log, as a test fixture only
 src/theme/tokens.ts         the values className can't reach
 plugins/                    Expo config plugins (release signing)
 test/                       AsyncStorage stub, so the stores are testable
@@ -90,6 +94,6 @@ test/                       AsyncStorage stub, so the stores are testable
 Everything the user does now persists: finished workouts (History), an
 in-progress session across a force-quit, and exercises, routines and settings
 across a relaunch — all of it AsyncStorage, in the shapes `src/db/schema.ts`
-already models. Still fixtures: the shipped example history that a fresh install
-starts from, and the split, whose cursor does not yet advance when a workout
+already models. A fresh install starts with **no history at all**; the only
+fixture left is the split, whose cursor does not yet advance when a workout
 completes. See the end of [BUILD_ANDROID.md](BUILD_ANDROID.md).

@@ -29,7 +29,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 import { tap, undo } from '../lib/feedback';
-import { cancelTimerAlert, scheduleTimerAlert } from '../lib/notify';
+import { cancelTimerAlerts, scheduleTimerAlertPair } from '../lib/notify';
 import { useActiveWorkout, type RestSource } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
 import { useCountdownBeeps } from './useCountdownBeeps';
@@ -95,7 +95,8 @@ export function useRestTimer(): RestTimerApi {
     left: remainingSeconds(rest.endsAt),
   }));
   const ticked = clock.forEndsAt === rest.endsAt ? clock.left : remainingSeconds(rest.endsAt);
-  const notificationId = useRef<string | null>(null);
+  /** The scheduled alerts for the current deadline: the tick and the tone. */
+  const notificationIds = useRef<string[]>([]);
 
   /*
    * While paused the frozen remainder IS the clock — deriving from `endsAt` would
@@ -156,32 +157,40 @@ export function useRestTimer(): RestTimerApi {
     return () => sub.remove();
   }, [rest.endsAt]);
 
-  /* --- background notification --------------------------------------- */
+  /* --- the cue for a phone in a pocket -------------------------------- */
+  /*
+   * Two alerts, not one: a tick five seconds out and the tone at zero. This is the
+   * ONLY cue that reaches the user when the app is not on screen — a JS interval
+   * playing a WAV does not survive Doze, a restricted battery setting or a
+   * swipe-away, while a scheduled alarm does. See `lib/notify.ts`.
+   */
   useEffect(() => {
     let cancelled = false;
 
     // Any change of deadline — including a pause, which clears it — invalidates
-    // the pending alert.
+    // the pending alerts.
     const clearPending = async () => {
-      const id = notificationId.current;
-      notificationId.current = null;
-      await cancelTimerAlert(id);
+      const ids = notificationIds.current;
+      notificationIds.current = [];
+      await cancelTimerAlerts(ids);
     };
 
     void (async () => {
       await clearPending();
       if (!rest.endsAt || !notifyOnTimerEnd) return;
 
-      const id = await scheduleTimerAlert({
-        title: 'Rest over',
-        body: 'Next set.',
+      const ids = await scheduleTimerAlertPair({
         at: rest.endsAt,
+        getSetTitle: 'Get set',
+        getSetBody: 'Rest ends in 5 seconds.',
+        goTitle: 'Rest over',
+        goBody: 'Next set.',
       });
       if (cancelled) {
-        await cancelTimerAlert(id);
+        await cancelTimerAlerts(ids);
         return;
       }
-      if (id) notificationId.current = id;
+      notificationIds.current = ids;
     })();
 
     return () => {

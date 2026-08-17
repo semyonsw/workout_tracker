@@ -12,7 +12,8 @@ import {
   useSessionProgress,
 } from './activeWorkoutStore';
 import { useSettings } from './settingsStore';
-import { seedExercises, seedHistoryByExerciseId, seedRoutines, seedUser } from '../data/seed';
+import { seedExercises, seedRoutines, seedUser } from '../data/seed';
+import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
 import type { Exercise, ID } from '../types/models';
 
 const exercisesById = Object.fromEntries(seedExercises.map((e) => [e.id, e])) as Record<
@@ -25,7 +26,7 @@ function startRoutine(index = 0) {
   useActiveWorkout.getState().startSession({
     routine: seedRoutines[index],
     exercisesById,
-    historyByExerciseId: seedHistoryByExerciseId,
+    historyByExerciseId: fixtureHistoryByExerciseId,
     policy: seedUser.overloadPolicy,
     unitSystem: 'metric',
     defaultRestSeconds: 120,
