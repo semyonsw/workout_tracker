@@ -195,8 +195,7 @@ is the difference between an app and an instrument.
 | [src/components/ConfirmSheet.tsx](src/components/ConfirmSheet.tsx) | "Are you sure", in the bottom third where the thumb is |
 | [src/screens/ExerciseLibraryScreen.tsx](src/screens/ExerciseLibraryScreen.tsx) | The muscle tree: browse, add per group, delete per row |
 | [src/screens/HistoryScreen.tsx](src/screens/HistoryScreen.tsx) | Finished workouts by month; a row opens in place |
-| [src/screens/SettingsScreen.tsx](src/screens/SettingsScreen.tsx) | Every duration the app counts |
-| [src/screens/BackupScreen.tsx](src/screens/BackupScreen.tsx) | Export everything to a JSON file, and read one back — with a count before it replaces anything |
+| [src/screens/SettingsScreen.tsx](src/screens/SettingsScreen.tsx) | Every duration the app counts, and `Export data` / `Import data` at the bottom |
 | [src/lib/progressiveOverload.ts](src/lib/progressiveOverload.ts) | The engine — pure, injectable clock, zero deps |
 | [src/lib/setTimer.ts](src/lib/setTimer.ts) | Two-phase set clock — pure, one stored fact |
 | [src/lib/muscles.ts](src/lib/muscles.ts) | Muscle → cluster hierarchy; the browsable tree; "what day is this" |
@@ -208,7 +207,7 @@ is the difference between an app and an instrument.
 | [src/lib/exerciseDraft.ts](src/lib/exerciseDraft.ts) | Library row ⇄ editable draft. Preserves identity, so an edit is not a delete |
 | [src/lib/completedWorkout.ts](src/lib/completedWorkout.ts) | Draft → the history record; snapshots the exercise, merges logged sets back into history |
 | [src/lib/backup.ts](src/lib/backup.ts) | The backup file's format — pure; builds the envelope, and opens one without trusting a row in it |
-| [src/lib/backupFile.ts](src/lib/backupFile.ts) | Getting that file off the phone and back, through Android's folder picker. Every failure is a value |
+| [src/lib/backupFile.ts](src/lib/backupFile.ts) | Getting that file off the phone and back: the folder picker to write it, the system file browser to read one |
 | [src/hooks/useRestTimer.ts](src/hooks/useRestTimer.ts) | Deadline-based timer, background-safe |
 | [src/hooks/useSetTimer.ts](src/hooks/useSetTimer.ts) | Ticks, haptics, the bell, and auto-logging |
 | [src/hooks/useCountdownBeeps.ts](src/hooks/useCountdownBeeps.ts) | The count-in — holds the latch, plays the cue |

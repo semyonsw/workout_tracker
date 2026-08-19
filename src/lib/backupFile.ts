@@ -1,30 +1,27 @@
 /**
- * Getting a backup off the phone, and back on again, with the modules the app
- * already ships.
+ * Getting a backup off the phone, and back on again.
  *
- * ── WHY IT LOOKS LIKE THIS ──────────────────────────────────────────────────
+ *   EXPORT  → the system folder picker → the file is written into the folder the
+ *             user chose (Download, Drive, an SD card), where a file manager can
+ *             see it and a cable or an upload can move it.
+ *   IMPORT  → the system FILE browser → the user finds that JSON and picks it.
  *
- * There is no document picker and no share sheet in this project's dependencies —
- * `expo-file-system` is here only because `expo` itself brings it — and a backup
- * button is not worth a new native module and a rebuild of the Android project. What
- * that module DOES have on Android is the Storage Access Framework: the system
- * folder picker, which grants the app read/write on one folder the user chose. That
- * is enough for both directions:
+ * Two different Android pickers, because they are two different intents:
+ * `expo-file-system`'s Storage Access Framework grants write access to a FOLDER
+ * (there is no "save as" dialog in it), and `expo-document-picker` opens the
+ * browse-and-select UI for reading ONE file. Anything less than the second one is
+ * not what "find the file I exported" means: a list the app assembles itself can
+ * only show the folders the app has already been granted, which is exactly the
+ * folder the user is trying to remember.
  *
- *   export  → pick a folder (Download, Drive, an SD card) → write the file into it
- *   import  → pick that folder again → list the backups in it → read one
+ * A file written to the app's own documents directory would survive an app update
+ * and die with an uninstall — i.e. exactly the case a backup exists for — so that
+ * path is only the fallback for a platform with no folder picker.
  *
- * SAF picks a FOLDER, never a file, which is why import is "choose the folder you
- * saved to" and then a list rather than a single file dialog. It also means the
- * exported file lands somewhere the user can actually reach with a file manager, a
- * cable, or an upload — which is the whole point. A file written to the app's own
- * private directory would survive an update and die with an uninstall, i.e. exactly
- * the case a backup exists for.
- *
- * Everything here is best-effort and reports failure as a value: a denied permission
- * and a cancelled picker are the same thing from the user's side (nothing happened),
- * and both are ordinary. `PASTE` in the backup screen is the escape hatch that needs
- * no file system at all.
+ * Everything here reports failure as a value where failure is ORDINARY: a cancelled
+ * picker is "nothing happened", not an error. Real errors (an unreadable file, a
+ * revoked permission) throw, and the caller turns them into one sentence with
+ * `describeError`.
  */
 
 import { Platform } from 'react-native';
@@ -33,6 +30,7 @@ import { Platform } from 'react-native';
  * equivalent, and SAF is the only way to reach a folder the user can find again.
  */
 import * as FileSystem from 'expo-file-system/legacy';
+import * as DocumentPicker from 'expo-document-picker';
 
 const JSON_MIME = 'application/json';
 
@@ -123,27 +121,60 @@ export async function writeToAppFolder(baseName: string, contents: string): Prom
   return fileUri.replace('file://', '');
 }
 
-export interface FoundFile {
+/** What `saveJsonFile` did. `cancelled` is a user decision, not a failure. */
+export type SaveOutcome =
+  | { saved: true; name: string; where: string }
+  | { saved: false; cancelled: true };
+
+/**
+ * Write the file somewhere the user picked and can find again.
+ *
+ * The folder picker first, because that is the only destination that survives an
+ * uninstall. Where there is no picker at all, the app's own documents directory —
+ * stated as a path, so it is at least reachable over a cable.
+ */
+export async function saveJsonFile(baseName: string, contents: string): Promise<SaveOutcome> {
+  if (!canPickFolder()) {
+    const path = await writeToAppFolder(baseName, contents);
+    return { saved: true, name: `${baseName}.json`, where: path };
+  }
+
+  const folder = await pickFolder();
+  if (!folder) return { saved: false, cancelled: true };
+
+  const name = await writeToFolder(folder, baseName, contents);
+  return { saved: true, name, where: folderLabel(folder) };
+}
+
+export interface PickedFile {
   uri: string;
   name: string;
 }
 
 /**
- * The JSON files in a folder, newest-looking first.
+ * Open the phone's file browser and hand back the file the user picked.
+ * `null` means they backed out.
  *
- * Sorted by NAME descending, which is chronological because `backupBaseName` puts a
- * sortable date in it — SAF exposes no modification time, so the name is the only
- * ordering available, and it is the one the file was named for.
+ * `type: '*&#47;*'` deliberately: filtering to `application/json` hides the very file
+ * this is for whenever the provider reports it as `octet-stream` or as nothing at
+ * all, which is common for a file that arrived over a cable or a chat. A wrong pick
+ * is caught a moment later by `parseBackup`, which says what was wrong with it —
+ * that is a better failure than a picker that shows an empty folder.
  *
- * Filtered to `.json` rather than to our own prefix: a user who renamed their backup
- * to `before-holiday.json` should still find it in this list.
+ * `copyToCacheDirectory` so the returned URI is one the file system can read: a raw
+ * `content://` URI from another app's provider is not.
  */
-export async function listJsonFiles(folderUri: string): Promise<FoundFile[]> {
-  const uris = await FileSystem.StorageAccessFramework.readDirectoryAsync(folderUri);
-  return uris
-    .map((uri) => ({ uri, name: displayName(uri) }))
-    .filter((file) => file.name.toLowerCase().endsWith('.json'))
-    .sort((a, b) => b.name.localeCompare(a.name));
+export async function pickJsonFile(): Promise<PickedFile | null> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: '*/*',
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+  if (result.canceled) return null;
+
+  const asset = result.assets?.[0];
+  if (!asset) return null;
+  return { uri: asset.uri, name: asset.name || displayName(asset.uri) };
 }
 
 export async function readTextFile(uri: string): Promise<string> {

@@ -17,6 +17,7 @@
     "drizzle-orm": "^0.44.0",
     "expo": "^54.0.0",
     "expo-audio": "~1.1.1",
+    "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.23",
     "expo-haptics": "^15.0.0",
     "expo-keep-awake": "^15.0.0",

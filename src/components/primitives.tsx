@@ -476,8 +476,23 @@ export function PrimaryButton({
   );
 }
 
-/** A 56-high borderless text action. Used for `Delete routine` — no red, no fuss. */
-export function TextButton({ label, onPress }: { label: string; onPress: () => void }) {
+/**
+ * A 56-high borderless text action. Used for `Delete routine` — no red, no fuss.
+ *
+ * `green` marks a row that DOES something for you rather than undoing something:
+ * `Export data` and `Delete all workout history` sit in the same card at the bottom
+ * of Settings, and only one of them should look like the thing to reach for. Same
+ * green every other primary action in the app uses; the quiet rows stay ink-muted.
+ */
+export function TextButton({
+  label,
+  tone = 'muted',
+  onPress,
+}: {
+  label: string;
+  tone?: 'muted' | 'green';
+  onPress: () => void;
+}) {
   return (
     <Pressable
       onPress={onPress}
@@ -485,7 +500,14 @@ export function TextButton({ label, onPress }: { label: string; onPress: () => v
       accessibilityLabel={label}
       className="h-row items-center justify-center"
     >
-      <Text className="text-label font-medium text-ink-muted">{label}</Text>
+      <Text
+        className={[
+          'text-label font-medium',
+          tone === 'green' ? 'text-green-bright' : 'text-ink-muted',
+        ].join(' ')}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }

@@ -69,10 +69,10 @@ Built on top of those, in the same system:
 | Change the plan mid-set | `+ Add set` and `− Remove set` in every card, so four sets become three when the fourth isn't there — and on an exercise down to its last row, `− Remove exercise` says so. Long-press a card and slide to reorder: the order you planned is not the order the machines are free in |
 | Add an exercise mid-workout | `+ Add an exercise` at the bottom of the session opens the same library picker, and the same create screen underneath it — pick `push → neck`, add a movement that didn't exist a second ago, and it lands in the library AND at the end of this workout with one set. Neck work at the end of pull day is not a routine edit |
 | Fix the clock | `START THE CLOCK NOW` in the session header re-anchors a workout that was opened before the warm-up, or left running in a locker. The minutes go back to zero; every set you already logged stays exactly where it is |
-| Back up & restore | Settings → `Back up & restore` writes everything — exercises, routines, every finished workout with its set rows, and your settings — to a readable JSON file in a folder you pick, and reads one back. Importing states what is in the file and what is on the phone before it replaces anything |
+| Export data / Import data | two rows at the bottom of **Settings**. `Export data` writes everything — exercises, routines, every finished workout with its set rows, and your settings — to one readable JSON file in a folder you pick. `Import data` opens the phone's file browser so you can find that file and read it back. Importing states what is in the file and what is on the phone before it replaces anything, and reports what actually landed |
 | History | every finished workout, newest first, grouped by month: date, duration, sets, volume, and each exercise in the shorthand the rest of the app uses. Its sets feed the next session's prefills and the overload nudges |
 | Muscle tree | the library opens `push → chest → dips`, with `+ Add exercise to chest` and a `−` delete on every row |
-| Settings | rest between sets and between exercises, get-ready length, how many seconds beep, the ± step, switches for sound, vibration, screen-on and notifications — and the door to back up and restore |
+| Settings | rest between sets and between exercises, get-ready length, how many seconds beep, the ± step, switches for sound, vibration, screen-on and notifications, and `Export data` / `Import data` at the bottom |
 
 ## Layout
 

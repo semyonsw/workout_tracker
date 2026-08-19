@@ -3,7 +3,7 @@
  *
  *   tab:  Today | History | Routines | Library | Settings   ← the roots
  *   stack: session · routineEditor · addExercise · createExercise · editExercise
- *          · exerciseHistory · backup
+ *          · exerciseHistory
  *
  * Why not a router library: the app has five roots and five pushable screens, none
  * of them deep-linked, none of them needing URL state. `expo-router` would add a
@@ -38,7 +38,6 @@ import { HomeScreen, type RoutineChoice, type TodayPlan } from '../screens/HomeS
 import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { BackupScreen } from '../screens/BackupScreen';
 import { historyByExerciseId, recentlyUsedExerciseIds } from '../lib/completedWorkout';
 import { buildDraftEntry, defaultTargetCount } from '../lib/draft';
 import {
@@ -89,8 +88,7 @@ type Route =
       addToSession?: boolean;
     }
   | { name: 'editExercise'; exerciseId: ID }
-  | { name: 'exerciseHistory'; exerciseId: ID }
-  | { name: 'backup' };
+  | { name: 'exerciseHistory'; exerciseId: ID };
 
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
@@ -620,10 +618,6 @@ export function AppShell() {
     );
   }
 
-  if (top?.name === 'backup') {
-    return <BackupScreen onBack={pop} />;
-  }
-
   if (top?.name === 'exerciseHistory') {
     const exercise = exercisesById[top.exerciseId];
     if (!exercise) return <Fallback onBack={pop} />;
@@ -695,9 +689,7 @@ export function AppShell() {
           />
         ) : null}
 
-        {tab === 'Settings' ? (
-          <SettingsScreen onOpenBackup={() => push({ name: 'backup' })} />
-        ) : null}
+        {tab === 'Settings' ? <SettingsScreen /> : null}
       </View>
 
       <TabBar active={tab} onSelect={setTab} />

@@ -50,14 +50,23 @@ import {
   TextButton,
   Toggle,
 } from '../components/primitives';
-import { countFinal, countTick, tap } from '../lib/feedback';
+import {
+  backupBaseName,
+  countPayload,
+  describeCounts,
+  parseBackup,
+  type BackupCounts,
+  type BackupEnvelope,
+} from '../lib/backup';
+import { describeError, pickJsonFile, readTextFile, saveJsonFile } from '../lib/backupFile';
+import { commit, countFinal, countTick, tap } from '../lib/feedback';
 import { formatClock } from '../lib/units';
+import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
 import {
   SETTING_LIMITS,
   useSettings,
   type NumericSetting,
 } from '../state/settingsStore';
-import { useLibrary } from '../state/libraryStore';
 import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import type { UnitSystem } from '../types/models';
@@ -81,37 +90,137 @@ function formatSeconds(seconds: number, zeroLabel = 'Off'): string {
   return formatClock(seconds);
 }
 
-interface SettingsScreenProps {
-  /**
-   * Open the backup screen. Optional so the screen still renders standalone, but a
-   * caller that can navigate should always pass it: everything the user owns lives
-   * in three keys on one phone, and this is the only door out of them.
-   */
-  onOpenBackup?: () => void;
+/** A file that has been read and understood, waiting for a yes. */
+interface PendingImport {
+  file: string;
+  envelope: BackupEnvelope;
+  counts: BackupCounts;
 }
 
-export function SettingsScreen({ onOpenBackup }: SettingsScreenProps = {}) {
+/** The one line under the two rows. `quiet` is "nothing happened", not an alarm. */
+interface DataStatus {
+  tone: 'ok' | 'quiet';
+  text: string;
+}
+
+/**
+ * What is on this phone right now, counted the same way a file is.
+ *
+ * Read at the moment it is needed rather than subscribed to: it is only ever used
+ * inside a sentence about something the user just did, and a count that re-renders
+ * the whole settings screen on every logged set would be a subscription bought for
+ * nothing.
+ */
+function onThisPhone(): BackupCounts {
+  return countPayload(currentSnapshot());
+}
+
+export function SettingsScreen() {
   const settings = useSettings();
-  const restoreSeedLibrary = useLibrary((s) => s.restoreSeedLibrary);
   const clearHistory = useWorkoutHistory((s) => s.clearHistory);
   const workoutCount = useWorkoutHistory((s) => s.workouts.length);
-  const [confirming, setConfirming] = useState<'reset' | 'library' | 'history' | null>(null);
+  const [confirming, setConfirming] = useState<'reset' | 'history' | null>(null);
+
+  /** A parsed file waiting for a yes: importing replaces everything. */
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  /** One line under the buttons: what the last export or import actually did. */
+  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
+  /** A picker is open or a file is being read. Stops a second tap racing it. */
+  const [busy, setBusy] = useState(false);
 
   const bump = (key: NumericSetting, direction: 1 | -1) => {
     tap();
     settings.bumpNumber(key, SETTING_LIMITS[key].step * direction);
   };
 
+  /**
+   * EXPORT — write everything to one JSON file, in a folder the user picks.
+   *
+   * The folder picker rather than a silent write: a file the user cannot find is
+   * not a backup, and app-private storage is exactly where Android hides files
+   * from its own file manager. What comes back is stated by name, so the next step
+   * ("move it off the phone") is something the user can actually do.
+   */
+  const exportData = async () => {
+    if (busy) return;
+    tap();
+    setBusy(true);
+    setDataStatus(null);
+    try {
+      const outcome = await saveJsonFile(backupBaseName(), exportBackupText());
+      if (!outcome.saved) {
+        setDataStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
+        return;
+      }
+      commit();
+      setDataStatus({
+        tone: 'ok',
+        text: `Saved ${outcome.name} to ${outcome.where} — ${describeCounts(onThisPhone())}.`,
+      });
+    } catch (error) {
+      setDataStatus({ tone: 'quiet', text: describeError(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * IMPORT — the phone's own file browser, then a question.
+   *
+   * Reading the file and APPLYING it are deliberately two steps: this is the only
+   * irreversible action in the app that isn't a delete, so the sheet gets to state
+   * what is in the file and what is on the phone before anything is replaced.
+   */
+  const importData = async () => {
+    if (busy) return;
+    tap();
+    setBusy(true);
+    setDataStatus(null);
+    try {
+      const file = await pickJsonFile();
+      if (!file) {
+        setDataStatus({ tone: 'quiet', text: 'No file picked.' });
+        return;
+      }
+      const result = parseBackup(await readTextFile(file.uri));
+      if (!result.ok) {
+        setDataStatus({ tone: 'quiet', text: `${file.name}: ${result.error}` });
+        return;
+      }
+      setPendingImport({ file: file.name, envelope: result.envelope, counts: result.counts });
+    } catch (error) {
+      setDataStatus({ tone: 'quiet', text: describeError(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmImport = () => {
+    if (!pendingImport) return;
+    const applied = applyBackup(pendingImport.envelope);
+    commit();
+    setPendingImport(null);
+    setDataStatus({
+      tone: 'ok',
+      // What LANDED, not what the file claimed: rows that fail validation are
+      // dropped on the way in, and a restore that reports the file's own numbers
+      // is how someone learns not to trust the feature.
+      text: `Restored ${describeCounts(applied)}${applied.settingsApplied ? ', and your settings' : ''}.`,
+    });
+  };
+
+  const asking = confirming != null || pendingImport != null;
+
   return (
     <View className="flex-1 bg-bg">
-      <View className="flex-1" style={confirming ? { opacity: 0.28 } : undefined}>
+      <View className="flex-1" style={asking ? { opacity: 0.28 } : undefined}>
         <ScreenHeader kicker="Settings" bordered={false} />
 
         <ScrollView
           className="flex-1"
           contentContainerStyle={{ paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
-          scrollEnabled={!confirming}
+          scrollEnabled={!asking}
         >
           {/* ---------------------------------------------------------- */}
           <Kicker className="mx-lg mb-sm mt-md">Rest</Kicker>
@@ -199,34 +308,6 @@ export function SettingsScreen({ onOpenBackup }: SettingsScreenProps = {}) {
           </ListCard>
 
           {/* ---------------------------------------------------------- */}
-          {/* Above `Units`, not buried under the destructive block at the bottom:
-              the thing standing between a year of training and an uninstall is not
-              a footnote. */}
-          {onOpenBackup ? (
-            <>
-              <Kicker className="mx-lg mb-sm mt-xxl">Your data</Kicker>
-              <ListCard className="mx-lg">
-                <Pressable
-                  onPress={() => {
-                    tap();
-                    onOpenBackup();
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Back up and restore"
-                  className="min-h-[56px] flex-row items-center px-lg py-md"
-                >
-                  <View className="flex-1 pr-md">
-                    <Text className="text-body font-medium text-ink">Back up &amp; restore</Text>
-                    <Text className="mt-[2px] text-label text-ink-faint">
-                      Export everything to a JSON file, or read one back in
-                    </Text>
-                  </View>
-                  <Icon name="chevron-right" size={18} color={palette.greenBright} />
-                </Pressable>
-              </ListCard>
-            </>
-          ) : null}
-
           <Kicker className="mx-lg mb-sm mt-xxl">Units</Kicker>
           <View className="mx-lg">
             <Segmented
@@ -241,14 +322,27 @@ export function SettingsScreen({ onOpenBackup }: SettingsScreenProps = {}) {
             </Text>
           </View>
 
-          {/* ---------------------------------------------------------- */}
+          {/* ----------------------------------------------------------
+              EXPORT AND IMPORT, at the bottom, above the two destructive rows.
+
+              Everything the user owns lives in three AsyncStorage keys on one
+              phone: an uninstall, a wiped device or a new phone takes all of it,
+              and the app's whole value is a log that goes back far enough to show
+              a plateau. These two rows are the only thing standing between a year
+              of training and a factory reset, which is why they are plain,
+              permanent rows rather than a screen you have to know about.
+
+              `Export data` writes one readable JSON file — every exercise,
+              routine, finished workout WITH its set rows, and your settings —
+              into a folder you pick. `Import data` opens the phone's file browser
+              so you can find that file and read it back. What each one did is
+              stated underneath, by name and by count. */}
           <View className="mx-lg mt-xxl overflow-hidden rounded-surface border border-hairline bg-surface">
-            <TextButton label="Reset settings to defaults" onPress={() => setConfirming('reset')} />
+            <TextButton label="Export data" tone="green" onPress={() => void exportData()} />
             <Separator inset={0} />
-            <TextButton
-              label="Restore the shipped exercise library"
-              onPress={() => setConfirming('library')}
-            />
+            <TextButton label="Import data" tone="green" onPress={() => void importData()} />
+            <Separator inset={0} />
+            <TextButton label="Reset settings to defaults" onPress={() => setConfirming('reset')} />
             {/* Last, and only when there is something to lose. One workout at a
                 time is deleted from the History tab; this is the whole log. */}
             {workoutCount > 0 ? (
@@ -261,6 +355,24 @@ export function SettingsScreen({ onOpenBackup }: SettingsScreenProps = {}) {
               </>
             ) : null}
           </View>
+
+          {dataStatus ? (
+            <Text
+              className={[
+                'mx-lg mt-md text-label',
+                dataStatus.tone === 'ok' ? 'text-green-bright' : 'text-ink-muted',
+              ].join(' ')}
+            >
+              {dataStatus.text}
+            </Text>
+          ) : null}
+
+          <Text className="mx-lg mt-md text-label text-ink-faint">
+            A backup is plain JSON, so you can read it, keep it anywhere, and move it to another
+            phone. Importing REPLACES what is on this phone — it is never merged — so export first
+            if there is anything here you would miss. A workout in progress is not part of a backup:
+            it carries a running clock.
+          </Text>
         </ScrollView>
       </View>
 
@@ -278,17 +390,18 @@ export function SettingsScreen({ onOpenBackup }: SettingsScreenProps = {}) {
         />
       ) : null}
 
-      {confirming === 'library' ? (
+      {pendingImport ? (
         <ConfirmSheet
-          title="Restore the shipped library?"
-          body="The exercises and routines the app came with come back, and anything you added or deleted is replaced. Logged sets stay in your history."
-          confirmLabel="Restore the library"
-          cancelLabel="Keep mine"
-          onConfirm={() => {
-            restoreSeedLibrary();
-            setConfirming(null);
-          }}
-          onCancel={() => setConfirming(null)}
+          title="Replace everything with this file?"
+          body={[
+            `${pendingImport.file} holds ${describeCounts(pendingImport.counts)}.`,
+            `This phone has ${describeCounts(onThisPhone())}, and all of it goes.`,
+            'This cannot be undone.',
+          ].join(' ')}
+          confirmLabel="Import it"
+          cancelLabel="Keep what I have"
+          onConfirm={confirmImport}
+          onCancel={() => setPendingImport(null)}
         />
       ) : null}
 
