@@ -4,6 +4,26 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
+## 0.9.0 installs straight over 0.8.0
+
+Same signing key, `versionCode` 9. Copy it over, tap install, keep your data — and
+then, before anything else, open **Settings → Back up & restore → `Save a backup
+file…`** and put a copy somewhere off the phone. That is what the version exists
+for: everything you own is now exportable to one readable JSON file and importable
+back, so the next reinstall costs nothing.
+
+What else is new on the phone:
+
+- **`+ Add set` / `− Remove set`** in every exercise card mid-workout, and on an
+  exercise down to one row the second one reads `Remove exercise`.
+- **`+ Add an exercise`** at the bottom of a running workout: the library picker,
+  and the create screen under it, both landing the exercise at the end of the
+  session with one set.
+- **Long-press an exercise card and slide** to reorder the session.
+- **`START THE CLOCK NOW`** in the session header, for a workout that was opened
+  before the warm-up and reads 350 minutes.
+- **Every weight ± is `0.5` and `2` kg**, everywhere.
+
 ## 0.5.0 installs straight over 0.4.0
 
 Same signing key, `versionCode` 5. Copy it over, tap install, keep your data.
@@ -224,6 +244,13 @@ refuses the install, and the only way through is uninstall-then-install, which
 **deletes your entire workout history**. That is not hypothetical — it is exactly
 what happened between 0.3.0 and 0.4.0, and it is why the box at the top of this
 file exists.
+
+Since 0.9.0 there is a seatbelt for exactly this: **Settings → Back up & restore →
+`Save a backup file…`** writes every exercise, routine and finished workout to a
+JSON file in a folder you pick. Do that BEFORE any install you are not certain
+about, and an uninstall costs you nothing but the reinstall. It is not a substitute
+for keeping the keystore — a signature mismatch is still an uninstall — but it is
+the difference between losing a year of training and losing ten minutes.
 
 This app's key (regenerated for 0.4.0 on the Windows machine):
 

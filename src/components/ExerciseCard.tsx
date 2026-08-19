@@ -7,7 +7,8 @@
  *   │ 80 kg · 8 6 5 5                            │
  *   └────────────────────────────────────────────┘
  *
- * Expanded (current exercise): header + overload nudge + set rows + "Add set".
+ * Expanded (current exercise): header + overload nudge + set rows + a footer of
+ * `Add set` / `Remove set`, and `Rest` under them.
  *
  * Only one card is expanded at a time. That is the whole navigation model of the
  * logging screen — no tabs, no per-exercise route, no back button. The user
@@ -16,6 +17,21 @@
  * The collapsed signal for a waiting overload suggestion is a single 6px dot.
  * Not a badge, not a chip, not a count: the suggestion is not urgent, it just
  * needs to be findable.
+ *
+ * ── `ADD SET` AND `REMOVE SET` ARE ONE CONTROL, SPLIT IN TWO ────────────────
+ *
+ * Sets are decided in the gym: four today, three when the fourth isn't there. The
+ * two halves of the footer are the whole of that decision, they cost one tap each,
+ * and `Remove set` always takes the BOTTOM row — the one that hasn't happened yet.
+ * On an exercise down to its last row it relabels itself `Remove exercise`, because
+ * that is what removing that row does (see `activeWorkoutStore.removeSet`); the
+ * label changes so the outcome is never a surprise.
+ *
+ * A long press LIFTS the card for reordering. The gesture and the movement live in
+ * the screen (it owns the geometry of the list); this component only reports the
+ * press and renders the two states it puts a card into — `lifted`, which follows
+ * the finger, and `dimmed`, which is every other card while one is in the air. Same
+ * language as the routine editor's reorder, deliberately.
  */
 
 import { memo, useState } from 'react';
@@ -23,6 +39,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import type { DraftEntry, DraftSet } from '../lib/draft';
 import { formatTarget } from '../lib/draft';
+import { tap, undo } from '../lib/feedback';
 import { isTimed as isTimedExercise } from '../lib/setTimer';
 import { formatClock } from '../lib/units';
 import type { ID, UnitSystem } from '../types/models';
@@ -36,14 +53,21 @@ interface ExerciseCardProps {
   entry: DraftEntry;
   isActive: boolean;
   unitSystem: UnitSystem;
-  policyIncrementKg: number;
   /** The set in this card whose clock is running, if any. */
   timingSetId?: ID | null;
+  /** This card is being dragged: it follows the finger and marks itself. */
+  isLifted?: boolean;
+  /** Another card is being dragged, so this one is not the subject right now. */
+  dimmed?: boolean;
   onActivate: () => void;
+  /** Long press — the screen turns this into a drag. Absent = not reorderable. */
+  onLift?: () => void;
   onToggleSet: (setId: ID) => void;
   onPatchSet: (setId: ID, patch: Partial<DraftSet>) => void;
   onAddSet: () => void;
   onRemoveSet: (setId: ID) => void;
+  /** Drop the bottom row, or the whole exercise when that row is the last one. */
+  onRemoveLastSet: () => void;
   onAcceptOverload: () => void;
   onDismissOverload: () => void;
   /** Start the clock for a set, or stop the one already running on it. */
@@ -66,13 +90,16 @@ function ExerciseCardComponent({
   entry,
   isActive,
   unitSystem,
-  policyIncrementKg,
   timingSetId = null,
+  isLifted = false,
+  dimmed = false,
   onActivate,
+  onLift,
   onToggleSet,
   onPatchSet,
   onAddSet,
   onRemoveSet,
+  onRemoveLastSet,
   onAcceptOverload,
   onDismissOverload,
   onPressTimer,
@@ -89,6 +116,9 @@ function ExerciseCardComponent({
   const nudgeWaiting = entry.overload.shouldNudge && !entry.overloadAccepted;
   const isRounds = entry.exercise.countUnit === 'rounds';
   const isTimed = isTimedExercise(entry.exercise);
+  const unit = isRounds ? 'round' : 'set';
+  /* The last row cannot be removed without the exercise going with it. Say so. */
+  const removeLabel = total <= 1 ? 'Remove exercise' : `Remove ${unit}`;
 
   /* ---------------------------------------------------------------- */
   /* Collapsed                                                         */
@@ -97,11 +127,18 @@ function ExerciseCardComponent({
     return (
       <Pressable
         onPress={onActivate}
+        onLongPress={onLift}
+        delayLongPress={280}
         accessibilityRole="button"
         accessibilityLabel={`${entry.exercise.name}, ${completed} of ${total} sets done${
           nudgeWaiting ? ', suggestion waiting' : ''
         }`}
-        className="mx-lg mb-sm rounded-surface border border-hairline bg-surface p-lg"
+        accessibilityHint={onLift ? 'Long press, then slide to reorder' : undefined}
+        style={dimmed ? { opacity: 0.4 } : undefined}
+        className={[
+          'mx-lg mb-sm rounded-surface border p-lg',
+          isLifted ? 'border-green-dim bg-surface-alt' : 'border-hairline bg-surface',
+        ].join(' ')}
       >
         <View className="flex-row items-center">
           <Text
@@ -146,11 +183,26 @@ function ExerciseCardComponent({
   /* Expanded                                                          */
   /* ---------------------------------------------------------------- */
   return (
-    <View className="mb-xl">
+    <View className="mb-xl" style={dimmed ? { opacity: 0.4 } : undefined}>
       {/* Header — name, then the target, then what it was last time. The last
-          clause drops to ink-faint: it's reference, not instruction. */}
-      <View className="mx-lg mb-md">
-        <Text className="text-title font-medium text-ink">{entry.exercise.name}</Text>
+          clause drops to ink-faint: it's reference, not instruction. It is also
+          the expanded card's grab handle: long-pressing a set row would fight the
+          row's own controls, and this is the one part of the card that isn't one. */}
+      <Pressable
+        onLongPress={onLift}
+        delayLongPress={280}
+        accessibilityRole={onLift ? 'button' : 'header'}
+        accessibilityLabel={entry.exercise.name}
+        accessibilityHint={onLift ? 'Long press, then slide to reorder' : undefined}
+        className="mx-lg mb-md"
+      >
+        <Text
+          className={['text-title font-medium', isLifted ? 'text-green-bright' : 'text-ink'].join(
+            ' ',
+          )}
+        >
+          {entry.exercise.name}
+        </Text>
         <Text className="mt-xs text-label tabular-nums text-ink-muted">
           {formatTarget(entry)}
           {entry.exercise.isUnilateral ? (
@@ -160,7 +212,7 @@ function ExerciseCardComponent({
             <Text className="text-label text-ink-faint"> · last: {entry.lastSessionShort}</Text>
           ) : null}
         </Text>
-      </View>
+      </Pressable>
 
       <OverloadNudge
         verdict={entry.overload}
@@ -171,7 +223,12 @@ function ExerciseCardComponent({
         onDismiss={onDismissOverload}
       />
 
-      <View className="mx-lg overflow-hidden rounded-surface border border-hairline bg-surface">
+      <View
+        className={[
+          'mx-lg overflow-hidden rounded-surface border bg-surface',
+          isLifted ? 'border-green-dim' : 'border-hairline',
+        ].join(' ')}
+      >
         {entry.sets.map((set, index) => (
           <View key={set.localId}>
             {/* Separators inset 16 from the left, so the index column reads as
@@ -211,7 +268,6 @@ function ExerciseCardComponent({
                 set={set}
                 exercise={entry.exercise}
                 unitSystem={unitSystem}
-                policyIncrementKg={policyIncrementKg}
                 onChange={(patch) => onPatchSet(set.localId, patch)}
                 onClose={() => setFocus(null)}
                 onRemoveSet={() => {
@@ -227,36 +283,56 @@ function ExerciseCardComponent({
         <View className="h-hairline bg-hairline" />
         <View className="flex-row">
           <Pressable
-            onPress={onAddSet}
+            onPress={() => {
+              tap();
+              onAddSet();
+            }}
             accessibilityRole="button"
-            accessibilityLabel={isRounds ? 'Add round' : 'Add set'}
+            accessibilityLabel={`Add ${unit}`}
             className="h-row flex-1 flex-row items-center justify-center"
           >
             <Icon name="plus" size={14} color={palette.inkFaint} />
-            <Text className="ml-sm text-label text-ink-muted">
-              {isRounds ? 'Add round' : 'Add set'}
-            </Text>
+            <Text className="ml-sm text-label text-ink-muted">Add {unit}</Text>
           </Pressable>
 
-          {/* Rest, on demand. Half the footer rather than a control on the pill,
-              because the pill does not exist when there is no rest to show. */}
-          {onStartRest && restSeconds > 0 ? (
-            <>
-              <View className="w-hairline bg-hairline" />
-              <Pressable
-                onPress={onStartRest}
-                accessibilityRole="button"
-                accessibilityLabel={`Start a ${formatClock(restSeconds)} rest`}
-                className="h-row flex-1 flex-row items-center justify-center"
-              >
-                <Icon name="pause" size={13} color={palette.inkFaint} />
-                <Text className="ml-sm text-label tabular-nums text-ink-muted">
-                  Rest {formatClock(restSeconds)}
-                </Text>
-              </Pressable>
-            </>
-          ) : null}
+          {/* The opposite mark in the opposite half: `−` is `+` with its vertical
+              stroke removed, the same pairing the library uses for add and delete.
+              It always takes the BOTTOM row — the one that hasn't happened. */}
+          <View className="w-hairline bg-hairline" />
+          <Pressable
+            onPress={() => {
+              undo();
+              onRemoveLastSet();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={removeLabel}
+            className="h-row flex-1 flex-row items-center justify-center"
+          >
+            <Icon name="minus" size={14} color={palette.inkFaint} />
+            <Text className="ml-sm text-label text-ink-muted">{removeLabel}</Text>
+          </Pressable>
         </View>
+
+        {/* Rest, on demand — its own row under the two set controls rather than a
+            third of the same one: it is not about the set count, and three targets
+            in one 56 dp row is one mis-tap wide. Not on the pill either, because
+            the pill does not exist when there is no rest to show. */}
+        {onStartRest && restSeconds > 0 ? (
+          <>
+            <View className="h-hairline bg-hairline" />
+            <Pressable
+              onPress={onStartRest}
+              accessibilityRole="button"
+              accessibilityLabel={`Start a ${formatClock(restSeconds)} rest`}
+              className="h-row flex-row items-center justify-center"
+            >
+              <Icon name="pause" size={13} color={palette.inkFaint} />
+              <Text className="ml-sm text-label tabular-nums text-ink-muted">
+                Rest {formatClock(restSeconds)}
+              </Text>
+            </Pressable>
+          </>
+        ) : null}
       </View>
     </View>
   );

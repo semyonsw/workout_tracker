@@ -2,10 +2,12 @@
   "expo": {
     "name": "Workout Tracker",
     "slug": "workout-tracker",
-    "version": "0.8.0",
+    "version": "0.9.0",
     "orientation": "portrait",
     "scheme": "workouttracker",
-    "platforms": ["android"],
+    "platforms": [
+      "android"
+    ],
     "userInterfaceStyle": "dark",
     "backgroundColor": "#060807",
     "primaryColor": "#1E7A4C",
@@ -15,10 +17,12 @@
       "resizeMode": "contain",
       "backgroundColor": "#060807"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "android": {
       "package": "com.semyonsw.workouttracker",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#060807"
@@ -38,7 +42,10 @@
         "expo-notifications",
         {
           "color": "#1E7A4C",
-          "sounds": ["./assets/beep_tick.wav", "./assets/beep_final.wav"]
+          "sounds": [
+            "./assets/beep_tick.wav",
+            "./assets/beep_final.wav"
+          ]
         }
       ],
       "./plugins/withReleaseSigning",

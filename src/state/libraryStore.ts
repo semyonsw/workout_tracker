@@ -31,6 +31,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { defaultTargetCount } from '../lib/draft';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import type { Exercise, ID, MuscleGroup, Routine, RoutineItem } from '../types/models';
 
@@ -63,6 +64,19 @@ interface LibraryState {
   appendToRoutine: (routineId: ID, exerciseId: ID) => void;
   /** Back to the shipped library. The only way out of a library you've wrecked. */
   restoreSeedLibrary: () => void;
+  /**
+   * Replace the library from a restored backup. Returns what actually survived
+   * validation, so the screen can report a number it can stand behind rather than
+   * the number the file claimed.
+   *
+   * WHOLESALE, not merged. A backup is a photograph of a library at a moment, and
+   * merging it with the current one would resurrect every exercise the user has
+   * deleted since — silently, and with no way to tell which is which.
+   */
+  importLibrary: (raw: { exercises?: unknown; routines?: unknown }) => {
+    exercises: number;
+    routines: number;
+  };
 }
 
 /** How many routines an exercise appears in — for the delete confirmation copy. */
@@ -151,29 +165,17 @@ export const useLibrary = create<LibraryState>()(
         set({ routines: get().routines.filter((r) => r.id !== routineId) }),
 
       /**
-       * The target has to come from the count unit, not from a constant:
-       * `targetRepsMax` holds SECONDS for time-counted work, so a shared default of
-       * 10 would add a ten-second plank and a ten-second boxing round — and on a
-       * timed exercise that number is what the countdown counts down.
-       *
-       * The EXERCISE's own target wins where it has one. That number is what the
-       * user set on the create screen ("target reps 12", "2:00 plank"), and adding
-       * the exercise to a routine and getting a made-up 10 instead is the create
-       * screen quietly not meaning it.
+       * The target comes from `defaultTargetCount` — the exercise's own number where
+       * it has one, and a per-unit fallback where it doesn't. Shared with the
+       * mid-workout add path so an exercise appended to a running session and the
+       * same exercise appended to a routine plan the same set.
        */
       appendToRoutine: (routineId, exerciseId) => {
         const { exercises, routines } = get();
         const exercise = exercises.find((e) => e.id === exerciseId);
         if (!exercise) return;
 
-        const fallback =
-          exercise.countUnit === 'rounds' ? 180 : exercise.countUnit === 'seconds' ? 60 : 10;
-        const target =
-          typeof exercise.defaultCount === 'number' &&
-          Number.isFinite(exercise.defaultCount) &&
-          exercise.defaultCount > 0
-            ? Math.round(exercise.defaultCount)
-            : fallback;
+        const target = defaultTargetCount(exercise);
         const sets = exercise.countUnit === 'rounds' ? 12 : 4;
 
         set({
@@ -200,6 +202,20 @@ export const useLibrary = create<LibraryState>()(
       },
 
       restoreSeedLibrary: () => set({ exercises: seedExercises, routines: seedRoutines }),
+
+      importLibrary: (raw) => {
+        /*
+         * The same validator rehydration uses, deliberately: a file off an SD card
+         * has exactly the same trustworthiness as a blob off disk, and a second
+         * validator for the same shape is a second thing to keep in step.
+         */
+        const { exercises, routines } = sanitizeLibrary(raw.exercises, raw.routines, {
+          exercises: [],
+          routines: [],
+        });
+        set({ exercises, routines });
+        return { exercises: exercises.length, routines: routines.length };
+      },
     }),
     {
       name: 'library',
@@ -214,20 +230,7 @@ export const useLibrary = create<LibraryState>()(
        */
       merge: (persisted, current) => {
         const raw = (persisted ?? {}) as Partial<Pick<LibraryState, 'exercises' | 'routines'>>;
-        const exercises = Array.isArray(raw.exercises)
-          ? raw.exercises.filter(isRenderableExercise)
-          : current.exercises;
-        const known = new Set(exercises.map((e) => e.id));
-        const routines = Array.isArray(raw.routines)
-          ? raw.routines.filter(isRenderableRoutine).map((routine) => ({
-              ...routine,
-              // Drop items whose exercise didn't survive validation, so the set
-              // counts on the home screen match what a session will actually build.
-              items: routine.items.filter((item) => known.has(item.exerciseId)),
-            }))
-          : current.routines;
-
-        return { ...current, exercises, routines };
+        return { ...current, ...sanitizeLibrary(raw.exercises, raw.routines, current) };
       },
     },
   ),
@@ -236,6 +239,36 @@ export const useLibrary = create<LibraryState>()(
 /* ------------------------------------------------------------------ */
 /* Rehydration guards                                                  */
 /* ------------------------------------------------------------------ */
+
+/**
+ * A renderable library out of anything at all — a persisted blob, or a backup file.
+ *
+ * `fallback` is what a MISSING collection becomes: on rehydration that is the seed
+ * (a first launch keeps the shipped library), and on an import it is empty (a backup
+ * with no routines in it means the user has no routines, not that they get the
+ * shipped ones back).
+ *
+ * Routine items pointing at an exercise that didn't survive are dropped, so the set
+ * counts on the home screen match what a session will actually build.
+ */
+function sanitizeLibrary(
+  rawExercises: unknown,
+  rawRoutines: unknown,
+  fallback: Pick<LibraryState, 'exercises' | 'routines'>,
+): Pick<LibraryState, 'exercises' | 'routines'> {
+  const exercises = Array.isArray(rawExercises)
+    ? rawExercises.filter(isRenderableExercise)
+    : fallback.exercises;
+  const known = new Set(exercises.map((e) => e.id));
+  const routines = Array.isArray(rawRoutines)
+    ? rawRoutines.filter(isRenderableRoutine).map((routine) => ({
+        ...routine,
+        items: routine.items.filter((item) => known.has(item.exerciseId)),
+      }))
+    : fallback.routines;
+
+  return { exercises, routines };
+}
 
 const COUNT_UNITS = new Set(['reps', 'seconds', 'meters', 'rounds']);
 const LOAD_MODES = new Set(['external', 'added_bodyweight', 'assisted', 'none']);

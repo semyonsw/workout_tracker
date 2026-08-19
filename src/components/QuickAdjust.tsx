@@ -2,22 +2,26 @@
  * QuickAdjust — the inline value editor, opened directly under the tapped row.
  *
  *   ┌──────────────────────────────────────────────┐
- *   │  −5   −2.5      42.5 KG      +2.5   +5       │
+ *   │  −2   −0.5      42.5 KG      +0.5   +2       │
  *   │  Type          Remove set            Done    │
  *   └──────────────────────────────────────────────┘
  *
  * This is where the tap-count promise is proven. One tap logs an unchanged set
- * (the ✓). THREE taps log 2.5 kg heavier: the weight cell, `+2.5`, the ✓.
+ * (the ✓). THREE taps log 2 kg heavier: the weight cell, `+2`, the ✓.
  *
  * Why not a keyboard? Because the gym case is "same as last time, plus one
  * plate". Four chips beat eleven keys, work with sweaty thumbs, and never cover
  * the row being edited. `Type` is still there for the case where a number
  * changes wholesale — the only path to a keyboard inside a session.
  *
- * Steps come from the exercise's own increment, so a dumbbell movement offers
- * ±2.5 while a pin stack offers ±5 — the app never suggests a weight the user
- * cannot physically load. There is no Cancel: edits are applied live, and
- * `Done` only closes the panel.
+ * WEIGHT STEPS BY ±0.5 AND ±2, EVERYWHERE (see `weightSteps`). Not by the
+ * exercise's own increment, which is a progression plan rather than a thumb
+ * gesture: reading the chips off a 2.5 kg increment offered ±5 where nobody
+ * wanted it and made every half-kilo — the small disc on a dumbbell, the change
+ * plate on a bar — unreachable. Nothing is snapped to a grid either, so 16.5 kg
+ * stays 16.5 rather than being rounded to something "loadable" by a machine the
+ * app has never seen. There is no Cancel: edits are applied live, and `Done`
+ * only closes the panel.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -33,9 +37,8 @@ import {
   formatWeight,
   kgToLb,
   lbToKg,
-  resolveIncrementKg,
-  roundToStep,
   unitLabel,
+  weightSteps,
 } from '../lib/units';
 import type { SetField } from './SetRow';
 
@@ -44,8 +47,6 @@ interface QuickAdjustProps {
   set: DraftSet;
   exercise: Exercise;
   unitSystem: UnitSystem;
-  /** Increment fallback from the user's overload policy. */
-  policyIncrementKg: number;
   onChange: (patch: Partial<DraftSet>) => void;
   onClose: () => void;
   onRemoveSet: () => void;
@@ -56,7 +57,6 @@ export function QuickAdjust({
   set,
   exercise,
   unitSystem,
-  policyIncrementKg,
   onChange,
   onClose,
   onRemoveSet,
@@ -66,14 +66,16 @@ export function QuickAdjust({
   const inputRef = useRef<TextInput>(null);
 
   const isWeight = field === 'weight';
-  const stepKg = resolveIncrementKg(exercise.incrementKg, policyIncrementKg, unitSystem);
-  // Chips are expressed in the user's own units; kg is the storage unit only.
-  const step = isWeight
-    ? unitSystem === 'imperial'
-      ? kgToLb(stepKg)
-      : stepKg
-    : countStep(exercise.countUnit);
-  const chips = [-step * 2, -step, step, step * 2];
+  /*
+   * Chips are expressed in the user's own units; kg is the storage unit only.
+   * Weight has its own pair of steps (±0.5 / ±2); a count keeps the doubling
+   * pattern off its unit's natural step — one rep and two, fifteen seconds and
+   * thirty.
+   */
+  const { fine, coarse } = isWeight
+    ? weightSteps(unitSystem)
+    : { fine: countStep(exercise.countUnit), coarse: countStep(exercise.countUnit) * 2 };
+  const chips = [-coarse, -fine, fine, coarse];
 
   const displayValue = isWeight
     ? formatWeight(set.weightKg, unitSystem, exercise.loadMode)
@@ -91,7 +93,12 @@ export function QuickAdjust({
     if (isWeight) {
       const currentDisplay =
         set.weightKg == null ? 0 : unitSystem === 'imperial' ? kgToLb(set.weightKg) : set.weightKg;
-      const nextDisplay = Math.max(0, roundToStep(currentDisplay + delta, Math.abs(step)));
+      /*
+       * Not snapped to any step. Snapping is what made a 0.5 chip useless on an
+       * exercise carrying a 2.5 kg increment — every tap rounded itself away.
+       * `toFixed(2)` only keeps 0.1-style float drift out of a 40 px numeral.
+       */
+      const nextDisplay = Math.max(0, Number((currentDisplay + delta).toFixed(2)));
       onChange({ weightKg: unitSystem === 'imperial' ? lbToKg(nextDisplay) : nextDisplay });
       return;
     }

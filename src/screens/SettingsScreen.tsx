@@ -81,7 +81,16 @@ function formatSeconds(seconds: number, zeroLabel = 'Off'): string {
   return formatClock(seconds);
 }
 
-export function SettingsScreen() {
+interface SettingsScreenProps {
+  /**
+   * Open the backup screen. Optional so the screen still renders standalone, but a
+   * caller that can navigate should always pass it: everything the user owns lives
+   * in three keys on one phone, and this is the only door out of them.
+   */
+  onOpenBackup?: () => void;
+}
+
+export function SettingsScreen({ onOpenBackup }: SettingsScreenProps = {}) {
   const settings = useSettings();
   const restoreSeedLibrary = useLibrary((s) => s.restoreSeedLibrary);
   const clearHistory = useWorkoutHistory((s) => s.clearHistory);
@@ -190,6 +199,34 @@ export function SettingsScreen() {
           </ListCard>
 
           {/* ---------------------------------------------------------- */}
+          {/* Above `Units`, not buried under the destructive block at the bottom:
+              the thing standing between a year of training and an uninstall is not
+              a footnote. */}
+          {onOpenBackup ? (
+            <>
+              <Kicker className="mx-lg mb-sm mt-xxl">Your data</Kicker>
+              <ListCard className="mx-lg">
+                <Pressable
+                  onPress={() => {
+                    tap();
+                    onOpenBackup();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back up and restore"
+                  className="min-h-[56px] flex-row items-center px-lg py-md"
+                >
+                  <View className="flex-1 pr-md">
+                    <Text className="text-body font-medium text-ink">Back up &amp; restore</Text>
+                    <Text className="mt-[2px] text-label text-ink-faint">
+                      Export everything to a JSON file, or read one back in
+                    </Text>
+                  </View>
+                  <Icon name="chevron-right" size={18} color={palette.greenBright} />
+                </Pressable>
+              </ListCard>
+            </>
+          ) : null}
+
           <Kicker className="mx-lg mb-sm mt-xxl">Units</Kicker>
           <View className="mx-lg">
             <Segmented

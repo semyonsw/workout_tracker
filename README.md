@@ -13,8 +13,9 @@ that repeats last session costs one tap.**
   overload nudges derived from real set history, **timed sets** (a get-ready
   count, then a countdown or an open hold — planks, dead hangs, boxing rounds),
   a **browsable muscle tree** (`push → chest → dips`) with add and delete per
-  group, a **History** tab holding every workout you have finished, and a
-  **Settings** tab where every duration the app counts is yours
+  group, a **History** tab holding every workout you have finished, a
+  **Settings** tab where every duration the app counts is yours, and
+  **export / import** of everything you own as one readable JSON file
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the stack rationale, data model,
 design system and overload rules.
@@ -63,11 +64,15 @@ Built on top of those, in the same system:
 | Out-of-app cue | with the app off screen the count-in is a pair of scheduled notifications — a tick 5 s out, the long tone at zero — carrying the app's own WAVs on their own channels, because a JS interval does not survive Doze or a swipe-away |
 | Pick your session | the split SUGGESTS today and every routine is one tap from starting, from the home screen or the ▶ on a `Routines` row. A rest day is not a locked door |
 | Build a routine | `+ Add routine` makes one and opens it on its name; add exercises from the library, reorder by long-press, Save. Backing out of one you never filled in removes it again |
-| New exercise | every number on the create screen is adjustable in place — tap `DEFAULT KG` or `TARGET REPS` for the same ± chips a set row gives you. Weight steps by ±1 and ±10, so 16 kg is two taps and every whole kilo is reachable. Those two numbers are where the movement STARTS: its first session is prefilled with them, and history takes over from the second |
+| New exercise | every number on the create screen is adjustable in place — tap `DEFAULT KG` or `TARGET REPS` for the same ± chips a set row gives you. Weight steps by ±0.5 and ±2 kg, the same two steps every weight control in the app uses. Those two numbers are where the movement STARTS: its first session is prefilled with them, and history takes over from the second |
 | Edit an exercise | tap it anywhere → `Edit` in the header → the same screen it was created on. Name, muscles, weight, target, load mode, timer, increment. The row is replaced in place, so a rename keeps every set ever logged against it |
+| Change the plan mid-set | `+ Add set` and `− Remove set` in every card, so four sets become three when the fourth isn't there — and on an exercise down to its last row, `− Remove exercise` says so. Long-press a card and slide to reorder: the order you planned is not the order the machines are free in |
+| Add an exercise mid-workout | `+ Add an exercise` at the bottom of the session opens the same library picker, and the same create screen underneath it — pick `push → neck`, add a movement that didn't exist a second ago, and it lands in the library AND at the end of this workout with one set. Neck work at the end of pull day is not a routine edit |
+| Fix the clock | `START THE CLOCK NOW` in the session header re-anchors a workout that was opened before the warm-up, or left running in a locker. The minutes go back to zero; every set you already logged stays exactly where it is |
+| Back up & restore | Settings → `Back up & restore` writes everything — exercises, routines, every finished workout with its set rows, and your settings — to a readable JSON file in a folder you pick, and reads one back. Importing states what is in the file and what is on the phone before it replaces anything |
 | History | every finished workout, newest first, grouped by month: date, duration, sets, volume, and each exercise in the shorthand the rest of the app uses. Its sets feed the next session's prefills and the overload nudges |
 | Muscle tree | the library opens `push → chest → dips`, with `+ Add exercise to chest` and a `−` delete on every row |
-| Settings | rest between sets and between exercises, get-ready length, how many seconds beep, the ± step, and switches for sound, vibration, screen-on and notifications |
+| Settings | rest between sets and between exercises, get-ready length, how many seconds beep, the ± step, switches for sound, vibration, screen-on and notifications — and the door to back up and restore |
 
 ## Layout
 

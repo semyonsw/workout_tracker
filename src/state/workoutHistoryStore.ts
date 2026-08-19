@@ -59,6 +59,17 @@ interface WorkoutHistoryState {
   saveSession: (session: DraftSession, endedAt?: Date) => CompletedWorkout | null;
   deleteWorkout: (id: ID) => void;
   clearHistory: () => void;
+  /**
+   * Replace the log from a restored backup, returning how many workouts actually
+   * survived validation — the honest number for the screen to report, which is not
+   * necessarily the number the file claimed.
+   *
+   * WHOLESALE, not merged. Merging two logs sounds generous and produces a history
+   * nobody can audit: the same session from two devices would appear twice unless
+   * every id matched, and rule 3 of this store says finishing twice is one workout.
+   * A restore is "make this phone look like that backup".
+   */
+  importWorkouts: (raw: unknown) => number;
 }
 
 export const useWorkoutHistory = create<WorkoutHistoryState>()(
@@ -82,6 +93,15 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()(
       deleteWorkout: (id) => set({ workouts: get().workouts.filter((w) => w.id !== id) }),
 
       clearHistory: () => set({ workouts: [] }),
+
+      importWorkouts: (raw) => {
+        // The same guard rehydration uses: a file off an SD card is exactly as
+        // trustworthy as a blob off disk, and one validator cannot disagree with
+        // itself. See `sanitizeWorkouts`.
+        const workouts = sanitizeWorkouts(raw, []);
+        set({ workouts });
+        return workouts.length;
+      },
     }),
     {
       name: 'workout-history',
@@ -90,14 +110,7 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()(
       partialize: (state) => ({ workouts: state.workouts }),
       merge: (persisted, current) => {
         const raw = (persisted ?? {}) as Partial<Pick<WorkoutHistoryState, 'workouts'>>;
-        const workouts = Array.isArray(raw.workouts)
-          ? raw.workouts
-              .map(sanitizeWorkout)
-              .filter((w): w is CompletedWorkout => w !== null)
-              .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-              .slice(0, MAX_WORKOUTS)
-          : current.workouts;
-        return { ...current, workouts };
+        return { ...current, workouts: sanitizeWorkouts(raw.workouts, current.workouts) };
       },
     },
   ),
@@ -106,6 +119,19 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()(
 /* ------------------------------------------------------------------ */
 /* Rehydration guards                                                  */
 /* ------------------------------------------------------------------ */
+
+/**
+ * A renderable, newest-first, capped log out of anything at all — a persisted blob
+ * or a backup file. `fallback` is what a MISSING array becomes.
+ */
+function sanitizeWorkouts(raw: unknown, fallback: CompletedWorkout[]): CompletedWorkout[] {
+  if (!Array.isArray(raw)) return fallback;
+  return raw
+    .map(sanitizeWorkout)
+    .filter((w): w is CompletedWorkout => w !== null)
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    .slice(0, MAX_WORKOUTS);
+}
 
 const COUNT_UNITS = new Set(['reps', 'seconds', 'meters', 'rounds']);
 const LOAD_MODES = new Set(['external', 'added_bodyweight', 'assisted', 'none']);

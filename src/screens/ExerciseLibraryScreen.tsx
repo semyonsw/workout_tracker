@@ -83,6 +83,12 @@ interface ExerciseLibraryScreenProps {
   onToggleExpanded: (key: string) => void;
   /** Absent when the library is a tab root rather than a pushed picker. */
   onBack?: () => void;
+  /**
+   * Header label. Defaults to `Library` as a tab root and `Add exercise` as a
+   * picker; a caller with a more specific destination says so ("Add to workout"),
+   * because what a tap will DO is the one thing a picker has to be clear about.
+   */
+  kicker?: string;
   onChangeQuery: (query: string) => void;
   onPick: (exerciseId: ID) => void;
   /** `muscle` pre-files the new exercise under the group it was created from. */
@@ -98,6 +104,7 @@ export function ExerciseLibraryScreen({
   expanded,
   onToggleExpanded,
   onBack,
+  kicker,
   onChangeQuery,
   onPick,
   onCreate,
@@ -110,7 +117,11 @@ export function ExerciseLibraryScreen({
     <View className="flex-1 bg-bg">
       {/* No hairline under the header: the search field below is its own surface,
           and two rules 16 apart read as a mistake. */}
-      <ScreenHeader kicker={onBack ? 'Add exercise' : 'Library'} onBack={onBack} bordered={false} />
+      <ScreenHeader
+        kicker={kicker ?? (onBack ? 'Add exercise' : 'Library')}
+        onBack={onBack}
+        bordered={false}
+      />
 
       <View className="mx-lg mb-md">
         <FieldWell

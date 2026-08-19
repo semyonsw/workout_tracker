@@ -25,7 +25,7 @@
  *   │ ╭ DEFAULT KG ±╮ ╭ TARGET REPS ±╮             │
  *   │ │     30 KG   │ │    12 REPS   │             │
  *   │ ╭──────────────────────────────────────────╮ │
- *   │ │ −10   −1     16 KG      +1    +10        │ │  ← the tapped well
+ *   │ │ −2    −0.5    16 KG     +0.5    +2        │ │  ← the tapped well
  *   │ │ DEFAULT KG                        Done   │ │
  *   │ LOAD MODE                                    │
  *   │ ╭ External │ Added │ Assisted ╮               │
@@ -66,9 +66,9 @@
  * the same kind of inline ± panel a set row does (`QuickAdjust`), one at a time,
  * directly under the pair. Same reason as in a session: the useful edit is "that
  * but heavier", the chips are thumb-sized, and no keyboard covers what you are
- * changing. Weight steps by ±1 and ±10 so every whole kilo is reachable: a machine
- * whose pin reads 16 is a fact, and rounding the starting weight to the exercise's
- * 2.5 kg progression step made that number impossible to enter.
+ * changing. Weight steps by ±0.5 and ±2 — the same two steps every weight control
+ * in the app uses (see `weightSteps`) — and nothing is snapped to the exercise's
+ * progression step, so a machine whose pin reads 16 can be entered as 16.
  *
  * `Rest` is the exception and is deliberately NOT editable here: rest lengths are
  * two global settings now (see `activeWorkoutStore.completeSet`), so a per-exercise
@@ -106,7 +106,7 @@ import {
   clusterOf,
   MUSCLE_CLUSTER,
 } from '../lib/muscles';
-import { formatClock, formatDuration } from '../lib/units';
+import { formatClock, formatDuration, weightSteps } from '../lib/units';
 import type { CountUnit, LoadMode, MuscleCluster, MuscleGroup, TimerMode } from '../types/models';
 
 const LOAD_MODES: readonly { value: LoadMode; label: string }[] = [
@@ -140,16 +140,16 @@ const PREPARE_CHOICES = [0, 3, 5, 10] as const;
 /**
  * The plate and pin steps that exist on real equipment, cycled by tapping the row.
  *
- * 1 and 2 are what many cable and machine stacks actually step by, 1.25 is a pair
- * of change plates, 2.5 the smallest dumbbell jump, 5 a pin stack, 10 a plate per
- * side on a bar. Nothing between them is loadable, which is exactly why this is a
- * cycle and not a keypad.
+ * 0.5 is the smallest disc that exists, 1 and 2 are what many cable and machine
+ * stacks actually step by, 1.25 is a pair of change plates, 2.5 the smallest
+ * dumbbell jump, 5 a pin stack, 10 a plate per side on a bar. Nothing between them
+ * is loadable, which is exactly why this is a cycle and not a keypad.
  *
  * This number is the PROGRESSION step — what the overload nudge is allowed to add,
  * and the ± on a set row mid-workout. It deliberately does not constrain the
  * starting weight below, which is a fact about a machine rather than a plan.
  */
-const INCREMENT_CHOICES = [1, 1.25, 2, 2.5, 5, 10] as const;
+const INCREMENT_CHOICES = [0.5, 1, 1.25, 2, 2.5, 5, 10] as const;
 
 interface CreateExerciseScreenProps {
   initial: ExerciseDraft;
@@ -451,7 +451,7 @@ export function CreateExerciseScreen({
  * The ± panel for one well.
  *
  *   ┌────────────────────────────────────────────┐
- *   │  −10   −2.5      30 KG     +2.5   +10      │
+ *   │  −2   −0.5       30 KG     +0.5    +2      │
  *   │  DEFAULT KG                        Done    │
  *   └────────────────────────────────────────────┘
  *
@@ -459,10 +459,10 @@ export function CreateExerciseScreen({
  * live value at Display size in the middle, same `Done` as the only way out and no
  * Cancel, because edits apply as they are made. Learning one teaches the other.
  *
- * FOUR chips, not two: a fine step and a coarse one. Setting up an exercise is a
- * coarse job ("this machine starts at 45, not 30") that still has to be able to land
- * on an exact number, so weight offers ±1 and ±10 — every whole kilo is reachable,
- * and 16 kg takes two taps from 30 rather than being impossible.
+ * FOUR chips, not two: a fine step and a coarse one. Weight offers the app-wide
+ * ±0.5 and ±2, so a starting weight is set with the same two gestures a set row is
+ * nudged by — the number you are typing in here is the number you will be adding to
+ * in the gym, and it would be strange for the two to disagree.
  */
 function WellStepper({
   well,
@@ -590,12 +590,12 @@ function StepChip({
 /**
  * The two step sizes for a field, and the floor it cannot go below.
  *
- * WEIGHT STEPS BY 1 AND 10, always. It used to step by the exercise's increment,
- * which sounds tidier and makes whole ranges of real weights unreachable: with a
- * 2.5 increment you can produce 15 and 17.5 but never 16, and 16 is what the pin on
- * a rope machine says. ±1 reaches every whole kilo and ±10 crosses the range in a
- * couple of taps; a half-kilo starting value stays on its own grid because nothing
- * is rounded (see `bump`).
+ * WEIGHT STEPS BY 0.5 AND 2, always — the app's two weight steps, shared with the
+ * set row's `QuickAdjust`. Never by the exercise's own increment, which sounds
+ * tidier and makes whole ranges of real weights unreachable: with a 2.5 increment
+ * you can produce 15 and 17.5 but never 16, and 16 is what the pin on a rope
+ * machine says. Nothing is rounded either (see `bump`), so a half-kilo value stays
+ * on its own grid.
  *
  * The floors matter: 0 kg is a real answer (bodyweight plus nothing yet), 0 reps
  * and a 0-second hold are not.
@@ -604,7 +604,10 @@ function stepsFor(
   field: WellSpec['field'],
   draft: ExerciseDraft,
 ): { small: number; large: number; min: number; isTime: boolean } {
-  if (field === 'weight') return { small: 1, large: 10, min: 0, isTime: false };
+  if (field === 'weight') {
+    const { fine, coarse } = weightSteps('metric');
+    return { small: fine, large: coarse, min: 0, isTime: false };
+  }
   if (field === 'duration') return { small: 15, large: 60, min: 5, isTime: true };
 
   switch (draft.countUnit) {

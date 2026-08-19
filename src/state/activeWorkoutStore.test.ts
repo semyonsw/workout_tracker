@@ -7,11 +7,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   NO_REST,
   isResting,
+  selectEntry,
   selectProgress,
   useActiveWorkout,
   useSessionProgress,
 } from './activeWorkoutStore';
 import { useSettings } from './settingsStore';
+import { buildDraftEntry } from '../lib/draft';
+import { DEFAULT_OVERLOAD_POLICY } from '../lib/progressiveOverload';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
 import type { Exercise, ID } from '../types/models';
@@ -651,5 +654,250 @@ describe('rehydration', () => {
     expect(typeof s.startSession).toBe('function');
     expect(typeof s.pauseRest).toBe('function');
     expect(() => s.skipRest()).not.toThrow();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The session's shape is decided in the gym.
+ *
+ * Sets get added and dropped, exercises get appended and abandoned, and the order
+ * follows whichever machine is free. Everything below is a rule about not leaving
+ * wreckage behind when that happens: a cursor pointing at an exercise that is gone
+ * renders no expanded card at all, and a set timer counting into a removed row can
+ * never be committed.
+ */
+describe('editing the session while it runs', () => {
+  const extraEntry = (name = 'Neck curl') =>
+    buildDraftEntry({
+      exercise: { ...seedExercises[0], id: `ex_extra_${name}`, name },
+      history: [],
+      policy: DEFAULT_OVERLOAD_POLICY,
+      unitSystem: 'metric',
+      restSeconds: 120,
+      transitionRestSeconds: 150,
+      targetSets: 1,
+      targetRepsMax: 12,
+      plannedSetCount: 1,
+    });
+
+  it('appends an exercise at the bottom and makes it the active card', () => {
+    const session = startRoutine();
+    const entry = extraEntry();
+
+    useActiveWorkout.getState().addEntry(entry);
+    const after = useActiveWorkout.getState();
+
+    expect(after.session?.entries.at(-1)?.localId).toBe(entry.localId);
+    expect(after.session?.entries).toHaveLength(session.entries.length + 1);
+    // It is the thing the user is about to do; they just said so.
+    expect(after.activeEntryId).toBe(entry.localId);
+  });
+
+  it('ignores an append with no session to append to', () => {
+    useActiveWorkout.getState().discardSession();
+    expect(() => useActiveWorkout.getState().addEntry(extraEntry())).not.toThrow();
+    expect(useActiveWorkout.getState().session).toBeNull();
+  });
+
+  /* --- removing sets --------------------------------------------------- */
+
+  it('removeLastSet drops the BOTTOM row — four sets back to three', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+    const before = entry.sets.map((s) => s.localId);
+
+    useActiveWorkout.getState().removeLastSet(entry.localId);
+    const after = selectEntry(entry.localId)(useActiveWorkout.getState());
+
+    expect(after?.sets.map((s) => s.localId)).toEqual(before.slice(0, -1));
+  });
+
+  it("removing the last remaining set removes the exercise", () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    // Down to one row...
+    while ((selectEntry(entry.localId)(useActiveWorkout.getState())?.sets.length ?? 0) > 1) {
+      useActiveWorkout.getState().removeLastSet(entry.localId);
+    }
+    expect(selectEntry(entry.localId)(useActiveWorkout.getState())?.sets).toHaveLength(1);
+
+    // ...and one more press takes the exercise, because an entry with no rows is a
+    // header with nothing to tap and no `Add set` that reaches it.
+    useActiveWorkout.getState().removeLastSet(entry.localId);
+
+    expect(selectEntry(entry.localId)(useActiveWorkout.getState())).toBeNull();
+    expect(useActiveWorkout.getState().session?.entries).toHaveLength(session.entries.length - 1);
+  });
+
+  it('removeSet on a single-set exercise removes it too — same rule, either path', () => {
+    const session = startRoutine();
+    const entry = extraEntry();
+    useActiveWorkout.getState().addEntry(entry);
+
+    useActiveWorkout.getState().removeSet(entry.localId, entry.sets[0].localId);
+
+    expect(useActiveWorkout.getState().session?.entries).toHaveLength(session.entries.length);
+    expect(selectEntry(entry.localId)(useActiveWorkout.getState())).toBeNull();
+  });
+
+  it('ignores a set that is not in the entry', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().removeSet(entry.localId, 'set_not_here');
+
+    expect(selectEntry(entry.localId)(useActiveWorkout.getState())?.sets).toHaveLength(
+      entry.sets.length,
+    );
+  });
+
+  /* --- what has to move with a removed exercise ------------------------ */
+
+  it('hands the cursor to the exercise below when the active one goes', () => {
+    const session = startRoutine();
+    const [first, second] = session.entries;
+    useActiveWorkout.getState().setActiveEntry(first.localId);
+
+    useActiveWorkout.getState().removeEntry(first.localId);
+
+    expect(useActiveWorkout.getState().activeEntryId).toBe(second.localId);
+  });
+
+  it('falls back to the exercise above when the last one goes', () => {
+    const session = startRoutine();
+    const last = session.entries.at(-1)!;
+    const above = session.entries.at(-2)!;
+    useActiveWorkout.getState().setActiveEntry(last.localId);
+
+    useActiveWorkout.getState().removeEntry(last.localId);
+
+    expect(useActiveWorkout.getState().activeEntryId).toBe(above.localId);
+  });
+
+  it('leaves the cursor alone when some other exercise goes', () => {
+    const session = startRoutine();
+    const [first, second] = session.entries;
+    useActiveWorkout.getState().setActiveEntry(first.localId);
+
+    useActiveWorkout.getState().removeEntry(second.localId);
+
+    expect(useActiveWorkout.getState().activeEntryId).toBe(first.localId);
+  });
+
+  it('kills a set timer that was counting into the removed exercise', () => {
+    const session = startRoutine();
+    const timed = session.entries.find((e) => e.exercise.timerMode === 'countdown');
+    if (!timed) throw new Error('no timed exercise in the fixture routine');
+
+    useActiveWorkout.getState().startSetTimer(timed.localId, timed.sets[0].localId);
+    expect(useActiveWorkout.getState().setTimer).not.toBeNull();
+
+    useActiveWorkout.getState().removeEntry(timed.localId);
+
+    // A clock with nothing left to log into can never be committed.
+    expect(useActiveWorkout.getState().setTimer).toBeNull();
+  });
+
+  it('ends a rest that the removed exercise started', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
+
+    useActiveWorkout.getState().removeEntry(entry.localId);
+
+    expect(useActiveWorkout.getState().rest).toEqual(NO_REST);
+  });
+
+  it('leaves a rest that some other exercise started', () => {
+    const session = startRoutine();
+    const [first, second] = session.entries;
+    useActiveWorkout.getState().completeSet(first.localId, first.sets[0].localId);
+
+    useActiveWorkout.getState().removeEntry(second.localId);
+
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
+  });
+
+  /* --- reordering ------------------------------------------------------ */
+
+  it('moves an exercise to a new position and closes the gap behind it', () => {
+    const session = startRoutine();
+    const ids = session.entries.map((e) => e.localId);
+
+    useActiveWorkout.getState().moveEntry(ids[0], 2);
+
+    // `toIndex` counts the list WITHOUT the moved row, which is what a drop
+    // position on screen actually is.
+    expect(useActiveWorkout.getState().session?.entries.map((e) => e.localId)).toEqual([
+      ids[1],
+      ids[2],
+      ids[0],
+      ...ids.slice(3),
+    ]);
+  });
+
+  it('dropping a row back where it came from changes nothing', () => {
+    const session = startRoutine();
+    const ids = session.entries.map((e) => e.localId);
+
+    useActiveWorkout.getState().moveEntry(ids[1], 1);
+
+    expect(useActiveWorkout.getState().session?.entries.map((e) => e.localId)).toEqual(ids);
+  });
+
+  it('clamps a drop index past either end rather than losing the row', () => {
+    const session = startRoutine();
+    const ids = session.entries.map((e) => e.localId);
+
+    useActiveWorkout.getState().moveEntry(ids[0], 99);
+    expect(useActiveWorkout.getState().session?.entries.at(-1)?.localId).toBe(ids[0]);
+
+    useActiveWorkout.getState().moveEntry(ids[0], -5);
+    expect(useActiveWorkout.getState().session?.entries[0].localId).toBe(ids[0]);
+    expect(useActiveWorkout.getState().session?.entries).toHaveLength(ids.length);
+  });
+
+  it('ignores a move of something that is not in the session', () => {
+    const session = startRoutine();
+    const ids = session.entries.map((e) => e.localId);
+
+    useActiveWorkout.getState().moveEntry('entry_ghost', 0);
+
+    expect(useActiveWorkout.getState().session?.entries.map((e) => e.localId)).toEqual(ids);
+  });
+
+  /* --- the clock ------------------------------------------------------- */
+
+  it('restartClock re-anchors the session to now, keeping every logged set', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    // A session opened before the warm-up, or left running in a locker.
+    useActiveWorkout.setState({
+      session: { ...useActiveWorkout.getState().session!, startedAt: '2026-08-19T06:00:00.000Z' },
+    });
+
+    useActiveWorkout.getState().restartClock();
+    const after = useActiveWorkout.getState();
+
+    const elapsedMs = Date.now() - new Date(after.session!.startedAt).getTime();
+    expect(elapsedMs).toBeLessThan(2_000);
+    expect(elapsedMs).toBeGreaterThanOrEqual(0);
+    // The ✓ stays: those sets were done, and a reset that deletes work is not a
+    // reset, it is a bug with a friendly label.
+    expect(selectEntry(entry.localId)(after)?.sets[0].isCompleted).toBe(true);
+    // The rest that was running was timing a gap that is no longer in the session.
+    expect(after.rest).toEqual(NO_REST);
+  });
+
+  it('restartClock on no session does nothing at all', () => {
+    useActiveWorkout.getState().discardSession();
+    expect(() => useActiveWorkout.getState().restartClock()).not.toThrow();
+    expect(useActiveWorkout.getState().session).toBeNull();
   });
 });

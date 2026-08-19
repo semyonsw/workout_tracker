@@ -9,6 +9,33 @@ import type { CountUnit, LoadMode, UnitSystem } from '../types/models';
 
 export const KG_PER_LB = 0.45359237;
 
+/**
+ * THE ± STEPS ON EVERY WEIGHT CONTROL IN THE APP: one fine, one coarse.
+ *
+ * Deliberately NOT the exercise's own `incrementKg`. The two numbers answer
+ * different questions and used to be the same one: an increment is what the
+ * overload engine is allowed to ADD to a working weight (a plate, a pin), while
+ * these are what a thumb nudges a set row by mid-workout — and mid-workout the
+ * useful moves are "half a kilo more" (the smallest disc on a dumbbell, the
+ * change plate on a bar) and "one step up" (2 kg). Deriving the chips from a
+ * 2.5 kg increment made every weight ending in .5 unreachable on a machine whose
+ * pin reads 16, and offered ±5 where nobody wanted it.
+ *
+ * Imperial gets 1 and 5 lb for the same reason `resolveIncrementKg` does: 0.5 kg
+ * is 1.1 lb, which is not a number on any plate.
+ */
+export const WEIGHT_STEP_FINE_KG = 0.5;
+export const WEIGHT_STEP_COARSE_KG = 2;
+export const WEIGHT_STEP_FINE_LB = 1;
+export const WEIGHT_STEP_COARSE_LB = 5;
+
+/** The two weight steps, in the user's OWN units — kg is the storage unit only. */
+export function weightSteps(unitSystem: UnitSystem): { fine: number; coarse: number } {
+  return unitSystem === 'imperial'
+    ? { fine: WEIGHT_STEP_FINE_LB, coarse: WEIGHT_STEP_COARSE_LB }
+    : { fine: WEIGHT_STEP_FINE_KG, coarse: WEIGHT_STEP_COARSE_KG };
+}
+
 /** Smallest jump the user can actually make, per unit system. */
 export const DEFAULT_INCREMENT_KG = 2.5;
 export const DEFAULT_INCREMENT_LB = 5;

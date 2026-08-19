@@ -167,6 +167,25 @@ export function formatTarget(entry: {
 /* Build                                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The per-set target a brand-new entry starts at, in the exercise's OWN count unit.
+ *
+ * The exercise's own number wins where it has one — that is what the create screen
+ * was told this movement is ("target reps 12", "2:00 plank"), and inventing a
+ * different one is the create screen quietly not meaning it. The fallbacks are per
+ * unit rather than a shared 10, because `targetRepsMax` holds SECONDS for
+ * time-counted work: one constant would plan a ten-second plank and a ten-second
+ * boxing round, and on a timed exercise that number is what the clock counts down.
+ */
+export function defaultTargetCount(exercise: Pick<Exercise, 'countUnit' | 'defaultCount'>): number {
+  const own = finiteOrNull(exercise.defaultCount);
+  if (own != null) return Math.round(own);
+  if (exercise.countUnit === 'rounds') return 180;
+  if (exercise.countUnit === 'seconds') return 60;
+  if (exercise.countUnit === 'meters') return 500;
+  return 10;
+}
+
 export interface BuildDraftParams {
   routine: Routine;
   /** Exercise library rows keyed by id, for the routine's items. */
@@ -189,6 +208,100 @@ export interface BuildDraftParams {
   now?: Date;
 }
 
+/**
+ * One exercise's worth of a draft session: the prefilled rows, the overload
+ * verdict, and the two lines of last-session context.
+ *
+ * Extracted from `buildDraftSession` when exercises became addable MID-WORKOUT
+ * ("start pull day, then decide to do neck"). An entry appended to a running
+ * session has to be built exactly like one the routine planned — same prefill
+ * rules, same verdict, same summaries — and the only honest way to guarantee that
+ * is for both paths to call the same function. The one difference is
+ * `plannedSetCount`: a routine plans its target, an exercise added mid-workout
+ * starts at one row and grows with `Add set`.
+ */
+export interface BuildEntryParams {
+  exercise: Exercise;
+  /** Completed history for THIS exercise. */
+  history: SetHistory[];
+  policy: OverloadPolicy;
+  unitSystem: UnitSystem;
+  restSeconds: number;
+  transitionRestSeconds: number;
+  /** What the header states — "4 × 8–10". */
+  targetSets: number;
+  targetRepsMin?: number;
+  targetRepsMax?: number;
+  /**
+   * How many rows to actually build. Defaults to the target, widened to whatever
+   * last session did — five sets last time means five prefilled rows this time.
+   */
+  plannedSetCount?: number;
+  now?: Date;
+}
+
+export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
+  const {
+    exercise,
+    history,
+    policy,
+    unitSystem,
+    restSeconds,
+    transitionRestSeconds,
+    targetSets,
+    targetRepsMin,
+    targetRepsMax,
+    now = new Date(),
+  } = params;
+
+  const previous = lastSessionSets(history, exercise.id);
+  const overload = evaluateOverload({ exercise, history, policy, unitSystem, now });
+
+  /*
+   * Prefill strategy, in priority order:
+   *  1. the same set index from last session (most accurate),
+   *  2. the last set that DID exist last session (for added sets),
+   *  3. the EXERCISE's own starting numbers — what the create screen was told
+   *     this movement starts at,
+   *  4. the routine's target, and a bare 10 as the last resort.
+   *
+   * 3 is what makes "default kg 30" on the create screen mean something. Before
+   * it, a movement with no history opened its first session with an empty weight
+   * cell — so the first set of anything new was always typed from scratch, which
+   * is the one case the one-tap promise cannot cover any other way.
+   */
+  const startingWeightKg = finiteOrNull(exercise.defaultWeightKg);
+  const startingCount = finiteOrNull(exercise.defaultCount);
+  const plannedSets = Math.max(1, params.plannedSetCount ?? Math.max(targetSets, previous.length));
+  const sets: DraftSet[] = Array.from({ length: plannedSets }, (_, i) => {
+    const reference = previous[i] ?? previous[previous.length - 1];
+    return {
+      localId: uid('set'),
+      weightKg: exercise.requiresWeight ? (reference?.weightKg ?? startingWeightKg) : null,
+      count: reference?.count ?? targetRepsMax ?? targetRepsMin ?? startingCount ?? 10,
+      isWarmup: false,
+      isCompleted: false,
+      completedAt: null,
+      isPrefilled: true,
+    };
+  });
+
+  return {
+    localId: uid('entry'),
+    exercise,
+    targetSets,
+    targetRepsMin,
+    targetRepsMax,
+    restSeconds,
+    transitionRestSeconds,
+    sets,
+    overload,
+    overloadAccepted: false,
+    lastSessionSummary: summarizeLastSession(previous, exercise),
+    lastSessionShort: summarizeLastSession(previous, exercise, 'short'),
+  };
+}
+
 export function buildDraftSession(params: BuildDraftParams): DraftSession {
   const {
     routine,
@@ -207,50 +320,11 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
       const exercise = exercisesById[item.exerciseId];
       if (!exercise) return null;
 
-      const history = historyByExerciseId[exercise.id] ?? [];
-      const previous = lastSessionSets(history, exercise.id);
-      const overload = evaluateOverload({ exercise, history, policy, unitSystem, now });
-
-      /*
-       * Prefill strategy, in priority order:
-       *  1. the same set index from last session (most accurate),
-       *  2. the last set that DID exist last session (for added sets),
-       *  3. the EXERCISE's own starting numbers — what the create screen was told
-       *     this movement starts at,
-       *  4. the routine's target, and a bare 10 as the last resort.
-       *
-       * 3 is what makes "default kg 30" on the create screen mean something. Before
-       * it, a movement with no history opened its first session with an empty weight
-       * cell — so the first set of anything new was always typed from scratch, which
-       * is the one case the one-tap promise cannot cover any other way.
-       */
-      const startingWeightKg = finiteOrNull(exercise.defaultWeightKg);
-      const startingCount = finiteOrNull(exercise.defaultCount);
-      const plannedSets = Math.max(item.targetSets, previous.length);
-      const sets: DraftSet[] = Array.from({ length: plannedSets }, (_, i) => {
-        const reference = previous[i] ?? previous[previous.length - 1];
-        return {
-          localId: uid('set'),
-          weightKg: exercise.requiresWeight ? (reference?.weightKg ?? startingWeightKg) : null,
-          count:
-            reference?.count ??
-            item.targetRepsMax ??
-            item.targetRepsMin ??
-            startingCount ??
-            10,
-          isWarmup: false,
-          isCompleted: false,
-          completedAt: null,
-          isPrefilled: true,
-        };
-      });
-
-      const entry: DraftEntry = {
-        localId: uid('entry'),
+      return buildDraftEntry({
         exercise,
-        targetSets: item.targetSets,
-        targetRepsMin: item.targetRepsMin,
-        targetRepsMax: item.targetRepsMax,
+        history: historyByExerciseId[exercise.id] ?? [],
+        policy,
+        unitSystem,
         /*
          * REST COMES FROM SETTINGS, NOT FROM THE ROUTINE.
          *
@@ -269,13 +343,11 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
          */
         restSeconds: defaultRestSeconds,
         transitionRestSeconds: defaultTransitionRestSeconds,
-        sets,
-        overload,
-        overloadAccepted: false,
-        lastSessionSummary: summarizeLastSession(previous, exercise),
-        lastSessionShort: summarizeLastSession(previous, exercise, 'short'),
-      };
-      return entry;
+        targetSets: item.targetSets,
+        targetRepsMin: item.targetRepsMin,
+        targetRepsMax: item.targetRepsMax,
+        now,
+      });
     })
     .filter((e): e is DraftEntry => e !== null);
 

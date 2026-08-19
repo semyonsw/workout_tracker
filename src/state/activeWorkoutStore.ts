@@ -25,7 +25,15 @@
  *     `commitSetTimer` routes through it rather than reimplementing it, so a
  *     plank logged by the clock and a set logged by the ✓ take the same path.
  *
- *  4. NOTHING REHYDRATES UNCHECKED. `sanitizeState` runs on everything coming
+ *  4. THE SESSION'S SHAPE IS EDITABLE, NOT FIXED AT START. Exercises can be
+ *     appended (`addEntry`), dropped (`removeEntry`), reordered (`moveEntry`), and
+ *     their set counts grown and shrunk — because a real session is decided in the
+ *     gym, not in the routine editor. Two rules keep that from leaving wreckage:
+ *     removing the last set of an exercise removes the exercise, and anything that
+ *     drops an entry also moves the cursor, the set timer and the rest that entry
+ *     owned.
+ *
+ *  5. NOTHING REHYDRATES UNCHECKED. `sanitizeState` runs on everything coming
  *     back from disk. A half-written blob, a session from an older build, or a
  *     `NaN` that reached a deadline used to be a crash on the logging screen and
  *     — because the session is persisted — a crash that repeated on every launch.
@@ -87,12 +95,41 @@ interface ActiveWorkoutState {
   /* --- navigation --- */
   setActiveEntry: (entryId: ID) => void;
 
+  /* --- editing the session's shape --- */
+  /**
+   * Append an exercise to the session in flight — the neck work you decided on
+   * halfway through pull day. The ENTRY is built by the caller (`buildDraftEntry`),
+   * because prefills and the overload verdict need the history and the policy, and
+   * neither belongs in this store.
+   */
+  addEntry: (entry: DraftEntry) => void;
+  /** Drop an exercise from the session. Nothing logged against it is kept. */
+  removeEntry: (entryId: ID) => void;
+  /** Reorder: put `entryId` at `toIndex`, closing the gap it left behind. */
+  moveEntry: (entryId: ID, toIndex: number) => void;
+  /**
+   * Re-anchor the session clock to now.
+   *
+   * The header reads "42 min" off `startedAt`, and so does every set's
+   * `performedAt` — so a session started by accident, or left open while the phone
+   * was in a locker, logs a workout that claims to have taken hours. This is the
+   * fix, and it is deliberately the only thing in the app that edits `startedAt`.
+   */
+  restartClock: () => void;
+
   /* --- set editing --- */
   completeSet: (entryId: ID, setId: ID) => void;
   uncompleteSet: (entryId: ID, setId: ID) => void;
   patchSet: (entryId: ID, setId: ID, patch: Partial<DraftSet>) => void;
   addSet: (entryId: ID) => void;
+  /**
+   * Remove one set. THE LAST SET OF AN EXERCISE TAKES THE EXERCISE WITH IT: an
+   * entry with no rows is a header with nothing under it and no way back to a
+   * row, so "remove the only set" can only mean "I'm not doing this".
+   */
   removeSet: (entryId: ID, setId: ID) => void;
+  /** Drop the bottom row — the other half of `addSet`. Four sets back to three. */
+  removeLastSet: (entryId: ID) => void;
   /** Applies the overload suggestion to every not-yet-completed set. */
   acceptOverload: (entryId: ID) => void;
   dismissOverload: (entryId: ID) => void;
@@ -163,6 +200,90 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
       },
 
       setActiveEntry: (entryId) => set({ activeEntryId: entryId }),
+
+      /* ---------------------------------------------------------- */
+
+      /**
+       * The new exercise lands at the BOTTOM and becomes the active card — it is
+       * the thing the user is about to do, and they just told the app so. The
+       * screen's auto-scroll follows `activeEntryId`, so it also comes into view.
+       */
+      addEntry: (entry) => {
+        const { session } = get();
+        if (!session) return;
+        set({
+          session: { ...session, entries: [...session.entries, entry] },
+          activeEntryId: entry.localId,
+        });
+      },
+
+      /**
+       * Drop an exercise from the session.
+       *
+       * Three things have to move with it, and all three used to be reachable
+       * bugs: the active card (a cursor pointing at an entry that is gone renders
+       * NO expanded card at all), a set timer counting into one of its rows, and a
+       * rest that row started. The neighbour below inherits the cursor, because
+       * that is where the user is going next.
+       */
+      removeEntry: (entryId) => {
+        const { session, setTimer, rest, activeEntryId } = get();
+        if (!session) return;
+
+        const index = session.entries.findIndex((e) => e.localId === entryId);
+        if (index === -1) return;
+
+        const removed = session.entries[index];
+        const entries = session.entries.filter((e) => e.localId !== entryId);
+        const removedSetIds = new Set(removed.sets.map((s) => s.localId));
+
+        set({
+          session: { ...session, entries },
+          activeEntryId:
+            activeEntryId === entryId
+              ? (entries[index]?.localId ?? entries[index - 1]?.localId ?? null)
+              : activeEntryId,
+          setTimer: setTimer?.entryId === entryId ? null : setTimer,
+          rest: rest.originSetId && removedSetIds.has(rest.originSetId) ? NO_REST : rest,
+        });
+      },
+
+      /**
+       * Reorder. `toIndex` is an index into the list WITHOUT the moved entry, which
+       * is what a drop position on screen actually is — so no off-by-one correction
+       * is needed and dropping a row back where it came from is a no-op.
+       */
+      moveEntry: (entryId, toIndex) => {
+        const { session } = get();
+        if (!session) return;
+
+        const from = session.entries.findIndex((e) => e.localId === entryId);
+        if (from === -1) return;
+
+        const without = session.entries.filter((e) => e.localId !== entryId);
+        const target = Math.min(Math.max(0, Math.round(toIndex)), without.length);
+        set({
+          session: {
+            ...session,
+            entries: [...without.slice(0, target), session.entries[from], ...without.slice(target)],
+          },
+        });
+      },
+
+      /**
+       * "I'm starting now."
+       *
+       * Only the START moves. Sets already logged keep their ✓ — they were done,
+       * and the alternative (clearing them) is a reset button that silently deletes
+       * work. A rest running from before the re-anchor is dropped, because it was
+       * timing a gap that is no longer part of this session.
+       */
+      restartClock: () =>
+        set((state) =>
+          state.session
+            ? { session: { ...state.session, startedAt: new Date().toISOString() }, rest: NO_REST }
+            : state,
+        ),
 
       /* ---------------------------------------------------------- */
 
@@ -292,15 +413,39 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
       removeSet: (entryId, setId) => {
         const { session, setTimer } = get();
         if (!session) return;
+
+        const entry = session.entries.find((e) => e.localId === entryId);
+        if (!entry || !entry.sets.some((s) => s.localId === setId)) return;
+
+        /*
+         * The last row takes the exercise with it. An entry with zero sets is a
+         * name, a target line and nothing to tap — and no `Add set` reaches it,
+         * because the footer belongs to the expanded card and the expanded card is
+         * a list of rows. So the only sensible reading of "remove the only set" is
+         * "take this off my workout", and that is what happens.
+         */
+        if (entry.sets.length === 1) {
+          get().removeEntry(entryId);
+          return;
+        }
+
         set({
-          session: mapEntry(session, entryId, (entry) => ({
-            ...entry,
-            sets: entry.sets.filter((s) => s.localId !== setId),
+          session: mapEntry(session, entryId, (e) => ({
+            ...e,
+            sets: e.sets.filter((s) => s.localId !== setId),
           })),
           // A timer with nothing left to log into is a timer that can't be
           // committed. Drop it rather than leaving an orphan running.
           setTimer: setTimer?.setId === setId ? null : setTimer,
         });
+      },
+
+      removeLastSet: (entryId) => {
+        const { session } = get();
+        const entry = session?.entries.find((e) => e.localId === entryId);
+        const last = entry?.sets[entry.sets.length - 1];
+        if (!last) return;
+        get().removeSet(entryId, last.localId);
       },
 
       /* ---------------------------------------------------------- */

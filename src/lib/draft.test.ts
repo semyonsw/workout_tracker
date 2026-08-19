@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDraftSession } from './draft';
+import { buildDraftEntry, buildDraftSession, defaultTargetCount } from './draft';
 import { DEFAULT_OVERLOAD_POLICY } from './progressiveOverload';
 import type { Exercise, Routine, SetHistory } from '../types/models';
 
@@ -141,5 +141,83 @@ describe("the routine item's target still leads", () => {
     // The routine is a plan for THIS session; the exercise default is where a
     // movement starts in general.
     expect(build(machine, [], routine).entries[0].sets[0].count).toBe(6);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * One exercise, appended to a session that is already running — "pull day, plus
+ * some neck at the end". The rows have to be built by the same function the routine
+ * path uses, or an exercise added mid-workout would prefill differently from the
+ * same exercise planned in advance.
+ */
+describe('an exercise added mid-workout', () => {
+  const entryFor = (history: SetHistory[] = [], plannedSetCount = 1) =>
+    buildDraftEntry({
+      exercise: machine,
+      history,
+      policy: DEFAULT_OVERLOAD_POLICY,
+      unitSystem: 'metric',
+      restSeconds: 120,
+      transitionRestSeconds: 150,
+      targetSets: 1,
+      targetRepsMax: defaultTargetCount(machine),
+      plannedSetCount,
+      now: new Date('2026-08-17T17:00:00.000Z'),
+    });
+
+  it('starts at exactly one set, whatever last session did', () => {
+    // Four sets last time; the user is deciding set by set today, and `Add set` is
+    // one tap. Planning four rows for an exercise nobody planned is a guess.
+    const entry = entryFor([loggedSet(), loggedSet({ id: 'sh2', setIndex: 1 })]);
+
+    expect(entry.sets).toHaveLength(1);
+  });
+
+  it('still prefills that set from history — the one-tap promise holds', () => {
+    const entry = entryFor([loggedSet()]);
+
+    expect(entry.sets[0].weightKg).toBe(45);
+    expect(entry.sets[0].count).toBe(8);
+    expect(entry.lastSessionSummary).toBeTruthy();
+  });
+
+  it('falls back to the exercise\'s own starting numbers with no history', () => {
+    const entry = entryFor();
+
+    expect(entry.sets[0].weightKg).toBe(30);
+    expect(entry.sets[0].count).toBe(12);
+  });
+
+  it('carries a real overload verdict rather than an empty one', () => {
+    const entry = entryFor([loggedSet()]);
+
+    expect(entry.overload).toBeDefined();
+    expect(entry.overloadAccepted).toBe(false);
+  });
+
+  it('never builds an entry with no rows at all', () => {
+    // A zero would render a header with nothing under it and no way back to a row.
+    expect(entryFor([], 0).sets).toHaveLength(1);
+  });
+});
+
+describe('defaultTargetCount', () => {
+  it("uses the exercise's own target where it has one", () => {
+    expect(defaultTargetCount(machine)).toBe(12);
+  });
+
+  it('falls back per unit, because a target in seconds is not a rep count', () => {
+    // One shared constant would plan a ten-second plank and a ten-second round.
+    expect(defaultTargetCount({ countUnit: 'reps', defaultCount: undefined })).toBe(10);
+    expect(defaultTargetCount({ countUnit: 'seconds', defaultCount: undefined })).toBe(60);
+    expect(defaultTargetCount({ countUnit: 'rounds', defaultCount: undefined })).toBe(180);
+    expect(defaultTargetCount({ countUnit: 'meters', defaultCount: undefined })).toBe(500);
+  });
+
+  it('treats a NaN that survived a JSON round-trip as not set', () => {
+    expect(defaultTargetCount({ countUnit: 'reps', defaultCount: Number.NaN })).toBe(10);
+    expect(defaultTargetCount({ countUnit: 'reps', defaultCount: 0 })).toBe(10);
   });
 });

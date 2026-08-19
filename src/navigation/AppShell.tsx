@@ -3,7 +3,7 @@
  *
  *   tab:  Today | History | Routines | Library | Settings   ← the roots
  *   stack: session · routineEditor · addExercise · createExercise · editExercise
- *          · exerciseHistory
+ *          · exerciseHistory · backup
  *
  * Why not a router library: the app has five roots and five pushable screens, none
  * of them deep-linked, none of them needing URL state. `expo-router` would add a
@@ -38,7 +38,9 @@ import { HomeScreen, type RoutineChoice, type TodayPlan } from '../screens/HomeS
 import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { BackupScreen } from '../screens/BackupScreen';
 import { historyByExerciseId, recentlyUsedExerciseIds } from '../lib/completedWorkout';
+import { buildDraftEntry, defaultTargetCount } from '../lib/draft';
 import {
   applyDraftToExercise,
   draftToExercise,
@@ -68,10 +70,27 @@ type Route =
        */
       isNew?: boolean;
     }
-  | { name: 'addExercise'; routineId: ID | null }
-  | { name: 'createExercise'; draft: ExerciseDraft }
+  | {
+      name: 'addExercise';
+      routineId: ID | null;
+      /**
+       * Where the picked exercise goes. `session` appends it to the WORKOUT IN
+       * FLIGHT with one set — the neck work decided on halfway through pull day —
+       * rather than editing any routine. Same picker, same create flow underneath;
+       * only the destination differs, which is why this is a field and not a
+       * second screen.
+       */
+      target?: 'routine' | 'session';
+    }
+  | {
+      name: 'createExercise';
+      draft: ExerciseDraft;
+      /** Created FROM the session picker: add it to the library, then to the workout. */
+      addToSession?: boolean;
+    }
   | { name: 'editExercise'; exerciseId: ID }
-  | { name: 'exerciseHistory'; exerciseId: ID };
+  | { name: 'exerciseHistory'; exerciseId: ID }
+  | { name: 'backup' };
 
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
@@ -130,6 +149,22 @@ export function AppShell() {
   const top = stack[stack.length - 1] ?? null;
   const push = useCallback((route: Route) => setStack((s) => [...s, route]), []);
   const pop = useCallback(() => setStack((s) => s.slice(0, -1)), []);
+  /**
+   * Back to the logging screen, however many screens deep the detour went.
+   *
+   * Adding an exercise mid-workout can be one screen (pick it) or two (pick a
+   * muscle group, create it), and both end the same way: the user is holding a
+   * barbell and wants the set rows back. Popping a fixed number of screens would
+   * be right for exactly one of the two paths.
+   */
+  const popToSession = useCallback(
+    () =>
+      setStack((s) => {
+        const index = s.findIndex((route) => route.name === 'session');
+        return index === -1 ? [] : s.slice(0, index + 1);
+      }),
+    [],
+  );
   /** Filled in below, once the editor's exit rule exists. See `leaveTop`. */
   const leaveRoutineEditor = useRef<(route: { routineId: ID; isNew?: boolean }) => void>(pop);
 
@@ -380,18 +415,64 @@ export function AppShell() {
    * the user is dropped back on the library rather than hidden behind a chevron
    * they have to remember to tap.
    */
-  const handleCreate = useCallback(
-    (name: string, muscle?: MuscleGroup) => {
-      if (muscle) {
-        const cluster = MUSCLE_CLUSTER[muscle];
-        setExpanded((current) => new Set(current).add(muscleKey(muscle)).add(clusterKey(cluster)));
-      }
-      push({
-        name: 'createExercise',
-        draft: emptyExerciseDraft(name, muscle, useSettings.getState().restSecondsBetweenSets),
-      });
+  const handleCreate = useCallback((name: string, muscle?: MuscleGroup) => {
+    if (muscle) {
+      const cluster = MUSCLE_CLUSTER[muscle];
+      setExpanded((current) => new Set(current).add(muscleKey(muscle)).add(clusterKey(cluster)));
+    }
+    /*
+     * Pushed through the updater rather than through `push`, so the route can read
+     * what it is being pushed ON TOP OF. Creating an exercise from the session's
+     * picker has to end up in the session — "add exercise, push, neck, add
+     * exercise, name it, and start doing it" is one gesture from the user's side,
+     * and the destination is carried rather than remembered in separate state.
+     */
+    setStack((s) => {
+      const current = s[s.length - 1];
+      return [
+        ...s,
+        {
+          name: 'createExercise',
+          draft: emptyExerciseDraft(name, muscle, useSettings.getState().restSecondsBetweenSets),
+          addToSession: current?.name === 'addExercise' && current.target === 'session',
+        },
+      ];
+    });
+  }, []);
+
+  /**
+   * Append an exercise to the session in flight, with ONE set.
+   *
+   * Takes the row rather than an id because it is also called for an exercise
+   * created a moment ago, which is not in `exercisesById` until the next render.
+   *
+   * One set, deliberately: an exercise added mid-workout has no plan behind it —
+   * the user is deciding set by set, and `Add set` in the card is one tap. The rest
+   * of the entry is built by the SAME function the routine path uses, so the
+   * prefills, the overload verdict and the last-session lines are identical to what
+   * a planned exercise would have shown.
+   */
+  const addExerciseToSession = useCallback(
+    (exercise: Exercise) => {
+      const workout = useActiveWorkout.getState();
+      if (!workout.session) return;
+      const settings = useSettings.getState();
+
+      workout.addEntry(
+        buildDraftEntry({
+          exercise,
+          history: historyById[exercise.id] ?? [],
+          policy: seedUser.overloadPolicy,
+          unitSystem: settings.unitSystem,
+          restSeconds: settings.restSecondsBetweenSets,
+          transitionRestSeconds: settings.restSecondsBetweenExercises,
+          targetSets: 1,
+          targetRepsMax: defaultTargetCount(exercise),
+          plannedSetCount: 1,
+        }),
+      );
     },
-    [push],
+    [historyById],
   );
 
   /* ------------------------------------------------------------------ */
@@ -404,7 +485,7 @@ export function AppShell() {
         {/* No TabBar. See the file header. */}
         <ActiveWorkoutScreen
           unitSystem={unitSystem}
-          policy={seedUser.overloadPolicy}
+          onAddExercise={() => push({ name: 'addExercise', routineId: null, target: 'session' })}
           onFinish={(finished) => {
             /*
              * The one write to permanent history. Everything downstream —
@@ -461,10 +542,11 @@ export function AppShell() {
   }
 
   if (top?.name === 'addExercise') {
-    const routineId = top.routineId;
+    const { routineId, target } = top;
     return (
       <LibraryTab
         query={query}
+        kicker={target === 'session' ? 'Add to workout' : 'Add exercise'}
         exercises={exercises}
         matches={matches}
         recentlyUsed={recentlyUsed}
@@ -473,6 +555,11 @@ export function AppShell() {
         onBack={pop}
         onChangeQuery={setQuery}
         onPick={(exerciseId) => {
+          if (target === 'session') {
+            const exercise = exercisesById[exerciseId];
+            if (exercise) addExerciseToSession(exercise);
+            return popToSession();
+          }
           if (!routineId) return push({ name: 'exerciseHistory', exerciseId });
           appendToRoutine(routineId, exerciseId);
           return pop();
@@ -488,12 +575,25 @@ export function AppShell() {
   }
 
   if (top?.name === 'createExercise') {
+    const addToSession = top.addToSession === true;
     return (
       <CreateExerciseScreen
         initial={top.draft}
         onBack={pop}
         onSubmit={(draft) => {
-          addExercise(draftToExercise(draft, `ex_${Date.now().toString(36)}`, seedUser.id));
+          const exercise = draftToExercise(draft, `ex_${Date.now().toString(36)}`, seedUser.id);
+          addExercise(exercise);
+          /*
+           * Created from the session's picker: it goes into the library AND into the
+           * workout, and the user lands back on the set rows rather than on the
+           * picker they no longer need. Both writes happen here so a new exercise
+           * cannot end up in one place and not the other.
+           */
+          if (addToSession) {
+            addExerciseToSession(exercise);
+            popToSession();
+            return;
+          }
           pop();
         }}
       />
@@ -518,6 +618,10 @@ export function AppShell() {
         }}
       />
     );
+  }
+
+  if (top?.name === 'backup') {
+    return <BackupScreen onBack={pop} />;
   }
 
   if (top?.name === 'exerciseHistory') {
@@ -591,7 +695,9 @@ export function AppShell() {
           />
         ) : null}
 
-        {tab === 'Settings' ? <SettingsScreen /> : null}
+        {tab === 'Settings' ? (
+          <SettingsScreen onOpenBackup={() => push({ name: 'backup' })} />
+        ) : null}
       </View>
 
       <TabBar active={tab} onSelect={setTab} />

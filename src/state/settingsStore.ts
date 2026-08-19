@@ -144,6 +144,14 @@ interface SettingsState extends Settings {
   ) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;
   resetToDefaults: () => void;
+  /**
+   * Replace every setting from a restored backup.
+   *
+   * Takes `unknown` and leans on `sanitizeSettings`, which is total: a backup
+   * missing a field added in a later build gets that field's default rather than an
+   * `undefined` that would reach a deadline as `NaN`.
+   */
+  importSettings: (raw: unknown) => void;
 }
 
 export const useSettings = create<SettingsState>()(
@@ -161,6 +169,9 @@ export const useSettings = create<SettingsState>()(
       setUnitSystem: (unitSystem) => set({ unitSystem }),
 
       resetToDefaults: () => set({ ...DEFAULT_SETTINGS }),
+
+      importSettings: (raw) =>
+        set({ ...sanitizeSettings(raw as Partial<Settings> | undefined | null) }),
     }),
     {
       name: 'settings',

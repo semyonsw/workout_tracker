@@ -165,7 +165,11 @@ is the difference between an app and an instrument.
 | Action | Taps |
 | --- | --- |
 | Log a set identical to last time | **1** (the ✓) |
-| Log a set 2.5 kg heavier | **3** (weight → +2.5 → ✓) |
+| Log a set 2 kg heavier | **3** (weight → +2 → ✓) |
+| Log a set 0.5 kg heavier | **3** (weight → +0.5 → ✓) |
+| Drop a planned set you're not doing | **1** (`− Remove set`) |
+| Add an exercise that isn't in the routine | **2** (`+ Add an exercise` → the exercise) |
+| Fix a session clock that started too early | **2** (`START THE CLOCK NOW` → confirm) |
 | Run and log a 2:00 plank | **1** (the ▶ — the bell logs it) |
 | Log a dead hang to failure | **2** (▶, then Stop) |
 | Accept an overload suggestion for all remaining sets | **1** (Use) |
@@ -192,6 +196,7 @@ is the difference between an app and an instrument.
 | [src/screens/ExerciseLibraryScreen.tsx](src/screens/ExerciseLibraryScreen.tsx) | The muscle tree: browse, add per group, delete per row |
 | [src/screens/HistoryScreen.tsx](src/screens/HistoryScreen.tsx) | Finished workouts by month; a row opens in place |
 | [src/screens/SettingsScreen.tsx](src/screens/SettingsScreen.tsx) | Every duration the app counts |
+| [src/screens/BackupScreen.tsx](src/screens/BackupScreen.tsx) | Export everything to a JSON file, and read one back — with a count before it replaces anything |
 | [src/lib/progressiveOverload.ts](src/lib/progressiveOverload.ts) | The engine — pure, injectable clock, zero deps |
 | [src/lib/setTimer.ts](src/lib/setTimer.ts) | Two-phase set clock — pure, one stored fact |
 | [src/lib/muscles.ts](src/lib/muscles.ts) | Muscle → cluster hierarchy; the browsable tree; "what day is this" |
@@ -202,6 +207,8 @@ is the difference between an app and an instrument.
 | [src/lib/draft.ts](src/lib/draft.ts) | Prefill from history, then from the exercise's own starting numbers; draft → `SetHistory` on save |
 | [src/lib/exerciseDraft.ts](src/lib/exerciseDraft.ts) | Library row ⇄ editable draft. Preserves identity, so an edit is not a delete |
 | [src/lib/completedWorkout.ts](src/lib/completedWorkout.ts) | Draft → the history record; snapshots the exercise, merges logged sets back into history |
+| [src/lib/backup.ts](src/lib/backup.ts) | The backup file's format — pure; builds the envelope, and opens one without trusting a row in it |
+| [src/lib/backupFile.ts](src/lib/backupFile.ts) | Getting that file off the phone and back, through Android's folder picker. Every failure is a value |
 | [src/hooks/useRestTimer.ts](src/hooks/useRestTimer.ts) | Deadline-based timer, background-safe |
 | [src/hooks/useSetTimer.ts](src/hooks/useSetTimer.ts) | Ticks, haptics, the bell, and auto-logging |
 | [src/hooks/useCountdownBeeps.ts](src/hooks/useCountdownBeeps.ts) | The count-in — holds the latch, plays the cue |
@@ -209,6 +216,7 @@ is the difference between an app and an instrument.
 | [src/state/workoutHistoryStore.ts](src/state/workoutHistoryStore.ts) | Finished workouts, persisted and validated — the app's only write to permanent history |
 | [src/state/libraryStore.ts](src/state/libraryStore.ts) | Exercises and routines, persisted and validated |
 | [src/state/settingsStore.ts](src/state/settingsStore.ts) | The durations, clamped on the way in |
+| [src/state/dataTransfer.ts](src/state/dataTransfer.ts) | The only place all three stores are read and written together: snapshot out, restore in |
 
 ### Timed sets
 
@@ -382,10 +390,16 @@ of recent sessions sharing that weight — the *plateau run*.
 | `due_weight` | Plateau ≥ 14 days **and** ≥ 3 sessions, reps owned | "Try 27.5 kg" |
 
 Both thresholds must pass: **days** catch true stagnation, **sessions** stop a
-two-week holiday from reading as one. Increments come from the exercise
-(`incrementKg`) so a dumbbell movement offers ±2.5 and a cable stack ±5 — the app
-never suggests a weight that cannot be loaded. Imperial users get 5 lb jumps, not
-an unloadable 5.5 lb conversion of 2.5 kg.
+two-week holiday from reading as one. The SUGGESTED jump comes from the exercise
+(`incrementKg`) so a dumbbell movement is offered +2.5 and a cable stack +5 — the
+app never suggests a weight that cannot be loaded. Imperial users get 5 lb jumps,
+not an unloadable 5.5 lb conversion of 2.5 kg.
+
+That number is a progression plan, and it is deliberately NOT what the ± chips on a
+set row nudge by. Those are fixed at **±0.5 and ±2 kg** everywhere in the app
+(`weightSteps`, `src/lib/units.ts`), because mid-workout the useful moves are the
+smallest disc in the rack and one step up — and reading the chips off a 2.5 kg
+increment made every half-kilo unreachable while offering ±5 to nobody who asked.
 
 Verified in [src/lib/progressiveOverload.test.ts](src/lib/progressiveOverload.test.ts)
 against real logged sessions (#80–#87, 21 Jul – 11 Aug 2026) — 9 cases, all
