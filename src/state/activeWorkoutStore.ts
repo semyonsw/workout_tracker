@@ -108,14 +108,14 @@ interface ActiveWorkoutState {
   /** Reorder: put `entryId` at `toIndex`, closing the gap it left behind. */
   moveEntry: (entryId: ID, toIndex: number) => void;
   /**
-   * Re-anchor the session clock to now.
+   * "I'm starting now." Anchors the session clock to this instant.
    *
-   * The header reads "42 min" off `startedAt`, and so does every set's
-   * `performedAt` — so a session started by accident, or left open while the phone
-   * was in a locker, logs a workout that claims to have taken hours. This is the
-   * fix, and it is deliberately the only thing in the app that edits `startedAt`.
+   * Opening a routine builds a session with NO start time — the exercises can be
+   * read, and nothing is dated or timed until this is called. It is also the fix
+   * for a workout left open while the phone sat in a locker: pressing it again
+   * re-anchors the clock without touching a single logged set.
    */
-  restartClock: () => void;
+  startWorkout: () => void;
 
   /* --- set editing --- */
   completeSet: (entryId: ID, setId: ID) => void;
@@ -271,14 +271,14 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
       },
 
       /**
-       * "I'm starting now."
+       * Start (or re-anchor) the workout.
        *
        * Only the START moves. Sets already logged keep their ✓ — they were done,
        * and the alternative (clearing them) is a reset button that silently deletes
        * work. A rest running from before the re-anchor is dropped, because it was
        * timing a gap that is no longer part of this session.
        */
-      restartClock: () =>
+      startWorkout: () =>
         set((state) =>
           state.session
             ? { session: { ...state.session, startedAt: new Date().toISOString() }, rest: NO_REST }
@@ -349,7 +349,16 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         const startsRest = settings.autoStartRest && restSeconds > 0 && !workoutDone;
 
         set({
-          session: { ...session, entries },
+          session: {
+            ...session,
+            entries,
+            /*
+             * Logging a set says "I am training" as clearly as `Start` does, so a
+             * workout that was only being looked at starts here rather than
+             * writing a set with no date on it.
+             */
+            startedAt: session.startedAt ?? new Date().toISOString(),
+          },
           activeEntryId: advanceTo ?? get().activeEntryId,
           rest: startsRest
             ? {
@@ -665,9 +674,13 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
        * both are anchored to absolute epoch times, so they are still correct after
        * a relaunch: a plank that ran while the app was killed reads as the plank
        * that actually happened.
+       *
+       * A session that was never STARTED is deliberately not persisted: it is a
+       * routine somebody opened to read, and restoring it on the next launch would
+       * drop the user straight back onto a logging screen they never asked for.
        */
       partialize: (state) => ({
-        session: state.session,
+        session: state.session?.startedAt ? state.session : null,
         activeEntryId: state.activeEntryId,
         rest: state.rest,
         setTimer: state.setTimer,
@@ -708,7 +721,9 @@ function finiteOr(value: unknown, fallback: number): number {
 function isRenderableSession(value: unknown): value is DraftSession {
   if (typeof value !== 'object' || value === null) return false;
   const session = value as Partial<DraftSession>;
-  if (typeof session.localId !== 'string' || typeof session.startedAt !== 'string') return false;
+  // `startedAt` is null on a session that has been opened but not started.
+  if (typeof session.localId !== 'string') return false;
+  if (session.startedAt != null && typeof session.startedAt !== 'string') return false;
   if (typeof session.title !== 'string' || !Array.isArray(session.entries)) return false;
 
   return session.entries.every((entry: unknown) => {
@@ -832,11 +847,6 @@ function mapSet(
 
 export const selectEntry = (entryId: ID) => (state: ActiveWorkoutState) =>
   state.session?.entries.find((e) => e.localId === entryId) ?? null;
-
-/** The next set the user is expected to log — drives the "primed" row styling. */
-export const selectNextSetId = (entryId: ID) => (state: ActiveWorkoutState) =>
-  state.session?.entries.find((e) => e.localId === entryId)?.sets.find((s) => !s.isCompleted)
-    ?.localId ?? null;
 
 export interface SessionProgress {
   done: number;

@@ -1,31 +1,18 @@
 /**
- * Seed data — the exercise library, the routines, and the split.
+ * Seed data — the exercise library and three starting routines.
  *
- * WHAT IS NOT IN HERE ANY MORE: history. This file used to ship ten logged
- * sessions (#78–#87, transcribed from a paper log) plus four rolled-up `RECENT`
- * rows, so that the app could be felt before a database existed. The cost, once
- * the app could actually record a workout, was that a fresh install opened on four
- * sessions the user never did, an exercise-history chart of someone else's
- * pull-downs, and overload nudges about weights they had never lifted — none of it
- * distinguishable from their own data. History is now exclusively what the user
- * logged (`state/workoutHistoryStore`), and the fixture moved to
- * `test/fixtures/history.ts`, which is where the pure history, shorthand and
- * overload code is tested against it.
- *
- * What remains is a STARTING POINT rather than a fake past: exercises to pick
- * from, three routines, and a split to sit them in. All three are editable and
- * persisted from the first launch (`state/libraryStore`), and `Restore the shipped
- * exercise library` in Settings puts these back.
+ * A STARTING POINT, not a fake past: no history ships (that is exclusively what
+ * the user logged — see `state/workoutHistoryStore`) and no training sequence
+ * ships either (the sequence is off and empty until the user builds one — see
+ * `TrainingSequence`). All of this is editable and persisted from the first
+ * launch by `state/libraryStore`.
  *
  * The library carries movements no routine uses — squats, shrugs, a hollow hold —
- * because the library is a hierarchy: every movement cluster has to have something
- * in it for its filter chip and its section to be a real state rather than an
- * empty one.
- *
- * Replace with SQLite reads; the shapes are identical.
+ * because every movement cluster needs something in it for its filter chip and
+ * its library section to be a real state rather than an empty one.
  */
 
-import type { Exercise, Routine, User, WorkoutSplit } from '../types/models';
+import type { Exercise, Routine, User } from '../types/models';
 import { DEFAULT_OVERLOAD_POLICY } from '../lib/progressiveOverload';
 
 export const seedUser: User = {
@@ -348,14 +335,13 @@ export const seedExercisesById: Record<string, Exercise> = Object.fromEntries(
 );
 
 /* ------------------------------------------------------------------ */
-/* Routines + split                                                    */
+/* Routines                                                            */
 /* ------------------------------------------------------------------ */
 
 export const seedRoutine: Routine = {
   id: 'r_pull',
   ownerId: 'u1',
   name: 'Pull + swimming',
-  splitTag: 'pull',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-08-08T00:00:00.000Z',
   items: [
@@ -397,7 +383,6 @@ export const seedRoutinePush: Routine = {
   id: 'r_push',
   ownerId: 'u1',
   name: 'Push',
-  splitTag: 'push',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-08-04T00:00:00.000Z',
   items: [
@@ -426,7 +411,6 @@ export const seedRoutineBoxing: Routine = {
   id: 'r_boxing',
   ownerId: 'u1',
   name: 'Boxing (cardio)',
-  splitTag: 'boxing',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-08-06T00:00:00.000Z',
   items: [
@@ -446,23 +430,3 @@ export const seedRoutineBoxing: Routine = {
 
 export const seedRoutines: Routine[] = [seedRoutine, seedRoutinePush, seedRoutineBoxing];
 
-export const seedRoutinesById: Record<string, Routine> = Object.fromEntries(
-  seedRoutines.map((r) => [r.id, r]),
-);
-
-export const seedSplit: WorkoutSplit = {
-  id: 'sp1',
-  ownerId: 'u1',
-  name: 'Push / Pull / Boxing',
-  cycleMode: 'rolling', // advances on completion, not on weekday
-  cursor: 2,
-  startedOn: '2026-06-01T00:00:00.000Z',
-  isActive: true,
-  days: [
-    { id: 'sd1', order: 0, label: 'Push', kind: 'routine', routineId: 'r_push' },
-    { id: 'sd2', order: 1, label: 'Boxing', kind: 'routine', routineId: 'r_boxing' },
-    { id: 'sd3', order: 2, label: 'Pull', kind: 'routine', routineId: 'r_pull' },
-    { id: 'sd4', order: 3, label: 'Push', kind: 'routine', routineId: 'r_push' },
-    { id: 'sd5', order: 4, label: 'Rest', kind: 'rest' },
-  ],
-};

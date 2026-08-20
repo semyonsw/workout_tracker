@@ -278,3 +278,167 @@ describe('routines', () => {
     expect(useLibrary.getState().routines).toEqual(seedRoutines);
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The training sequence. Its whole contract is "off and empty until the user
+ * builds one", so most of these are about it staying out of the way.
+ */
+describe('the training sequence', () => {
+  const routineIds = () => useLibrary.getState().sequence.routineIds;
+  const seq = () => useLibrary.getState().sequence;
+
+  it('ships off and empty', () => {
+    expect(seq()).toEqual({ isActive: false, routineIds: [], cursor: 0 });
+  });
+
+  it('cannot be turned on with nothing in it', () => {
+    // There would be nothing for it to suggest, and the home screen would render
+    // an empty strip above an empty card.
+    useLibrary.getState().setSequenceActive(true);
+    expect(seq().isActive).toBe(false);
+  });
+
+  it('takes steps in order, repeats included', () => {
+    const [pull, push] = useLibrary.getState().routines;
+    useLibrary.getState().addSequenceStep(push.id);
+    useLibrary.getState().addSequenceStep(pull.id);
+    useLibrary.getState().addSequenceStep(push.id);
+
+    // push → pull → push is three steps, two of them the same routine.
+    expect(routineIds()).toEqual([push.id, pull.id, push.id]);
+  });
+
+  it('refuses a step for a routine that does not exist', () => {
+    useLibrary.getState().addSequenceStep('r_nope');
+    expect(routineIds()).toEqual([]);
+  });
+
+  it('turns on once it has a step, and stays on', () => {
+    useLibrary.getState().addSequenceStep(useLibrary.getState().routines[0].id);
+    useLibrary.getState().setSequenceActive(true);
+    expect(seq().isActive).toBe(true);
+  });
+
+  it('moves a step up and down, and refuses to move it off either end', () => {
+    const [a, b] = useLibrary.getState().routines;
+    useLibrary.getState().addSequenceStep(a.id);
+    useLibrary.getState().addSequenceStep(b.id);
+
+    useLibrary.getState().moveSequenceStep(1, -1);
+    expect(routineIds()).toEqual([b.id, a.id]);
+
+    useLibrary.getState().moveSequenceStep(0, -1);
+    expect(routineIds()).toEqual([b.id, a.id]);
+
+    useLibrary.getState().moveSequenceStep(1, 1);
+    expect(routineIds()).toEqual([b.id, a.id]);
+  });
+
+  it('keeps the cursor on the same step when an earlier one is removed', () => {
+    const [a, b, c] = useLibrary.getState().routines;
+    for (const id of [a.id, b.id, c.id]) useLibrary.getState().addSequenceStep(id);
+    useLibrary.getState().setSequenceCursor(2);
+
+    useLibrary.getState().removeSequenceStep(0);
+
+    // `c` was next up before and is still next up after.
+    expect(routineIds()).toEqual([b.id, c.id]);
+    expect(seq().cursor).toBe(1);
+  });
+
+  it('clamps the cursor when the last step is removed', () => {
+    const [a, b] = useLibrary.getState().routines;
+    useLibrary.getState().addSequenceStep(a.id);
+    useLibrary.getState().addSequenceStep(b.id);
+    useLibrary.getState().setSequenceCursor(1);
+
+    useLibrary.getState().removeSequenceStep(1);
+
+    expect(seq().cursor).toBe(0);
+  });
+
+  it('advances only when the routine that was finished is the step it is on', () => {
+    const [a, b] = useLibrary.getState().routines;
+    useLibrary.getState().addSequenceStep(a.id);
+    useLibrary.getState().addSequenceStep(b.id);
+    useLibrary.getState().setSequenceActive(true);
+
+    // Trained something else entirely: the queue has not moved on.
+    useLibrary.getState().advanceSequence(b.id);
+    expect(seq().cursor).toBe(0);
+
+    useLibrary.getState().advanceSequence(a.id);
+    expect(seq().cursor).toBe(1);
+  });
+
+  it('wraps at the end — a sequence is a cycle', () => {
+    const [a] = useLibrary.getState().routines;
+    useLibrary.getState().addSequenceStep(a.id);
+    useLibrary.getState().setSequenceActive(true);
+
+    useLibrary.getState().advanceSequence(a.id);
+    expect(seq().cursor).toBe(0);
+  });
+
+  it('does not advance while it is off', () => {
+    const [a, b] = useLibrary.getState().routines;
+    useLibrary.getState().addSequenceStep(a.id);
+    useLibrary.getState().addSequenceStep(b.id);
+
+    useLibrary.getState().advanceSequence(a.id);
+    expect(seq().cursor).toBe(0);
+  });
+
+  it('drops the steps of a routine that gets deleted', () => {
+    const [a, b] = useLibrary.getState().routines;
+    useLibrary.getState().addSequenceStep(a.id);
+    useLibrary.getState().addSequenceStep(b.id);
+    useLibrary.getState().addSequenceStep(a.id);
+    useLibrary.getState().setSequenceCursor(2);
+
+    useLibrary.getState().deleteRoutine(a.id);
+
+    // A step pointing at a routine that is gone is a queue position with nothing
+    // to open.
+    expect(routineIds()).toEqual([b.id]);
+    expect(seq().cursor).toBe(0);
+  });
+
+  it('is reset by restoring the shipped library', () => {
+    useLibrary.getState().addSequenceStep(useLibrary.getState().routines[0].id);
+    useLibrary.getState().setSequenceActive(true);
+
+    useLibrary.getState().restoreSeedLibrary();
+
+    expect(seq()).toEqual({ isActive: false, routineIds: [], cursor: 0 });
+  });
+});
+
+describe('a sequence that runs out of steps', () => {
+  it('switches itself off when the last step is removed', () => {
+    useLibrary.getState().addSequenceStep(useLibrary.getState().routines[0].id);
+    useLibrary.getState().setSequenceActive(true);
+
+    useLibrary.getState().removeSequenceStep(0);
+
+    // An active sequence with nothing in it would be a home screen promising a
+    // next workout it cannot name.
+    expect(useLibrary.getState().sequence).toEqual({
+      isActive: false,
+      routineIds: [],
+      cursor: 0,
+    });
+  });
+
+  it('switches itself off when its only routine is deleted', () => {
+    const routine = useLibrary.getState().routines[0];
+    useLibrary.getState().addSequenceStep(routine.id);
+    useLibrary.getState().setSequenceActive(true);
+
+    useLibrary.getState().deleteRoutine(routine.id);
+
+    expect(useLibrary.getState().sequence.isActive).toBe(false);
+  });
+});

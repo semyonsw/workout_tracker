@@ -7,13 +7,20 @@
  *   │ ╭ Pull + swimming|                         ╮ │
  *   │ EXERCISES · 6                                │
  *   │ ┌──────────────────────────────────────────┐ │
- *   │ │ ≡  Weighted 90° pull-ups              ›  │ │
+ *   │ │ ≡  Weighted 90° pull-ups           ›  ✕  │ │
  *   │ │    4 × 4–6 · rest 3:00                   │ │
- *   │ │ ≡  Wide pull-ups machine              ›  │ │
+ *   │ │ ≡  Wide pull-ups machine           ›  ✕  │ │
  *   │ │ +  Add exercise                          │ │
  *   │ └──────────────────────────────────────────┘ │
  *   │            Delete routine                    │
  *   └──────────────────────────────────────────────┘
+ *
+ * ✕ ON EVERY ROW TAKES THE EXERCISE OUT OF THE ROUTINE. It asks first, and it is
+ * committed immediately rather than on `Save`: everything else that changes this
+ * list — adding an exercise from the picker — already writes straight to the
+ * store, and a removal that could be lost by backing out would be the only edit
+ * here that lies about what it did. Only the exercise's place in THIS routine
+ * goes; the exercise itself stays in the library, with its whole history.
  *
  * Rows are 64 (not 56) to fit two lines and still clear the handle. Sets, rep
  * range and rest collapse to ONE summary line so six exercises stay scannable
@@ -47,6 +54,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
+import { ConfirmSheet } from '../components/ConfirmSheet';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { DragHandle, Icon } from '../components/Icon';
 import {
@@ -57,7 +65,7 @@ import {
   Separator,
   TextButton,
 } from '../components/primitives';
-import { commit, undo } from '../lib/feedback';
+import { commit, tap, undo } from '../lib/feedback';
 import { formatClock, formatDuration } from '../lib/units';
 import { palette } from '../theme/tokens';
 import type { Exercise, ID, Routine, RoutineItem } from '../types/models';
@@ -81,6 +89,11 @@ interface RoutineEditorScreenProps {
   onOpenItem: (item: RoutineItem, draft: RoutineDraft) => void;
   /** Same contract as `onOpenItem`: commit the draft, then push the picker. */
   onAddExercise: (draft: RoutineDraft) => void;
+  /**
+   * Write the draft to the store WITHOUT leaving the screen. Removing an exercise
+   * goes through this, so the removal survives backing out — see the file header.
+   */
+  onCommit: (draft: RoutineDraft) => void;
   onDelete: () => void;
 }
 
@@ -98,6 +111,7 @@ export function RoutineEditorScreen({
   onSave,
   onOpenItem,
   onAddExercise,
+  onCommit,
   onDelete,
 }: RoutineEditorScreenProps) {
   /** Working name and order. Committed only on Save — this screen is a draft. */
@@ -107,6 +121,8 @@ export function RoutineEditorScreen({
   );
   /** The row in the air, and where it would land. null = not reordering. */
   const [moving, setMoving] = useState<{ id: ID; targetIndex: number } | null>(null);
+  /** The item the user asked to remove, held while the sheet asks. */
+  const [removing, setRemoving] = useState<RoutineItem | null>(null);
 
   const movingIndex = moving ? items.findIndex((i) => i.id === moving.id) : -1;
   const movingItem = movingIndex >= 0 ? items[movingIndex] : null;
@@ -138,10 +154,25 @@ export function RoutineEditorScreen({
     return setMoving(null);
   };
 
+  /**
+   * Take one exercise out of the routine, and renumber what is left so `order`
+   * stays a dense 0..n — the field the list sorts by, and a gap in it turns the
+   * reorder into a drag that jumps.
+   */
+  const removeItem = (itemId: ID) => {
+    undo();
+    const next = items.filter((i) => i.id !== itemId).map((item, order) => ({ ...item, order }));
+    setItems(next);
+    setRemoving(null);
+    onCommit({ name, items: next });
+  };
+
   const rest = items.filter((i) => (moving ? i.id !== moving.id : true));
+  const dimmed = removing != null;
 
   return (
     <View className="flex-1 bg-bg">
+      <View className="flex-1" style={dimmed ? { opacity: 0.28 } : undefined}>
       <ScreenHeader
         kicker={
           moving && movingExercise
@@ -164,7 +195,7 @@ export function RoutineEditorScreen({
         className="flex-1"
         contentContainerStyle={{ paddingTop: 24, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={!moving}
+        scrollEnabled={!moving && !dimmed}
       >
         {/* The name field hides while reordering: one thing at a time. */}
         {moving ? null : (
@@ -209,6 +240,14 @@ export function RoutineEditorScreen({
                       : onOpenItem(item, draft())
                   }
                   onLongPress={() => (moving ? undefined : lift(item, index))}
+                  onRemove={
+                    moving
+                      ? undefined
+                      : () => {
+                          tap();
+                          setRemoving(item);
+                        }
+                  }
                 />
               </View>
             );
@@ -238,6 +277,18 @@ export function RoutineEditorScreen({
           </View>
         )}
       </ScrollView>
+      </View>
+
+      {removing ? (
+        <ConfirmSheet
+          title={`Remove “${exercisesById[removing.exerciseId]?.name ?? 'this exercise'}”?`}
+          body="It comes out of this routine only. The exercise stays in your library with every set you have ever logged against it."
+          confirmLabel="Remove it"
+          cancelLabel="Keep it"
+          onConfirm={() => removeItem(removing.id)}
+          onCancel={() => setRemoving(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -250,42 +301,62 @@ function RoutineRow({
   dimmed,
   onPress,
   onLongPress,
+  onRemove,
 }: {
   item: RoutineItem;
   exercise: Exercise;
   dimmed: boolean;
   onPress: () => void;
   onLongPress: () => void;
+  /** Absent while reordering — nothing in the list is actionable then. */
+  onRemove?: () => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={280}
-      accessibilityRole="button"
-      accessibilityLabel={`${exercise.name}, ${summarizeItem(item, exercise)}`}
-      accessibilityHint="Long press to reorder"
-      style={dimmed ? { opacity: 0.5 } : undefined}
-      className="h-row-lg flex-row items-center pl-md pr-lg"
-    >
-      <DragHandle color={palette.inkFaint} />
+    <View className="flex-row items-center" style={dimmed ? { opacity: 0.5 } : undefined}>
+      <Pressable
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={280}
+        accessibilityRole="button"
+        accessibilityLabel={`${exercise.name}, ${summarizeItem(item, exercise)}`}
+        accessibilityHint="Long press to reorder"
+        className="h-row-lg flex-1 flex-row items-center pl-md"
+      >
+        <DragHandle color={palette.inkFaint} />
 
-      <View className="ml-md flex-1">
-        <Text numberOfLines={1} className="text-body font-medium text-ink">
-          {exercise.name}
-        </Text>
-        <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
-          {summarizeItem(item, exercise)}
-        </Text>
-      </View>
-
-      {/* Chevrons vanish while reordering: nothing here opens right now. */}
-      {dimmed ? null : (
-        <View className="ml-md">
-          <Icon name="chevron-right" size={18} color={palette.inkFaint} />
+        <View className="ml-md flex-1">
+          <Text numberOfLines={1} className="text-body font-medium text-ink">
+            {exercise.name}
+          </Text>
+          <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
+            {summarizeItem(item, exercise)}
+          </Text>
         </View>
+
+        {/* Chevrons vanish while reordering: nothing here opens right now. */}
+        {dimmed ? null : (
+          <View className="ml-md">
+            <Icon name="chevron-right" size={18} color={palette.inkFaint} />
+          </View>
+        )}
+      </Pressable>
+
+      {/* Its own hit area, 44 wide: removing an exercise must not be reachable by
+          a thumb aiming at the row. */}
+      {onRemove ? (
+        <Pressable
+          onPress={onRemove}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${exercise.name} from this routine`}
+          className="h-row-lg w-[44px] items-center justify-center"
+        >
+          <Icon name="x" size={15} color={palette.inkMuted} />
+        </Pressable>
+      ) : (
+        <View className="w-lg" />
       )}
-    </Pressable>
+    </View>
   );
 }
 

@@ -25,6 +25,7 @@ function loggedDraft(startedAt: string): DraftSession {
     unitSystem: 'metric',
     defaultRestSeconds: 120,
     defaultTransitionRestSeconds: 150,
+    startedAt,
     now: new Date(startedAt),
   });
   const [first, ...rest] = session.entries;
@@ -179,5 +180,50 @@ describe('importing is validated, not trusted', () => {
       DEFAULT_SETTINGS.restSecondsBetweenSets,
     );
     expect(useSettings.getState().beepSeconds).toBe(30); // the setting's ceiling
+  });
+});
+
+describe('the training sequence rides along', () => {
+  it('is exported and restored with the routines it points at', () => {
+    const routine = useLibrary.getState().routines[0];
+    useLibrary.getState().addSequenceStep(routine.id);
+    useLibrary.getState().setSequenceActive(true);
+
+    const text = exportBackupText(new Date('2026-08-19T09:00:00.000Z'));
+
+    // Wreck it, then restore.
+    useLibrary.getState().restoreSeedLibrary();
+    expect(useLibrary.getState().sequence.routineIds).toEqual([]);
+
+    const parsed = parseBackup(text);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    applyBackup(parsed.envelope);
+
+    expect(useLibrary.getState().sequence).toEqual({
+      isActive: true,
+      routineIds: [routine.id],
+      cursor: 0,
+    });
+  });
+
+  it('restores as off from a file written before sequences existed', () => {
+    useLibrary.getState().addSequenceStep(useLibrary.getState().routines[0].id);
+    useLibrary.getState().setSequenceActive(true);
+
+    // A restore is "make this phone look like that backup", so a file with no
+    // sequence in it must not leave the local one standing.
+    applyBackup({
+      settings: null,
+      exercises: useLibrary.getState().exercises,
+      routines: useLibrary.getState().routines,
+      workouts: [],
+    });
+
+    expect(useLibrary.getState().sequence).toEqual({
+      isActive: false,
+      routineIds: [],
+      cursor: 0,
+    });
   });
 });

@@ -41,9 +41,8 @@ import type { ID, RecentSessionSummary, SetHistory } from '../types/models';
  * Not a product decision — a storage one. This store lives in AsyncStorage, which
  * is one string per key and has a real (platform-dependent) ceiling, and every
  * workout carries its set rows. 250 sessions is about two years of training four
- * times a week, which is far past the point where `src/db` (SQLite, already
- * schema'd) should have taken over. The cap exists so the failure mode at year
- * three is "the oldest workout falls off" rather than "the write silently fails
+ * times a week, which is far past the point where SQLite should have taken over.
+ * The cap exists so the failure mode at year three is "the oldest workout falls off" rather than "the write silently fails
  * and the last month is gone".
  */
 export const MAX_WORKOUTS = 250;
@@ -165,7 +164,7 @@ function sanitizeWorkout(value: unknown): CompletedWorkout | null {
     : [];
   const exercises = Array.isArray(raw.exercises)
     ? raw.exercises
-        .map(sanitizeCompletedExercise)
+        .map((exercise) => sanitizeCompletedExercise(exercise, sets))
         .filter((e): e is CompletedExercise => e !== null)
     : [];
 
@@ -183,7 +182,16 @@ function sanitizeWorkout(value: unknown): CompletedWorkout | null {
   };
 }
 
-function sanitizeCompletedExercise(value: unknown): CompletedExercise | null {
+/**
+ * `rows` are the workout's own set rows, and they are what makes `totalCount`
+ * survive an upgrade: the field was added in 0.10.0, so every workout logged
+ * before it has a summary and no total. Summing the rows recovers the real number
+ * rather than showing a 0 for training that happened.
+ */
+function sanitizeCompletedExercise(
+  value: unknown,
+  rows: readonly SetHistory[],
+): CompletedExercise | null {
   if (typeof value !== 'object' || value === null) return null;
   const raw = value as Partial<CompletedExercise>;
   if (typeof raw.exerciseId !== 'string' || typeof raw.name !== 'string') return null;
@@ -196,6 +204,15 @@ function sanitizeCompletedExercise(value: unknown): CompletedExercise | null {
     loadMode: LOAD_MODES.has(raw.loadMode as string) ? raw.loadMode! : 'none',
     setCount: Math.max(0, Math.round(finiteOr(raw.setCount, 0))),
     summary: raw.summary,
+    totalCount: Math.max(
+      0,
+      finiteOr(
+        raw.totalCount,
+        rows
+          .filter((row) => row.exerciseId === raw.exerciseId)
+          .reduce((sum, row) => sum + row.count, 0),
+      ),
+    ),
     topWeightKg:
       typeof raw.topWeightKg === 'number' && Number.isFinite(raw.topWeightKg)
         ? raw.topWeightKg

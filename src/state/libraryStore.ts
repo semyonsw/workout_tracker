@@ -8,10 +8,9 @@
  * and an exercise you created, filed under `chest`, and lost overnight is worse
  * than no create button at all.
  *
- * This is still not the database `ARCHITECTURE.md` promises. It is AsyncStorage
- * with the same shapes SQLite will hold, which buys durability now at the cost of
- * loading the whole library into memory — irrelevant at a few dozen rows, and the
- * day `src/db` is wired up every consumer of this store keeps its signature.
+ * AsyncStorage rather than SQLite: the whole library is a few dozen rows, so
+ * loading it into memory costs nothing and every consumer of this store keeps its
+ * signature the day it moves.
  *
  * The rules that matter here:
  *
@@ -25,6 +24,9 @@
  *  3. REHYDRATION IS VALIDATED, not trusted — same doctrine as the session store.
  *     A row missing `countUnit` reaches `formatCount` and takes the library screen
  *     down with it, so malformed rows are dropped on the way in.
+ *  4. THE TRAINING SEQUENCE LIVES HERE TOO, because it is a list of routine ids
+ *     and it has to stay in step with them: deleting a routine drops its steps,
+ *     and a step pointing at nothing never survives a rehydrate.
  */
 
 import { create } from 'zustand';
@@ -33,11 +35,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { defaultTargetCount } from '../lib/draft';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
-import type { Exercise, ID, MuscleGroup, Routine, RoutineItem } from '../types/models';
+import type {
+  Exercise,
+  ID,
+  MuscleGroup,
+  Routine,
+  RoutineItem,
+  TrainingSequence,
+} from '../types/models';
+
+/** Off and empty. A sequence is something the user builds, never a default. */
+export const NO_SEQUENCE: TrainingSequence = { isActive: false, routineIds: [], cursor: 0 };
 
 interface LibraryState {
   exercises: Exercise[];
   routines: Routine[];
+  /** The optional running order of routines. Off by default — see `NO_SEQUENCE`. */
+  sequence: TrainingSequence;
 
   addExercise: (exercise: Exercise) => void;
   /**
@@ -62,6 +76,24 @@ interface LibraryState {
   deleteRoutine: (routineId: ID) => void;
   /** Appends an exercise to a routine with defaults from the exercise itself. */
   appendToRoutine: (routineId: ID, exerciseId: ID) => void;
+
+  /* --- the training sequence --- */
+  /** Turn the sequence on or off. Off is the default and hides it everywhere. */
+  setSequenceActive: (isActive: boolean) => void;
+  /** Append one step: push → pull → push is three steps, two of them the same. */
+  addSequenceStep: (routineId: ID) => void;
+  /** Drop the step at `index`, keeping the cursor pointing at the same step. */
+  removeSequenceStep: (index: number) => void;
+  /** Move a step one place up or down. The only reorder a short list needs. */
+  moveSequenceStep: (index: number, direction: -1 | 1) => void;
+  /** Point the cursor at a step by hand — "I'm doing pull today, not push". */
+  setSequenceCursor: (index: number) => void;
+  /**
+   * A workout from the current step is finished, so the queue moves on. A no-op
+   * when the sequence is off, empty, or the finished routine isn't the step the
+   * cursor is on — starting something else never advances the queue.
+   */
+  advanceSequence: (routineId: ID | undefined) => void;
   /** Back to the shipped library. The only way out of a library you've wrecked. */
   restoreSeedLibrary: () => void;
   /**
@@ -73,7 +105,7 @@ interface LibraryState {
    * merging it with the current one would resurrect every exercise the user has
    * deleted since — silently, and with no way to tell which is which.
    */
-  importLibrary: (raw: { exercises?: unknown; routines?: unknown }) => {
+  importLibrary: (raw: { exercises?: unknown; routines?: unknown; sequence?: unknown }) => {
     exercises: number;
     routines: number;
   };
@@ -110,6 +142,7 @@ export const useLibrary = create<LibraryState>()(
     (set, get) => ({
       exercises: seedExercises,
       routines: seedRoutines,
+      sequence: NO_SEQUENCE,
 
       addExercise: (exercise) => set({ exercises: [...get().exercises, exercise] }),
 
@@ -161,8 +194,21 @@ export const useLibrary = create<LibraryState>()(
           ),
         }),
 
-      deleteRoutine: (routineId) =>
-        set({ routines: get().routines.filter((r) => r.id !== routineId) }),
+      /**
+       * Deleting a routine also drops every step that pointed at it: a sequence
+       * step whose routine is gone is a queue position with nothing to start.
+       */
+      deleteRoutine: (routineId) => {
+        const { routines, sequence } = get();
+        const routineIds = sequence.routineIds.filter((id) => id !== routineId);
+        set({
+          routines: routines.filter((r) => r.id !== routineId),
+          sequence:
+            routineIds.length === sequence.routineIds.length
+              ? sequence
+              : withSteps(sequence, routineIds, sequence.cursor),
+        });
+      },
 
       /**
        * The target comes from `defaultTargetCount` — the exercise's own number where
@@ -201,7 +247,61 @@ export const useLibrary = create<LibraryState>()(
         });
       },
 
-      restoreSeedLibrary: () => set({ exercises: seedExercises, routines: seedRoutines }),
+      // A sequence with no steps cannot be on: there is nothing for it to suggest.
+      setSequenceActive: (isActive) => {
+        const { sequence } = get();
+        set({ sequence: { ...sequence, isActive: isActive && sequence.routineIds.length > 0 } });
+      },
+
+      addSequenceStep: (routineId) => {
+        const { routines, sequence } = get();
+        if (!routines.some((r) => r.id === routineId)) return;
+        set({ sequence: { ...sequence, routineIds: [...sequence.routineIds, routineId] } });
+      },
+
+      removeSequenceStep: (index) => {
+        const { sequence } = get();
+        if (index < 0 || index >= sequence.routineIds.length) return;
+        set({
+          sequence: withSteps(
+            sequence,
+            sequence.routineIds.filter((_, i) => i !== index),
+            // Removing a step ABOVE the cursor shifts everything below it up, so
+            // the step that was next up is still next up.
+            sequence.cursor - (index < sequence.cursor ? 1 : 0),
+          ),
+        });
+      },
+
+      moveSequenceStep: (index, direction) => {
+        const { sequence } = get();
+        const target = index + direction;
+        if (index < 0 || index >= sequence.routineIds.length) return;
+        if (target < 0 || target >= sequence.routineIds.length) return;
+        const routineIds = [...sequence.routineIds];
+        [routineIds[index], routineIds[target]] = [routineIds[target], routineIds[index]];
+        set({ sequence: { ...sequence, routineIds } });
+      },
+
+      setSequenceCursor: (index) =>
+        set((state) => ({
+          sequence: {
+            ...state.sequence,
+            cursor: clampCursor(index, state.sequence.routineIds.length),
+          },
+        })),
+
+      advanceSequence: (routineId) => {
+        const { sequence } = get();
+        const { isActive, routineIds, cursor } = sequence;
+        if (!isActive || routineIds.length === 0 || !routineId) return;
+        if (routineIds[clampCursor(cursor, routineIds.length)] !== routineId) return;
+        // The queue wraps: a sequence is a cycle, not a course you finish.
+        set({ sequence: { ...sequence, cursor: (cursor + 1) % routineIds.length } });
+      },
+
+      restoreSeedLibrary: () =>
+        set({ exercises: seedExercises, routines: seedRoutines, sequence: NO_SEQUENCE }),
 
       importLibrary: (raw) => {
         /*
@@ -213,7 +313,14 @@ export const useLibrary = create<LibraryState>()(
           exercises: [],
           routines: [],
         });
-        set({ exercises, routines });
+        /*
+         * The sequence comes from the FILE, not from this phone: a restore is
+         * "make this phone look like that backup", and keeping the local order on
+         * top of an imported routine list would be a sequence whose steps point at
+         * whatever ids happened to match. A file written before sequences existed
+         * has none, which sanitizes to off-and-empty.
+         */
+        set({ exercises, routines, sequence: sanitizeSequence(raw.sequence, routines) });
         return { exercises: exercises.length, routines: routines.length };
       },
     }),
@@ -221,7 +328,11 @@ export const useLibrary = create<LibraryState>()(
       name: 'library',
       version: 1,
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ exercises: state.exercises, routines: state.routines }),
+      partialize: (state) => ({
+        exercises: state.exercises,
+        routines: state.routines,
+        sequence: state.sequence,
+      }),
       /*
        * A first launch has nothing persisted, so `merge` isn't called and the
        * initializer's seeds stand. Every later launch replaces them wholesale
@@ -229,8 +340,15 @@ export const useLibrary = create<LibraryState>()(
        * itself on restart.
        */
       merge: (persisted, current) => {
-        const raw = (persisted ?? {}) as Partial<Pick<LibraryState, 'exercises' | 'routines'>>;
-        return { ...current, ...sanitizeLibrary(raw.exercises, raw.routines, current) };
+        const raw = (persisted ?? {}) as Partial<
+          Pick<LibraryState, 'exercises' | 'routines' | 'sequence'>
+        >;
+        const library = sanitizeLibrary(raw.exercises, raw.routines, current);
+        return {
+          ...current,
+          ...library,
+          sequence: sanitizeSequence(raw.sequence, library.routines),
+        };
       },
     },
   ),
@@ -268,6 +386,51 @@ function sanitizeLibrary(
     : fallback.routines;
 
   return { exercises, routines };
+}
+
+/**
+ * A sequence with a new step list: the cursor clamped into it, and the whole
+ * thing switched OFF if nothing is left. An active sequence with no steps would
+ * be a home screen promising a next workout it cannot name.
+ */
+function withSteps(
+  sequence: TrainingSequence,
+  routineIds: ID[],
+  cursor: number,
+): TrainingSequence {
+  return {
+    isActive: sequence.isActive && routineIds.length > 0,
+    routineIds,
+    cursor: clampCursor(cursor, routineIds.length),
+  };
+}
+
+/** An index that is inside a list of `length`, or 0 for an empty one. */
+function clampCursor(value: number, length: number): number {
+  if (length <= 0) return 0;
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(0, Math.round(value)), length - 1);
+}
+
+/**
+ * A usable sequence out of anything at all.
+ *
+ * Steps pointing at a routine that no longer exists are dropped — the whole
+ * point of the sequence is that its next step can be STARTED, and an id that
+ * resolves to nothing is a home screen suggesting a workout that isn't there.
+ */
+function sanitizeSequence(value: unknown, routines: readonly Routine[]): TrainingSequence {
+  if (typeof value !== 'object' || value === null) return NO_SEQUENCE;
+  const raw = value as Partial<TrainingSequence>;
+  const known = new Set(routines.map((r) => r.id));
+  const routineIds = Array.isArray(raw.routineIds)
+    ? raw.routineIds.filter((id): id is ID => typeof id === 'string' && known.has(id))
+    : [];
+  return {
+    isActive: raw.isActive === true && routineIds.length > 0,
+    routineIds,
+    cursor: clampCursor(typeof raw.cursor === 'number' ? raw.cursor : 0, routineIds.length),
+  };
 }
 
 const COUNT_UNITS = new Set(['reps', 'seconds', 'meters', 'rounds']);

@@ -1,16 +1,18 @@
 /**
- * HomeScreen — where am I in my split, and what do I do now.
+ * HomeScreen — what do I train today.
  *
  *   ┌──────────────────────────────────────────────┐
- *   │ PUSH / PULL / BOXING · ROLLING               │
- *   │   ●────●────◉────○────○                      │
- *   │  Push  Boxing Pull Push Rest                 │
- *   │             TODAY                            │
+ *   │ ┌ IN PROGRESS ───────────────────────────────┐│  ← only mid-workout
+ *   │ │ Pull + swimming · 11 of 18 sets · 42 min  ││
+ *   │ │ ╭──── Back to the workout ──────────────╮ ││
+ *   │ └────────────────────────────────────────────┘│
+ *   │ SEQUENCE                                     │  ← only when one is on
+ *   │  Push  ›  ‹Pull›  ›  Push  ›  Boxing          │
  *   │ ┌──────────────────────────────────────────┐ │
- *   │ │ SUGGESTED · PULL · BACK, BICEPS          │ │
+ *   │ │ NEXT UP · PULL · BACK, BICEPS            │ │
  *   │ │ Pull + swimming                          │ │
  *   │ │ 6 exercises · 18 sets · 1 nudge waiting  │ │
- *   │ │ ╭──── Start Pull + swimming ───────────╮ │ │
+ *   │ │ ╭──── Open Pull + swimming ────────────╮ │ │
  *   │ └──────────────────────────────────────────┘ │
  *   │ OR START ANOTHER                             │
  *   │ Push              Push · chest · 2 ex   ▶    │
@@ -19,15 +21,21 @@
  *   │ Pull + swimming              8 Aug · 74 min  │
  *   └──────────────────────────────────────────────┘
  *
- * One decision per screen, and the split SUGGESTS it rather than dictating it.
- * The card gets the 56-high green button because it is the answer most days; the
- * list under it is every other routine, one tap from starting, because "the queue
- * says pull but the pull-up bar is taken" is a normal Tuesday. A tracker that can
- * only start the workout it planned for you is a tracker you stop using the first
- * time you do something else.
+ * THE USER PICKS THE WORKOUT. Every routine is on this screen and every one of
+ * them is one tap from opening, because "the queue says pull but the pull-up bar
+ * is taken" is a normal Tuesday. A tracker that can only start the workout it
+ * planned for you is a tracker you stop using the first time you do something
+ * else.
  *
- * That is also why a REST day is not a dead end: the picker is there, so a day the
- * split calls empty is still a day you can train.
+ * The sequence — push → pull → push, in whatever order you actually train — is
+ * OPTIONAL and off until it is built (see `TrainingSequence`). While it is off,
+ * nothing about it appears here: the screen is the routine list and the recent
+ * log, and no routine is privileged. While it is on it adds exactly one thing: a
+ * `NEXT UP` card naming the routine whose turn it is. It still only suggests.
+ *
+ * `Open`, not `Start`: opening a routine shows its exercises without timing or
+ * dating anything. The workout starts on the `Start` inside it — see
+ * `ActiveWorkoutScreen`.
  *
  * "1 nudge waiting" is the only forward-looking number on the screen, and it is
  * a count of facts, not a nag: it tells you a weight has gone stale before you
@@ -39,11 +47,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { Icon } from '../components/Icon';
-import { SplitTimeline } from '../components/SplitTimeline';
 import { Kicker, ListCard, PrimaryButton, Separator } from '../components/primitives';
 import { formatShortDate } from '../lib/units';
 import { palette } from '../theme/tokens';
-import type { ID, RecentSessionSummary, SplitDay, WorkoutSplit } from '../types/models';
+import type { ID, RecentSessionSummary } from '../types/models';
 
 /** One routine, described well enough to choose it without opening it. */
 export interface RoutineChoice {
@@ -58,44 +65,66 @@ export interface RoutineChoice {
   setCount: number;
 }
 
-export interface TodayPlan extends RoutineChoice {
+export interface NextUpPlan extends RoutineChoice {
   /** Exercises with a stale weight the overload engine wants to report. */
   nudgeCount: number;
 }
 
+/** The sequence as this screen needs it. Absent whenever it is off or empty. */
+export interface SequenceView {
+  /** Every step in order, the current one marked. Repeats are normal. */
+  steps: { key: string; name: string; isCurrent: boolean }[];
+  /** The routine whose turn it is, or null if that step no longer resolves. */
+  next: NextUpPlan | null;
+}
+
+/** A workout that has been started and not finished, if there is one. */
+export interface WorkoutInProgress {
+  title: string;
+  done: number;
+  total: number;
+  minutes: number;
+}
+
 interface HomeScreenProps {
-  split: WorkoutSplit;
-  /** What the split suggests, or null on a rest day. */
-  today: TodayPlan | null;
-  /** Everything else that can be started, in list order. */
+  /**
+   * The workout already running, if any. It gets the top of the screen and its
+   * own button, because while one exists every routine row leads back to IT
+   * rather than to the routine that was tapped — a live session is never
+   * clobbered, and the user has to be able to see why.
+   */
+  inProgress: WorkoutInProgress | null;
+  sequence: SequenceView | null;
+  /** Every routine, in list order. */
   choices: RoutineChoice[];
-  /** Split days whose routine was deleted — forwarded to the timeline. */
-  emptyDayIds?: ReadonlySet<ID>;
   recent: RecentSessionSummary[];
-  onStart: (routineId: ID) => void;
-  onSelectDay: (day: SplitDay) => void;
+  onOpen: (routineId: ID) => void;
+  /** Back to the logging screen of the workout in progress. */
+  onResume: () => void;
+  /** Tapping the sequence strip goes to the screen that edits it. */
+  onOpenSequence: () => void;
   onOpenSession: (sessionId: string) => void;
 }
 
 export function HomeScreen({
-  split,
-  today,
+  inProgress,
+  sequence,
   choices,
-  emptyDayIds,
   recent,
-  onStart,
-  onSelectDay,
+  onOpen,
+  onResume,
+  onOpenSequence,
   onOpenSession,
 }: HomeScreenProps) {
   const insets = useSafeAreaInsets();
+  const next = sequence?.next ?? null;
   /*
-   * The suggested routine already has a button of its own two inches above, and an
-   * empty routine has nothing to start — a ▶ that opens an editor instead of
-   * starting a workout is a button that lies. Empty ones live in the `Routines`
-   * tab, which is where they get filled in.
+   * An empty routine has nothing to open — a ▶ that lands on an editor is a
+   * button that lies. Empty ones live in the `Routines` tab, which is where they
+   * get filled in. The `NEXT UP` routine already has a button of its own.
    */
   const others = choices.filter(
-    (choice) => choice.routineId !== today?.routineId && choice.exerciseCount > 0,
+    (choice) => choice.routineId !== next?.routineId && choice.exerciseCount > 0,
   );
 
   return (
@@ -104,58 +133,59 @@ export function HomeScreen({
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: insets.top + 24, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <SplitTimeline split={split} onSelectDay={onSelectDay} emptyDayIds={emptyDayIds} />
-
-        {today ? (
-          <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
-            {/* `SUGGESTED`, not `TODAY`: the split is a queue offering the next
-                thing, and the list below is the rest of the offer. */}
-            <Kicker>Suggested{today.focus ? ` · ${today.focus}` : ''}</Kicker>
-            <Text className="mt-sm text-title font-medium text-ink">{today.name}</Text>
+        {inProgress ? (
+          <View className="mx-lg mb-xl rounded-surface border border-green-dim bg-green-wash p-lg">
+            <Kicker tone="green">In progress</Kicker>
+            <Text className="mt-sm text-title font-medium text-ink">{inProgress.title}</Text>
             <Text className="mt-xs text-label tabular-nums text-ink-muted">
-              {today.exerciseCount} exercises · {today.setCount} sets
-              {today.nudgeCount > 0
-                ? ` · ${today.nudgeCount} ${today.nudgeCount === 1 ? 'nudge' : 'nudges'} waiting`
+              {inProgress.done} of {inProgress.total} sets · {inProgress.minutes} min
+            </Text>
+            <View className="mt-lg">
+              <PrimaryButton label="Back to the workout" onPress={onResume} />
+            </View>
+          </View>
+        ) : null}
+
+        {sequence ? <SequenceStrip sequence={sequence} onPress={onOpenSequence} /> : null}
+
+        {next ? (
+          <View className="mx-lg mt-xl rounded-surface border border-hairline bg-surface p-lg">
+            {/* `NEXT UP`, not `TODAY`: the sequence is a queue offering the next
+                thing, and the list below is the rest of the offer. */}
+            <Kicker>Next up{next.focus ? ` · ${next.focus}` : ''}</Kicker>
+            <Text className="mt-sm text-title font-medium text-ink">{next.name}</Text>
+            <Text className="mt-xs text-label tabular-nums text-ink-muted">
+              {next.exerciseCount} exercises · {next.setCount} sets
+              {next.nudgeCount > 0
+                ? ` · ${next.nudgeCount} ${next.nudgeCount === 1 ? 'nudge' : 'nudges'} waiting`
                 : ''}
             </Text>
             <View className="mt-lg">
-              <PrimaryButton
-                label={`Start ${today.name}`}
-                onPress={() => onStart(today.routineId)}
-              />
+              <PrimaryButton label={`Open ${next.name}`} onPress={() => onOpen(next.routineId)} />
             </View>
           </View>
-        ) : (
-          /* A rest day is a real answer, not an empty state — and not a locked
-             door either: the picker below still works. */
-          <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
-            <Kicker>Today</Kicker>
-            <Text className="mt-sm text-title font-medium text-ink">Rest</Text>
-            <Text className="mt-xs text-label text-ink-muted">
-              Nothing scheduled. The split advances when you train, not when the week does — start
-              anything below if you want to.
-            </Text>
-          </View>
-        )}
+        ) : null}
 
         {others.length > 0 ? (
           <>
             <Kicker className="mx-lg mb-md mt-xxl">
-              {today ? 'Or start another' : 'Start a workout'}
+              {next ? 'Or start another' : 'Start a workout'}
             </Kicker>
             <ListCard className="mx-lg">
               {others.map((choice, index) => (
                 <View key={choice.routineId}>
                   {index > 0 ? <Separator /> : null}
-                  <ChoiceRow choice={choice} onPress={() => onStart(choice.routineId)} />
+                  <ChoiceRow choice={choice} onPress={() => onOpen(choice.routineId)} />
                 </View>
               ))}
             </ListCard>
           </>
         ) : null}
+
+        {others.length === 0 && !next ? <Empty /> : null}
 
         {recent.length > 0 ? (
           <>
@@ -175,12 +205,75 @@ export function HomeScreen({
   );
 }
 
+/* ------------------------------------------------------------------ */
+
 /**
- * One startable routine.
+ * The sequence, as one scrollable line: `Push › Pull › Push › Boxing`, with the
+ * step whose turn it is on a green hairline.
  *
- * The whole row starts it — no chevron, because a chevron promises a screen and
- * this promises a workout. The ▶ is the same green glyph the set rows use for "run
- * this now", which is exactly what it does here.
+ * A line rather than a calendar grid, because a sequence is an ORDER and not a
+ * week: it advances when you train, not when Tuesday arrives. Tapping anywhere on
+ * it opens the screen that edits it — a chip is a label, not a start button, and
+ * the thing you want after looking at your order is usually to change it.
+ */
+function SequenceStrip({
+  sequence,
+  onPress,
+}: {
+  sequence: SequenceView;
+  onPress: () => void;
+}) {
+  return (
+    <View>
+      <Kicker className="mx-lg">Sequence</Kicker>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16 }}
+        className="mt-md"
+      >
+        {sequence.steps.map((step, index) => (
+          <Pressable
+            key={step.key}
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={`${step.name}${step.isCurrent ? ', next up' : ''}. Edit the sequence.`}
+            className="flex-row items-center"
+          >
+            {index > 0 ? (
+              <Text className="mx-xs text-label text-ink-faint" allowFontScaling={false}>
+                ›
+              </Text>
+            ) : null}
+            <View
+              className={[
+                'h-[32px] justify-center rounded-pill px-md',
+                step.isCurrent ? 'border border-green-bright bg-surface-alt' : 'bg-surface',
+              ].join(' ')}
+            >
+              <Text
+                numberOfLines={1}
+                className={[
+                  'text-label',
+                  step.isCurrent ? 'font-semibold text-green-bright' : 'text-ink-muted',
+                ].join(' ')}
+              >
+                {step.name}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+/**
+ * One openable routine.
+ *
+ * The whole row opens it — no chevron, because a chevron promises a screen and
+ * this promises a workout. The ▶ is the same green glyph the set rows use for
+ * "this one now".
  */
 function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => void }) {
   const detail = [choice.focus, `${choice.exerciseCount} exercises · ${choice.setCount} sets`]
@@ -191,7 +284,7 @@ function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => 
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Start ${choice.name}. ${detail}`}
+      accessibilityLabel={`Open ${choice.name}. ${detail}`}
       className="h-row-lg flex-row items-center px-lg"
     >
       <View className="flex-1 pr-md">
@@ -228,5 +321,18 @@ function RecentRow({
         {formatShortDate(session.performedAt)} · {session.durationMinutes} min
       </Text>
     </Pressable>
+  );
+}
+
+/** Nothing to open: every routine is empty, or there are none. */
+function Empty() {
+  return (
+    <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
+      <Kicker>Nothing to open</Kicker>
+      <Text className="mt-sm text-body text-ink-muted">
+        Put some exercises in a routine — Routines, in the tab bar — and it shows up here, ready
+        to open.
+      </Text>
+    </View>
   );
 }
