@@ -8,8 +8,11 @@ node_modules/
 /android/
 /ios/
 
-# Build output
+# Build output. The one exception is the VERSIONED RELEASE APK at the repo root:
+# it is committed on purpose so the phone can be updated straight from GitHub
+# without a build machine. Everything gradle writes under android/ stays ignored.
 *.apk
+!/workout-tracker-*.apk
 *.aab
 dist/
 web-build/
