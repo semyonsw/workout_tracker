@@ -4,23 +4,22 @@
  *   ┌──────────────────────────────────────────────┐
  *   │ ‹  PULL + SWIMMING                 [ Finish ]│   ← header, always visible
  *   │    11 of 18 sets · 42 min                    │
- *   │    ( ▶ START THE CLOCK NOW )                 │   ← re-anchor the session
+ *   │    ( Stop and exit )( Restart clock )        │   ← session controls
  *   ├──────────────────────────────────────────────┤
+ *   │ ╭──────────────────────────────────────────╮ │
+ *   │ │  1:28   BETWEEN SETS    +15  ⏸   Skip    │ │   ← the clock, up top
+ *   │ ╰──────────────────────────────────────────╯ │
  *   │ Weighted 90° pull-ups                        │   ← expanded
  *   │ 4 × 4–6 reps · last: +40 kg · 4 4            │
  *   │  ↗ SAME +25 KG FOR 23 DAYS · 5 SESSIONS      │
  *   │  1   +40 KG   ×   4 REPS                 (✓) │
  *   │  3   +40 KG   ×   4 REPS                 ( ) │   ← primed, surface-alt
  *   │  + Add set              − Remove set          │
- *   │  Rest 2:00                                    │
  *   │ Wide pull-ups machine                  0/4 ● │   ← collapsed
  *   │ Plank                                  0/3   │
  *   │  1      2:00 MIN                   ( ▶ )( ) │   ← timed: run the clock
  *   │ ( + Add an exercise )                        │   ← anything, mid-workout
  *   └──────────────────────────────────────────────┘
- *              ╭──────────────────────╮
- *              │ 1:28      +15   Skip │                 ← rest, or the set clock
- *              ╰──────────────────────╯
  *
  * NO TAB BAR. The session owns the screen: there is nothing else worth doing
  * mid-set, and a tab bar would put a navigation target a thumb-slip from the ✓.
@@ -29,10 +28,33 @@
  * live in `lib/`. The screen's only real job is to keep the thing the user is
  * doing right now under their thumb.
  *
+ * ── OPENING A WORKOUT IS NOT STARTING ONE ───────────────────────────────────
+ *
+ * A routine can be opened just to read it — "what is on push day again?" — and
+ * that must leave no trace: no date, no duration, no history row. So the session
+ * arrives with `startedAt: null` and this screen offers three things instead of
+ * two:
+ *
+ *   • `Start` anchors the clock to now. Until it is pressed the header says
+ *     `not started` and nothing is timed. Logging a set starts it too, because a
+ *     ✓ says "I am training" as clearly as the button does.
+ *   • `Stop and exit` leaves WITHOUT SAVING. On a workout with sets logged it
+ *     asks first; on one with nothing logged it just goes.
+ *   • `Finish` saves, and is only offered once the workout has started.
+ *
+ * The back chevron — and Android's own back gesture, which goes through the same
+ * path — is the fourth way out and the quiet one: it leaves a started workout
+ * running (the store persists it, so the session is still there when you come
+ * back) and throws away one that was only being looked at.
+ *
+ * `Restart the clock` is the same action as `Start`, offered again while a workout
+ * runs: a session left open in a locker reads five hours, and one tap re-anchors it
+ * without touching a single logged set.
+ *
  * ── THE SESSION IS EDITABLE WHILE IT RUNS ───────────────────────────────────
  *
- * A plan survives contact with the gym for about ten minutes. Three of the four
- * things this screen grew are that admission:
+ * A plan survives contact with the gym for about ten minutes. Three things on this
+ * screen are that admission:
  *
  *   • `+ Add an exercise` at the bottom — pick anything from the library, or create
  *     something that isn't in it yet, and it lands at the end of THIS session with
@@ -41,12 +63,6 @@
  *     exercise down to one row it takes the exercise.
  *   • LONG PRESS, THEN SLIDE to reorder. The order you planned is not the order the
  *     machines are free in.
- *
- * The fourth is `START THE CLOCK NOW`, and it is a different kind of fix: the
- * header's minutes and every set's `performedAt` are read off one stored instant,
- * so a session opened before the warm-up — or left running while the phone sat in a
- * locker — writes a workout claiming to have taken five hours. One tap re-anchors
- * that instant to now without touching a single logged set.
  *
  * ── HOW THE DRAG WORKS, AND WHY IT IS BUILT THIS WAY ────────────────────────
  *
@@ -112,6 +128,12 @@ interface ActiveWorkoutScreenProps {
    * that record looks like. `lib/completedWorkout.ts` owns that shape.
    */
   onFinish: (session: DraftSession) => Promise<void> | void;
+  /**
+   * Leave the logging screen. The CALLER decides what that means for the session
+   * itself — a started workout keeps running, an unstarted one is thrown away
+   * (see `AppShell.leaveSession`), and both `Finish` and `Stop and exit` have
+   * already ended it by the time they call this.
+   */
   onExit: () => void;
   /**
    * Open the library as a picker for THIS session. Absent = no add button, which
@@ -144,7 +166,7 @@ export function ActiveWorkoutScreen({
   const cardLayouts = useRef<Record<ID, CardLayout>>({});
   /** Where the list wrapper starts inside the scroll content. */
   const listTop = useRef(0);
-  const [confirming, setConfirming] = useState<'finish' | 'clock' | null>(null);
+  const [confirming, setConfirming] = useState<'finish' | 'clock' | 'discard' | null>(null);
 
   /* --- store bindings: one selector per slice, never the whole store --- */
   const session = useActiveWorkout((s) => s.session);
@@ -176,7 +198,8 @@ export function ActiveWorkoutScreen({
   const removeSet = useActiveWorkout((s) => s.removeSet);
   const removeLastSet = useActiveWorkout((s) => s.removeLastSet);
   const moveEntry = useActiveWorkout((s) => s.moveEntry);
-  const restartClock = useActiveWorkout((s) => s.restartClock);
+  const startWorkout = useActiveWorkout((s) => s.startWorkout);
+  const discardSession = useActiveWorkout((s) => s.discardSession);
   const acceptOverload = useActiveWorkout((s) => s.acceptOverload);
   const dismissOverload = useActiveWorkout((s) => s.dismissOverload);
   const finishSession = useActiveWorkout((s) => s.finishSession);
@@ -191,7 +214,8 @@ export function ActiveWorkoutScreen({
    */
   const restSeconds = useSettings((s) => s.restSecondsBetweenSets);
 
-  const elapsedMinutes = useElapsedMinutes(session?.startedAt);
+  const isStarted = session?.startedAt != null;
+  const elapsedMinutes = useElapsedMinutes(session?.startedAt ?? null);
 
   /* --- reorder ------------------------------------------------------- */
   const entryIds = useMemo(
@@ -238,6 +262,27 @@ export function ActiveWorkoutScreen({
     await onFinish(finished);
     onExit();
   }, [finishSession, onExit, onFinish]);
+
+  /** ▶ Start — the workout is happening as of now. */
+  const handleStart = useCallback(() => {
+    commit();
+    startWorkout();
+  }, [startWorkout]);
+
+  /**
+   * Leave without saving. Confirms only when there is something to lose: a
+   * workout nobody logged a set in has nothing to throw away, and asking about it
+   * is a dialog that only ever has one answer.
+   */
+  const handleStopAndExit = useCallback(() => {
+    if (progress.done > 0) {
+      setConfirming('discard');
+      return;
+    }
+    undo();
+    discardSession();
+    onExit();
+  }, [discardSession, onExit, progress.done]);
 
   const handleFinish = useCallback(() => {
     if (!session) return;
@@ -307,44 +352,58 @@ export function ActiveWorkoutScreen({
           subtitle={
             lifted
               ? `Slide to move it · position ${reorder.targetIndex + 1} of ${entryIds.length}`
-              : `${progress.done} of ${progress.total} sets · ${elapsedMinutes} min`
+              : isStarted
+                ? `${progress.done} of ${progress.total} sets · ${elapsedMinutes} min`
+                : `${progress.total} sets planned · not started`
           }
           onBack={lifted ? undefined : onExit}
           action={
             lifted
               ? { label: 'Drop', onPress: drop }
-              : { label: 'Finish', onPress: handleFinish }
+              : isStarted
+                ? { label: 'Finish', onPress: handleFinish }
+                : { label: 'Start', onPress: handleStart }
           }
         >
-          {/* Re-anchor the clock. A chip rather than a row: it is a correction, so
-              it should be reachable without being the second thing on the screen.
-              Hidden mid-move — nothing here is about the clock while a card is up. */}
+          {/* The session's own controls. Hidden mid-move — none of them is about
+              a card in the air. `Start` is repeated as a chip before the workout
+              begins because it is the thing to do, and the header pill alone is
+              easy to read as a page title. */}
           {lifted ? null : (
-            <Pressable
-              onPress={() => {
-                tap();
-                setConfirming('clock');
-              }}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Start the workout clock now"
-              className="mt-sm h-[32px] flex-row items-center self-start rounded-pill border border-hairline bg-surface-alt px-md"
-            >
-              <Icon name="play" size={11} color={palette.greenBright} />
-              <Text className="ml-sm text-micro font-semibold uppercase text-ink-muted">
-                Start the clock now
-              </Text>
-            </Pressable>
+            <View className="mt-sm flex-row items-center">
+              {isStarted ? null : (
+                <SessionChip label="Start workout" icon="play" tone="green" onPress={handleStart} />
+              )}
+              <SessionChip label="Stop and exit" icon="x" onPress={handleStopAndExit} />
+              {isStarted ? (
+                <SessionChip
+                  label="Restart clock"
+                  icon="play"
+                  onPress={() => {
+                    tap();
+                    setConfirming('clock');
+                  }}
+                />
+              ) : null}
+            </View>
           )}
         </ScreenHeader>
+
+        {/*
+          One pill, two instruments, directly under the header: a rest countdown
+          and the clock on a plank. A set timer outranks rest — you cannot be
+          holding and resting, and `startSetTimer` clears rest for that reason.
+          Each renders null when it isn't running, so this is either one pill or
+          nothing at all.
+        */}
+        {setTimer ? <SetTimerPill /> : <RestTimerPill />}
 
         <ScrollView
           ref={scrollRef}
           className="flex-1"
           contentContainerStyle={{
-            paddingTop: 16,
-            // Room for the floating timer pill so it never covers the last row.
-            paddingBottom: insets.bottom + 120,
+            paddingTop: 8,
+            paddingBottom: insets.bottom + 32,
           }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -428,14 +487,6 @@ export function ActiveWorkoutScreen({
         </ScrollView>
       </View>
 
-      {/*
-        One pill, two instruments. A set timer outranks rest — you cannot be
-        holding and resting, and `startSetTimer` clears rest for that reason.
-        Both hide behind a sheet: neither is what's being decided there. They hide
-        mid-move too, because the pill sits exactly where a card is being dragged.
-      */}
-      {dimmed || lifted ? null : setTimer ? <SetTimerPill /> : <RestTimerPill />}
-
       {confirming === 'finish' ? (
         <FinishSheet
           unloggedCount={progress.total - progress.done}
@@ -447,14 +498,30 @@ export function ActiveWorkoutScreen({
 
       {confirming === 'clock' ? (
         <ConfirmSheet
-          title="Start the clock now?"
-          body={`This workout reads ${elapsedMinutes} min. Starting the clock now makes it 0, and history will record it from this moment — the sets you already logged stay exactly as they are.`}
-          confirmLabel="Start now"
+          title="Restart the clock?"
+          body={`This workout reads ${elapsedMinutes} min. Restarting the clock makes it 0, and history will record it from this moment — the sets you already logged stay exactly as they are.`}
+          confirmLabel="Restart it"
           cancelLabel={`Keep ${elapsedMinutes} min`}
           onConfirm={() => {
             commit();
-            restartClock();
+            startWorkout();
             setConfirming(null);
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      ) : null}
+
+      {confirming === 'discard' ? (
+        <ConfirmSheet
+          title="Stop and exit without saving?"
+          body={`${progress.done} ${progress.done === 1 ? 'set' : 'sets'} logged in this workout will be thrown away, and nothing will reach your history. Use Finish instead if you want to keep ${progress.done === 1 ? 'it' : 'them'}.`}
+          confirmLabel="Throw it away"
+          cancelLabel="Keep logging"
+          onConfirm={() => {
+            undo();
+            discardSession();
+            setConfirming(null);
+            onExit();
           }}
           onCancel={() => setConfirming(null)}
         />
@@ -464,6 +531,50 @@ export function ActiveWorkoutScreen({
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * One session control: `Start the workout`, `Stop and exit`, `Restart the clock`.
+ *
+ * Chips rather than full-width buttons because they sit in the header, above the
+ * work: they have to be reachable without being the second thing on the screen.
+ * `green` marks the one that is the obvious next move.
+ */
+function SessionChip({
+  label,
+  icon,
+  tone = 'quiet',
+  onPress,
+}: {
+  label: string;
+  icon: 'play' | 'x';
+  tone?: 'green' | 'quiet';
+  onPress: () => void;
+}) {
+  const green = tone === 'green';
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className={[
+        'mr-sm h-[34px] flex-row items-center rounded-pill px-md',
+        green ? 'bg-green' : 'border border-hairline bg-surface-alt',
+      ].join(' ')}
+    >
+      <Icon name={icon} size={11} color={green ? palette.ink : palette.inkMuted} />
+      <Text
+        numberOfLines={1}
+        className={[
+          'ml-sm text-micro font-semibold uppercase',
+          green ? 'text-ink' : 'text-ink-muted',
+        ].join(' ')}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 interface Reorder {
   /** The card in the air, or null. */
@@ -607,7 +718,7 @@ function useCardReorder(
  * Ticks every 15 s rather than every second: the header shows minutes, so a
  * 1 Hz interval would re-render the screen 900 times an hour to change nothing.
  */
-function useElapsedMinutes(startedAt: string | undefined): number {
+function useElapsedMinutes(startedAt: string | null): number {
   const startMs = useMemo(() => (startedAt ? new Date(startedAt).getTime() : null), [startedAt]);
   const [minutes, setMinutes] = useState(() =>
     startMs ? Math.floor((Date.now() - startMs) / 60_000) : 0,

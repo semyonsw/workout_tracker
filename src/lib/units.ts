@@ -36,8 +36,7 @@ export function weightSteps(unitSystem: UnitSystem): { fine: number; coarse: num
     : { fine: WEIGHT_STEP_FINE_KG, coarse: WEIGHT_STEP_COARSE_KG };
 }
 
-/** Smallest jump the user can actually make, per unit system. */
-export const DEFAULT_INCREMENT_KG = 2.5;
+/** The jump an imperial lifter can actually make when nothing else says otherwise. */
 export const DEFAULT_INCREMENT_LB = 5;
 
 export function kgToLb(kg: number): number {
@@ -175,11 +174,18 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  *
  * No year: a workout log is read backwards from today, and by the time the year
  * matters you are on the history screen looking at a chart. No weekday either —
- * the split is a queue, so which weekday it was is not information.
+ * a training log is read by date, so which weekday it was is not information.
  */
 export function formatShortDate(iso: string): string {
   const date = new Date(iso);
-  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`;
+  /*
+   * The phone's own calendar day, not UTC's. Timestamps are stored as UTC — that
+   * is what makes them comparable — but "17 Aug" is a claim about the day the
+   * user trained, and reading it out of UTC dated every workout done before 04:00
+   * in Yerevan to the day before. `daysBetween` stays UTC on purpose: it measures
+   * a span rather than naming a day.
+   */
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
 }
 
 /** "8 AUG" — the chart's axis form. */

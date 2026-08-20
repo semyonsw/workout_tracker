@@ -45,8 +45,6 @@ function remainingSeconds(endsAt: number | null): number {
 export interface RestTimerApi {
   /** Seconds left, already clamped at 0. Fractional — round at render time. */
   remaining: number;
-  /** 0 → 1, for the drain line. 1 when idle. */
-  progress: number;
   /** The pill should be on screen: rest is counting, or frozen by a pause. */
   isActive: boolean;
   /** The clock is moving. False while paused, false at zero. */
@@ -61,7 +59,6 @@ export interface RestTimerApi {
   pause: () => void;
   resume: () => void;
   skip: () => void;
-  start: (seconds: number) => void;
 }
 
 export function useRestTimer(): RestTimerApi {
@@ -70,7 +67,6 @@ export function useRestTimer(): RestTimerApi {
   const pauseRest = useActiveWorkout((s) => s.pauseRest);
   const resumeRest = useActiveWorkout((s) => s.resumeRest);
   const skipRest = useActiveWorkout((s) => s.skipRest);
-  const startRest = useActiveWorkout((s) => s.startRest);
 
   const stepSeconds = useSettings((s) => s.adjustStepSeconds);
   const keepAwakeEnabled = useSettings((s) => s.keepAwakeEnabled);
@@ -234,11 +230,8 @@ export function useRestTimer(): RestTimerApi {
     skipRest();
   }, [skipRest]);
 
-  const start = useCallback((seconds: number) => startRest(seconds, 'manual'), [startRest]);
-
   return {
     remaining,
-    progress: rest.totalSeconds > 0 ? 1 - remaining / rest.totalSeconds : 1,
     isActive,
     isRunning,
     isPaused,
@@ -249,6 +242,5 @@ export function useRestTimer(): RestTimerApi {
     pause,
     resume,
     skip,
-    start,
   };
 }

@@ -9,7 +9,8 @@
  *     "settings": { ... },
  *     "exercises": [ ... ],
  *     "routines":  [ ... ],
- *     "workouts":  [ ... ]
+ *     "workouts":  [ ... ],
+ *     "sequence":  { "isActive": false, "routineIds": [], "cursor": 0 }
  *   }
  *
  * WHY THIS EXISTS. Everything the user owns lives in three AsyncStorage keys on one
@@ -72,6 +73,12 @@ export interface BackupPayload {
   exercises: unknown[];
   routines: unknown[];
   workouts: unknown[];
+  /**
+   * The training sequence, if this phone has one. Optional because it arrived
+   * after the format did: a file written by an older build simply has no sequence,
+   * which restores as "off and empty" — the same thing a fresh install has.
+   */
+  sequence?: unknown;
 }
 
 export interface BackupEnvelope extends BackupPayload {
@@ -202,6 +209,9 @@ export function parseBackup(text: string): ParseResult {
     exercises: asArray(source.exercises),
     routines: asArray(source.routines),
     workouts: asArray(source.workouts),
+    // Passed through untouched — `libraryStore` owns what a sequence may be, and a
+    // file from before sequences existed simply has none.
+    sequence: source.sequence ?? null,
   };
   const counts = countPayload(payload);
 

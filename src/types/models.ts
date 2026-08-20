@@ -195,38 +195,27 @@ export interface Exercise {
 }
 
 /* ------------------------------------------------------------------ */
-/* Split (the week / cycle view)                                       */
+/* Training sequence (the order of routines, when you want one)         */
 /* ------------------------------------------------------------------ */
 
-export type SplitDayKind = 'routine' | 'rest' | 'freeform';
-
-export interface SplitDay {
-  id: ID;
-  order: number;
-  /** Short label for the timeline chip: "Push", "Pull", "Boxing", "Rest". */
-  label: string;
-  kind: SplitDayKind;
-  routineId?: ID;
-  /** Optional weekday pin for `weekly` cycles (0 = Sunday). */
-  weekday?: number;
-}
-
-export interface WorkoutSplit {
-  id: ID;
-  ownerId: ID;
-  name: string; // "PPL + Boxing"
-  /**
-   * `weekly`  — days are pinned to weekdays.
-   * `rolling` — a repeating queue that advances only when a session completes.
-   *             This is what a real log looks like: an unbroken chain of
-   *             pull -> push -> boxing -> pull ... that ignores the calendar.
-   */
-  cycleMode: 'weekly' | 'rolling';
-  days: SplitDay[];
-  /** Index into `days` for `rolling` cycles. */
-  cursor: number;
-  startedOn: ISODateTime;
+/**
+ * An optional running order for the routines: push → pull → push …
+ *
+ * OFF BY DEFAULT, and off means off: every routine is listed on the home screen
+ * and any of them can be started. A sequence is a convenience for someone who
+ * does follow a fixed order, not a schedule the app imposes — so when it is
+ * inactive nothing about it is rendered, and when it is active it only ever
+ * SUGGESTS the next routine.
+ *
+ * It is a queue, not a calendar: `cursor` advances when a workout from the
+ * current step is finished, never when the week does.
+ */
+export interface TrainingSequence {
   isActive: boolean;
+  /** Routine ids in the order they are trained. Repeats are allowed and normal. */
+  routineIds: ID[];
+  /** Index into `routineIds` of the next routine up. */
+  cursor: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -254,8 +243,6 @@ export interface Routine {
   id: ID;
   ownerId: ID;
   name: string; // "Pull + Swimming"
-  /** Links a template to its slot in the split timeline. */
-  splitTag?: string;
   items: RoutineItem[];
   estimatedMinutes?: number;
   notes?: string;
@@ -266,8 +253,6 @@ export interface Routine {
 /* ------------------------------------------------------------------ */
 /* Session (the performance)                                           */
 /* ------------------------------------------------------------------ */
-
-export type SessionStatus = 'active' | 'completed' | 'abandoned';
 
 /**
  * One logged set. This is the atom of the whole app — everything else is
@@ -306,33 +291,6 @@ export interface SetHistory {
   notes?: string;
 }
 
-export interface SessionExercise {
-  id: ID;
-  sessionId: ID;
-  exerciseId: ID;
-  order: number;
-  sets: SetHistory[];
-  /** Overrides routine rest for this session only. */
-  restSecondsOverride?: number;
-  notes?: string;
-}
-
-export interface WorkoutSession {
-  id: ID;
-  ownerId: ID;
-  routineId?: ID;
-  splitDayId?: ID;
-  title: string;
-  startedAt: ISODateTime;
-  endedAt?: ISODateTime;
-  status: SessionStatus;
-  entries: SessionExercise[];
-  /** Rolled up on completion so the history list never recomputes. */
-  totalVolumeKg?: number;
-  bodyweightKg?: number;
-  notes?: string;
-}
-
 /**
  * One row of the home screen's `RECENT` list.
  *
@@ -345,25 +303,4 @@ export interface RecentSessionSummary {
   title: string;
   performedAt: ISODateTime;
   durationMinutes: number;
-}
-
-/* ------------------------------------------------------------------ */
-/* Derived / cache                                                     */
-/* ------------------------------------------------------------------ */
-
-/**
- * Optional per-exercise rollup, recomputed on session completion.
- * Pure cache: it can be dropped and rebuilt from `SetHistory` at any time.
- * Exists so the routine list can render overload badges without scanning history.
- */
-export interface ExerciseStat {
-  exerciseId: ID;
-  lastPerformedAt: ISODateTime;
-  /** Heaviest completed working weight in the most recent session. */
-  lastTopWeightKg: number | null;
-  /** First session date at which `lastTopWeightKg` became the top weight. */
-  topWeightSince: ISODateTime | null;
-  sessionsAtTopWeight: number;
-  bestE1RM: number | null;
-  updatedAt: ISODateTime;
 }

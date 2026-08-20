@@ -2,10 +2,10 @@
  * App entry — providers, the boundary, the notification handler, and the shell.
  *
  * Everything about WHICH screen is showing lives in `src/navigation/AppShell`;
- * everything about WHAT the data is now lives in `src/state/libraryStore` (the
- * exercises and routines) and `src/data/seed` (the history and the split, still
- * fixtures). Swap those for SQLite/Drizzle queries and neither this file nor any
- * screen below it changes: they already speak the real types.
+ * everything about WHAT the data is lives in the three stores under `src/state`
+ * (the library and routines, the settings, the finished workouts). Swap those for
+ * SQLite queries and neither this file nor any screen below it changes: they
+ * already speak the real types.
  *
  * The three side effects set up here are all "make the phone able to reach the
  * user", and all three are allowed to fail:

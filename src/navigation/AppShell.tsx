@@ -3,9 +3,9 @@
  *
  *   tab:  Today | History | Routines | Library | Settings   ← the roots
  *   stack: session · routineEditor · addExercise · createExercise · editExercise
- *          · exerciseHistory
+ *          · exerciseHistory · sequence
  *
- * Why not a router library: the app has five roots and five pushable screens, none
+ * Why not a router library: the app has five roots and six pushable screens, none
  * of them deep-linked, none of them needing URL state. `expo-router` would add a
  * dependency, a file-system convention and a navigator config to express a
  * `Route[]` and two functions. When deep links or a native back-stack are actually
@@ -18,8 +18,8 @@
  * What lives here and what doesn't: the library and the routines moved out to
  * `libraryStore` the moment they became editable — component state that vanishes
  * on a cold launch is not where a user's exercises belong. What is left in this
- * file is navigation, plus the two derived things navigation needs: today's plan
- * and the overload verdicts behind its nudge count.
+ * file is navigation, plus the two derived things navigation needs: the training
+ * sequence's next step and the overload verdicts behind its nudge count.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -34,9 +34,15 @@ import { CreateExerciseScreen } from '../screens/CreateExerciseScreen';
 import { ExerciseHistoryScreen } from '../screens/ExerciseHistoryScreen';
 import { ExerciseLibraryScreen, clusterKey, muscleKey } from '../screens/ExerciseLibraryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
-import { HomeScreen, type RoutineChoice, type TodayPlan } from '../screens/HomeScreen';
+import {
+  HomeScreen,
+  type RoutineChoice,
+  type SequenceView,
+  type WorkoutInProgress,
+} from '../screens/HomeScreen';
 import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
+import { SequenceScreen } from '../screens/SequenceScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { historyByExerciseId, recentlyUsedExerciseIds } from '../lib/completedWorkout';
 import { buildDraftEntry, defaultTargetCount } from '../lib/draft';
@@ -54,8 +60,8 @@ import { useActiveWorkout } from '../state/activeWorkoutStore';
 import { routineUsageCount, useLibrary } from '../state/libraryStore';
 import { useSettings } from '../state/settingsStore';
 import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore';
-import { seedSplit, seedUser } from '../data/seed';
-import type { Exercise, ID, MuscleGroup, SplitDay } from '../types/models';
+import { seedUser } from '../data/seed';
+import type { Exercise, ID, MuscleGroup } from '../types/models';
 
 /** Screens pushed on top of a tab. `session` is pushed and owns the screen. */
 type Route =
@@ -88,7 +94,8 @@ type Route =
       addToSession?: boolean;
     }
   | { name: 'editExercise'; exerciseId: ID }
-  | { name: 'exerciseHistory'; exerciseId: ID };
+  | { name: 'exerciseHistory'; exerciseId: ID }
+  | { name: 'sequence' };
 
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
@@ -113,11 +120,19 @@ export function AppShell() {
   const updateRoutine = useLibrary((s) => s.updateRoutine);
   const deleteRoutine = useLibrary((s) => s.deleteRoutine);
   const appendToRoutine = useLibrary((s) => s.appendToRoutine);
+  const sequence = useLibrary((s) => s.sequence);
+  const setSequenceActive = useLibrary((s) => s.setSequenceActive);
+  const addSequenceStep = useLibrary((s) => s.addSequenceStep);
+  const removeSequenceStep = useLibrary((s) => s.removeSequenceStep);
+  const moveSequenceStep = useLibrary((s) => s.moveSequenceStep);
+  const setSequenceCursor = useLibrary((s) => s.setSequenceCursor);
+  const advanceSequence = useLibrary((s) => s.advanceSequence);
 
   const unitSystem = useSettings((s) => s.unitSystem);
 
   const session = useActiveWorkout((s) => s.session);
   const startSession = useActiveWorkout((s) => s.startSession);
+  const discardSession = useActiveWorkout((s) => s.discardSession);
 
   const workouts = useWorkoutHistory((s) => s.workouts);
   const saveSession = useWorkoutHistory((s) => s.saveSession);
@@ -131,6 +146,32 @@ export function AppShell() {
     () => Object.fromEntries(routines.map((r) => [r.id, r])),
     [routines],
   );
+
+  /**
+   * The workout already running, for the home screen's resume card.
+   *
+   * Only a STARTED session counts: an unstarted one is a routine somebody opened
+   * to read, and it is thrown away when they leave. Minutes are computed once per
+   * render rather than ticking — this card is not a clock, it is a way back.
+   */
+  const inProgress = useMemo<WorkoutInProgress | null>(() => {
+    if (!session?.startedAt) return null;
+    let done = 0;
+    let total = 0;
+    for (const entry of session.entries) {
+      for (const set of entry.sets) {
+        total += 1;
+        if (set.isCompleted) done += 1;
+      }
+    }
+    const startedMs = new Date(session.startedAt).getTime();
+    return {
+      title: session.title,
+      done,
+      total,
+      minutes: Number.isFinite(startedMs) ? Math.max(0, Math.floor((Date.now() - startedMs) / 60_000)) : 0,
+    };
+  }, [session]);
 
   /** Search results. Browse mode builds its own tree from `exercises`. */
   const matches = useMemo(() => searchExercises(exercises, query), [exercises, query]);
@@ -166,6 +207,19 @@ export function AppShell() {
   /** Filled in below, once the editor's exit rule exists. See `leaveTop`. */
   const leaveRoutineEditor = useRef<(route: { routineId: ID; isNew?: boolean }) => void>(pop);
 
+  /**
+   * Leaving the logging screen.
+   *
+   * A STARTED workout keeps running: it is persisted, the user is coming back to
+   * it, and the only things that end it are `Finish` and `Stop and exit`. One that
+   * was never started is a routine somebody opened to read, so it is thrown away
+   * on the way out — that is what makes "get in, look, get out" leave no trace.
+   */
+  const leaveSession = useCallback(() => {
+    if (!useActiveWorkout.getState().session?.startedAt) discardSession();
+    pop();
+  }, [discardSession, pop]);
+
   const toggleExpanded = useCallback((key: string) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -188,6 +242,10 @@ export function AppShell() {
     const route = stack[stack.length - 1];
     if (route?.name === 'routineEditor') {
       leaveRoutineEditor.current(route);
+      return;
+    }
+    if (route?.name === 'session') {
+      leaveSession();
       return;
     }
     pop();
@@ -263,53 +321,62 @@ export function AppShell() {
   );
 
   /**
-   * What the split SUGGESTS today. A suggestion, not an assignment: the home
-   * screen lists `choices` underneath it, and either can be started.
+   * The sequence as the home screen wants it: the steps in order, and the routine
+   * whose turn it is.
+   *
+   * Null whenever the sequence is off or empty, which is the default — the home
+   * screen then renders nothing about it and simply lists every routine. A step
+   * whose routine was deleted resolves to no `next` rather than to a card
+   * suggesting a workout that isn't there; `libraryStore` drops such steps, so
+   * this is the belt to that braces.
    */
-  const today = useMemo<TodayPlan | null>(() => {
-    const day = seedSplit.days.find((d) => d.order === seedSplit.cursor);
-    const routine = day?.routineId ? routinesById[day.routineId] : undefined;
-    if (!routine) return null;
+  const sequenceView = useMemo<SequenceView | null>(() => {
+    if (!sequence.isActive || sequence.routineIds.length === 0) return null;
 
-    const choice = choices.find((c) => c.routineId === routine.id);
-    if (!choice) return null;
+    const steps = sequence.routineIds.map((routineId, index) => ({
+      key: `${routineId}-${index}`,
+      name: routinesById[routineId]?.name ?? 'Deleted routine',
+      isCurrent: index === sequence.cursor,
+    }));
 
-    const items = routine.items.filter((item) => exercisesById[item.exerciseId]);
+    const currentId = sequence.routineIds[sequence.cursor];
+    const choice = choices.find((c) => c.routineId === currentId) ?? null;
+    const routine = currentId ? routinesById[currentId] : undefined;
+    const items = routine ? routine.items.filter((item) => exercisesById[item.exerciseId]) : [];
+
     return {
-      ...choice,
-      // Only counts what the engine would actually surface — an exercise with no
-      // load can never contribute a nudge.
-      nudgeCount: items.filter((item) => verdicts[item.exerciseId]?.shouldNudge).length,
+      steps,
+      next:
+        choice && routine
+          ? {
+              ...choice,
+              // Only counts what the engine would actually surface — an exercise
+              // with no load can never contribute a nudge.
+              nudgeCount: items.filter((item) => verdicts[item.exerciseId]?.shouldNudge).length,
+            }
+          : null,
     };
-  }, [choices, exercisesById, routinesById, verdicts]);
+  }, [choices, exercisesById, routinesById, sequence, verdicts]);
 
   /**
-   * Split days whose routine has been deleted.
-   *
-   * The split stores a `routineId` and the label lives beside it, so deleting a
-   * routine leaves a day still labelled `Pull` that resolves to nothing. Tapping
-   * one used to push the routine editor, which immediately popped itself — the
-   * screen "blinked" and nothing happened. The timeline now shows these days as
-   * empty, and `onSelectDay` sends them somewhere real.
+   * Open a routine as a workout. It does NOT start it: the session is built with
+   * no start time and nothing is timed or dated until `Start` inside the logging
+   * screen (or the first logged set) says so. See `ActiveWorkoutScreen`.
    */
-  const emptyDayIds = useMemo(
-    () =>
-      new Set(
-        seedSplit.days
-          .filter((day) => day.kind === 'routine' && !(day.routineId && routinesById[day.routineId]))
-          .map((day) => day.id),
-      ),
-    [routinesById],
-  );
-
-  const handleStart = useCallback(
+  const handleOpenWorkout = useCallback(
     (routineId: ID) => {
       /*
-       * A live session is never clobbered. If one exists — the user backed out of
-       * it and hit Start again — this returns to it rather than rebuilding the
-       * draft, which would silently discard everything already logged.
+       * A STARTED session is never clobbered: if one exists — the user backed out
+       * of it and came back — this returns to it rather than rebuilding the draft,
+       * which would silently discard everything already logged. The same is true
+       * of re-opening the routine that is already open.
+       *
+       * An UNSTARTED session for some other routine is a preview nobody committed
+       * to, so opening a different routine replaces it. Without this exception,
+       * looking at push day and then deciding on pull would land you back on push
+       * with no way to tell why.
        */
-      if (session) {
+      if (session && (session.startedAt != null || session.routineId === routineId)) {
         push({ name: 'session' });
         return;
       }
@@ -330,8 +397,8 @@ export function AppShell() {
       }
 
       const settings = useSettings.getState();
-      // The push is left to the resume effect above, which fires for the new
-      // session's localId — one code path for "started" and "rehydrated".
+      // The push is left to the claim effect above, which fires for the new
+      // session's localId — one code path for "opened" and "rehydrated".
       startSession({
         routine,
         exercisesById,
@@ -343,28 +410,6 @@ export function AppShell() {
       });
     },
     [exercisesById, historyById, push, routinesById, session, startSession],
-  );
-
-  /**
-   * Tapping a day on the split strip.
-   *
-   * Never pushes a route whose subject is missing. A day whose routine was deleted
-   * used to push the editor, which mounted, found nothing, and popped itself in an
-   * effect — a screen that blinked and left the user where they started, with no
-   * explanation. It goes to the Routines tab instead, which is where the routine
-   * would be if it existed and where a replacement gets made.
-   */
-  const handleSelectDay = useCallback(
-    (day: SplitDay) => {
-      const routine = day.routineId ? routinesById[day.routineId] : undefined;
-      if (routine) {
-        push({ name: 'routineEditor', routineId: routine.id });
-        return;
-      }
-      // A rest day has nothing to show; a deleted one has somewhere to send you.
-      if (day.kind === 'routine') setTab('Routines');
-    },
-    [push, routinesById],
   );
 
   /**
@@ -494,9 +539,13 @@ export function AppShell() {
              * null), so "start a workout, change your mind, finish" leaves no row
              * claiming a workout happened.
              */
-            saveSession(finished);
+            const saved = saveSession(finished);
+            // The queue only moves when a workout from the step it is on actually
+            // gets recorded. A session with nothing logged saves nothing, and a
+            // workout from some other routine is not this step being done.
+            if (saved) advanceSequence(saved.routineId);
           }}
-          onExit={pop}
+          onExit={leaveSession}
         />
       </View>
     );
@@ -531,6 +580,8 @@ export function AppShell() {
           updateRoutine(routine.id, draft);
           push({ name: 'addExercise', routineId: routine.id });
         }}
+        /* Removing an exercise writes through immediately — see the editor. */
+        onCommit={(draft) => updateRoutine(routine.id, draft)}
         onDelete={() => {
           deleteRoutine(routine.id);
           pop();
@@ -632,6 +683,21 @@ export function AppShell() {
     );
   }
 
+  if (top?.name === 'sequence') {
+    return (
+      <SequenceScreen
+        sequence={sequence}
+        routines={routines}
+        onBack={pop}
+        onSetActive={setSequenceActive}
+        onAddStep={addSequenceStep}
+        onRemoveStep={removeSequenceStep}
+        onMoveStep={moveSequenceStep}
+        onSetCursor={setSequenceCursor}
+      />
+    );
+  }
+
   /* ------------------------------------------------------------------ */
   /* Tab roots                                                           */
   /* ------------------------------------------------------------------ */
@@ -643,13 +709,13 @@ export function AppShell() {
       <View className="flex-1">
         {tab === 'Today' ? (
           <HomeScreen
-            split={seedSplit}
-            today={today}
+            inProgress={inProgress}
+            onResume={() => push({ name: 'session' })}
+            sequence={sequenceView}
             choices={choices}
-            emptyDayIds={emptyDayIds}
             recent={recent}
-            onStart={handleStart}
-            onSelectDay={handleSelectDay}
+            onOpen={handleOpenWorkout}
+            onOpenSequence={() => push({ name: 'sequence' })}
             // A past session opens where past sessions live. The History row is
             // the detail view — it expands in place — so there is nothing to push.
             onOpenSession={() => setTab('History')}
@@ -664,9 +730,11 @@ export function AppShell() {
           <RoutineListScreen
             routines={routines}
             exercisesById={exercisesById}
+            sequence={sequence}
             onOpen={(routineId) => push({ name: 'routineEditor', routineId })}
-            onStart={handleStart}
+            onStartWorkout={handleOpenWorkout}
             onCreate={handleAddRoutine}
+            onOpenSequence={() => push({ name: 'sequence' })}
           />
         ) : null}
 

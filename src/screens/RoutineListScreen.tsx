@@ -8,10 +8,13 @@
  * fifteenth layout to maintain.
  *
  * TWO TARGETS PER ROW, and they answer different questions. The row opens the
- * routine to edit it; the ▶ on the right STARTS it. This is the other half of
- * "don't force me into today's workout": the home screen suggests one and lists the
- * rest, and this tab — where someone is already looking at their routines — can
- * start any of them without a detour.
+ * routine to EDIT it; the ▶ on the right OPENS THE WORKOUT (which then starts on
+ * its own `Start` — see `ActiveWorkoutScreen`). This tab is where someone is
+ * already looking at their routines, so it can reach either without a detour.
+ *
+ * The `Training sequence` row at the top is the way in to the optional running
+ * order of those routines. It states whether it is on, because a feature that is
+ * off and invisible is a feature nobody finds.
  */
 
 import { Pressable, ScrollView, Text, View } from 'react-native';
@@ -21,25 +24,30 @@ import { Icon } from '../components/Icon';
 import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
 import { describeItemsFocus } from '../lib/muscles';
 import { palette } from '../theme/tokens';
-import type { Exercise, ID, Routine } from '../types/models';
+import type { Exercise, ID, Routine, TrainingSequence } from '../types/models';
 
 interface RoutineListScreenProps {
   routines: Routine[];
   exercisesById: Record<ID, Exercise>;
+  sequence: TrainingSequence;
   onOpen: (routineId: ID) => void;
-  /** Start this routine now. Absent for a routine with nothing in it. */
-  onStart: (routineId: ID) => void;
+  /** Open this routine as a workout. It starts inside, not here. */
+  onStartWorkout: (routineId: ID) => void;
   onCreate: () => void;
+  onOpenSequence: () => void;
 }
 
 export function RoutineListScreen({
   routines,
   exercisesById,
+  sequence,
   onOpen,
-  onStart,
+  onStartWorkout,
   onCreate,
+  onOpenSequence,
 }: RoutineListScreenProps) {
   const insets = useSafeAreaInsets();
+  const stepCount = sequence.routineIds.length;
 
   return (
     <View className="flex-1 bg-bg">
@@ -48,11 +56,31 @@ export function RoutineListScreen({
         contentContainerStyle={{ paddingTop: insets.top + 24, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <Kicker className="mx-lg mb-sm">Routines · {routines.length}</Kicker>
+        <Kicker className="mx-lg mb-sm">Sequence</Kicker>
+        <ListCard className="mx-lg">
+          <Pressable
+            onPress={onOpenSequence}
+            accessibilityRole="button"
+            accessibilityLabel="Training sequence"
+            className="h-row-lg flex-row items-center px-lg"
+          >
+            <View className="flex-1 pr-md">
+              <Text className="text-body font-medium text-ink">Training sequence</Text>
+              <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
+                {stepCount === 0
+                  ? 'Off · no order set'
+                  : `${sequence.isActive ? 'On' : 'Off'} · ${stepCount} ${stepCount === 1 ? 'step' : 'steps'}`}
+              </Text>
+            </View>
+            <Icon name="chevron-right" size={18} color={palette.inkFaint} />
+          </Pressable>
+        </ListCard>
+
+        <Kicker className="mx-lg mb-sm mt-xl">Routines · {routines.length}</Kicker>
 
         <ListCard className="mx-lg">
           {routines.map((routine, index) => {
-            // A routine whose every exercise was deleted has nothing to start.
+            // A routine whose every exercise was deleted has nothing to open.
             const startable = routine.items.some((item) => exercisesById[item.exerciseId]);
 
             return (
@@ -78,13 +106,13 @@ export function RoutineListScreen({
                     </View>
                   </Pressable>
 
-                  {/* 44 wide, full row height, and its own hit area: `Start` must
-                      not be reachable by a thumb aiming at `Edit`. */}
+                  {/* 52 wide, full row height, and its own hit area: opening the
+                      workout must not be reachable by a thumb aiming at `Edit`. */}
                   {startable ? (
                     <Pressable
-                      onPress={() => onStart(routine.id)}
+                      onPress={() => onStartWorkout(routine.id)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Start ${routine.name}`}
+                      accessibilityLabel={`Open ${routine.name} as a workout`}
                       className="h-row-lg w-[52px] items-center justify-center"
                     >
                       <View className="h-[32px] w-[32px] items-center justify-center rounded-pill border border-hairline bg-surface-alt">

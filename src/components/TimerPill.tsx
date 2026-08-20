@@ -1,8 +1,8 @@
 /**
- * FloatingPill — the one thing in this app that hovers, and the only shadow.
+ * TimerPill — the one instrument the whole gym-facing app is built around.
  *
  *   ╭───────────────────────────────────────╮
- *   │  1:28            +15      Skip        │  ← 66-high content row
+ *   │  1:28            +15      Skip        │  ← 92-high content row
  *   │ ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░ │  ← drain line
  *   ╰───────────────────────────────────────╯
  *
@@ -13,14 +13,20 @@
  * supplies only its own content.
  *
  * The shared decisions:
- *   • It FLOATS rather than pushing layout, so the row the user just logged never
- *     moves out from under their thumb. That is what earns it the app's single
- *     real shadow — it has to read as hovering.
- *   • Under ten seconds it INVERTS to a solid `green-bright` slab, readable from
- *     three feet without reading the numerals. Any alert is haptic and audible
- *     as well — never visual-only, because the phone is face-up on a bench.
+ *   • IT SITS AT THE TOP OF THE SESSION, directly under the header, and it is the
+ *     biggest thing on the screen. A rest countdown is read from three or four feet
+ *     away — phone on a bench, you standing over it — and the top of the screen is
+ *     where the eye lands and where nothing else competes. It used to float at the
+ *     bottom over the thumb, which is the right place for a button and the wrong
+ *     place for a display.
+ *   • IT TAKES ITS OWN SPACE rather than floating over the rows: at this size an
+ *     overlay would cover the set it belongs to. It still carries the app's single
+ *     real shadow, so it reads as the layer above the list.
+ *   • Under ten seconds it INVERTS to a solid `green-bright` slab, readable across
+ *     a room without reading the numerals. Any alert is haptic and audible as well
+ *     — never visual-only, because the phone is face-up on a bench.
  *   • The drain line shows time REMAINING, not elapsed: the bar empties as the
- *     phase does. A ring would need a second colour and a third radius.
+ *     phase does.
  *   • Only one pill exists at a time. You cannot be resting and holding.
  *
  * ── WHY THE COLOURS ARE INLINE STYLES AND NOT `className` ──────────────────
@@ -49,7 +55,6 @@
 
 import type { ReactNode } from 'react';
 import { Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { palette, size, timerShadow } from '../theme/tokens';
 
@@ -101,7 +106,7 @@ export function pillTone(inverted: boolean): PillTone {
   return inverted ? FINAL : RESTING;
 }
 
-interface FloatingPillProps {
+interface TimerPillProps {
   /** Solid `green-bright` slab instead of a `surface-alt` pill. */
   inverted?: boolean;
   /**
@@ -113,20 +118,15 @@ interface FloatingPillProps {
   children: ReactNode;
 }
 
-export function FloatingPill({ inverted = false, remainingFraction, children }: FloatingPillProps) {
-  const insets = useSafeAreaInsets();
+export function TimerPill({ inverted = false, remainingFraction, children }: TimerPillProps) {
   const tone = pillTone(inverted);
   const hasDrain = remainingFraction != null;
   // Clamped so a "+15" that overshoots the original total can't overflow the bar.
   const left = hasDrain ? Math.min(100, Math.max(0, remainingFraction * 100)) : 0;
 
   return (
-    <View
-      pointerEvents="box-none"
-      // 16 above the gesture bar: the spec's `bottom: 40` on a 390×844 frame.
-      style={{ bottom: insets.bottom + 16 }}
-      className="absolute left-lg right-lg"
-    >
+    // Under the header, inset by the page gutter, with air above and below it.
+    <View className="mx-lg mb-sm mt-md">
       <View
         style={[
           timerShadow,
@@ -181,9 +181,11 @@ export function PillClock({
       allowFontScaling={false}
       numberOfLines={1}
       style={{
-        fontSize: variant === 'count' ? 44 : 34,
-        lineHeight: variant === 'count' ? 48 : 38,
-        letterSpacing: -1,
+        // The two biggest type sizes in the app, and the reason the pill is 92
+        // high: a rest countdown has to be legible from across the gym floor.
+        fontSize: variant === 'count' ? 64 : 52,
+        lineHeight: variant === 'count' ? 68 : 56,
+        letterSpacing: -1.5,
         fontWeight: '600',
         fontVariant: ['tabular-nums'],
         color: tone.clock,
@@ -201,7 +203,7 @@ export function PillLabel({ children, tone }: { children: ReactNode; tone: PillT
       numberOfLines={1}
       allowFontScaling={false}
       style={{ color: tone.label }}
-      className="ml-sm flex-1 text-micro font-semibold uppercase"
+      className="ml-md flex-1 text-micro font-semibold uppercase"
     >
       {children}
     </Text>

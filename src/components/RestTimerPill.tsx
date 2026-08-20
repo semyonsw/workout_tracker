@@ -1,5 +1,5 @@
 /**
- * RestTimerPill — the floating rest countdown.
+ * RestTimerPill — the rest countdown, at the top of the session.
  *
  *   running   ╭───────────────────────────────────────╮
  *             │  1:28  BETWEEN SETS   +15   ⏸   Skip  │
@@ -12,7 +12,7 @@
  *             ╰───────────────────────────────────────╯
  *
  * The pill's geometry, elevation, inversion, drain line and every colour in it
- * belong to `FloatingPill`, which the set timer shares — see that file for those
+ * belong to `TimerPill`, which the set timer shares — see that file for those
  * decisions. What is specific to REST is only this:
  *
  *   • THREE CONTROLS, ALL ON THE PILL, all one tap. `+15` buys more, `⏸` stops the
@@ -38,7 +38,7 @@ import { Pressable, Text, View } from 'react-native';
 import { formatClock } from '../lib/units';
 import { useRestTimer } from '../hooks/useRestTimer';
 import type { RestSource } from '../state/activeWorkoutStore';
-import { FINAL_SECONDS, FloatingPill, PillClock, PillLabel, pillTone } from './FloatingPill';
+import { FINAL_SECONDS, PillClock, PillLabel, pillTone, TimerPill } from './TimerPill';
 import { Icon } from './Icon';
 
 /** What kind of rest is running, in the fewest words that distinguish them. */
@@ -72,7 +72,7 @@ export function RestTimerPill() {
   const secondsLeft = Math.ceil(remaining);
 
   return (
-    <FloatingPill
+    <TimerPill
       inverted={finalTen}
       remainingFraction={totalSeconds > 0 ? remaining / totalSeconds : 0}
     >
@@ -134,6 +134,6 @@ export function RestTimerPill() {
           </Text>
         </Pressable>
       </View>
-    </FloatingPill>
+    </TimerPill>
   );
 }

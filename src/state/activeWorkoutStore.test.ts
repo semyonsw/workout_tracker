@@ -872,7 +872,7 @@ describe('editing the session while it runs', () => {
 
   /* --- the clock ------------------------------------------------------- */
 
-  it('restartClock re-anchors the session to now, keeping every logged set', () => {
+  it('startWorkout re-anchors the session to now, keeping every logged set', () => {
     const session = startRoutine();
     const entry = session.entries[0];
     useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
@@ -882,10 +882,10 @@ describe('editing the session while it runs', () => {
       session: { ...useActiveWorkout.getState().session!, startedAt: '2026-08-19T06:00:00.000Z' },
     });
 
-    useActiveWorkout.getState().restartClock();
+    useActiveWorkout.getState().startWorkout();
     const after = useActiveWorkout.getState();
 
-    const elapsedMs = Date.now() - new Date(after.session!.startedAt).getTime();
+    const elapsedMs = Date.now() - new Date(after.session!.startedAt!).getTime();
     expect(elapsedMs).toBeLessThan(2_000);
     expect(elapsedMs).toBeGreaterThanOrEqual(0);
     // The ✓ stays: those sets were done, and a reset that deletes work is not a
@@ -895,9 +895,50 @@ describe('editing the session while it runs', () => {
     expect(after.rest).toEqual(NO_REST);
   });
 
-  it('restartClock on no session does nothing at all', () => {
+  it('startWorkout on no session does nothing at all', () => {
     useActiveWorkout.getState().discardSession();
-    expect(() => useActiveWorkout.getState().restartClock()).not.toThrow();
+    expect(() => useActiveWorkout.getState().startWorkout()).not.toThrow();
     expect(useActiveWorkout.getState().session).toBeNull();
+  });
+
+  /* --- opening is not starting ---------------------------------------- */
+
+  it('a session starts with no start time at all', () => {
+    // Opening a routine to read it must leave no date, no duration and no row in
+    // history behind.
+    expect(startRoutine().startedAt).toBeNull();
+    expect(useActiveWorkout.getState().session?.startedAt).toBeNull();
+  });
+
+  it('startWorkout is what puts a clock on it', () => {
+    startRoutine();
+    useActiveWorkout.getState().startWorkout();
+
+    const startedAt = useActiveWorkout.getState().session?.startedAt;
+    expect(startedAt).toBeTypeOf('string');
+    expect(Date.now() - new Date(startedAt!).getTime()).toBeLessThan(2_000);
+  });
+
+  it('logging a set starts an unstarted workout', () => {
+    // A ✓ says "I am training" as clearly as the button does, and a set with no
+    // date on it is a row history cannot place.
+    const session = startRoutine();
+    const entry = session.entries[0];
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    const startedAt = useActiveWorkout.getState().session?.startedAt;
+    expect(startedAt).toBeTypeOf('string');
+    expect(Date.now() - new Date(startedAt!).getTime()).toBeLessThan(2_000);
+  });
+
+  it('logging a second set does not move the start time', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+    const first = useActiveWorkout.getState().session?.startedAt;
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[1].localId);
+
+    expect(useActiveWorkout.getState().session?.startedAt).toBe(first);
   });
 });

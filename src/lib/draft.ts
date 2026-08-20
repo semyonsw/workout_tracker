@@ -69,7 +69,17 @@ export interface DraftSession {
   localId: ID;
   routineId?: ID;
   title: string;
-  startedAt: string;
+  /**
+   * When the workout actually STARTED, or null while it hasn't.
+   *
+   * Opening a routine is not training: the session is built so the exercises can
+   * be read, and nothing is timed or dated until `Start` is pressed (or the first
+   * set is logged, which says the same thing with a thumb). Everything downstream
+   * reads this one instant — the header's minutes, every set's `performedAt`, the
+   * date the workout lands under in history — so leaving it null is what makes
+   * "get in, look, get out" leave no trace.
+   */
+  startedAt: string | null;
   entries: DraftEntry[];
 }
 
@@ -205,6 +215,11 @@ export interface BuildDraftParams {
    * and the user owns both numbers.
    */
   defaultTransitionRestSeconds?: number;
+  /**
+   * When the workout began. Null — the default — is a session that is only being
+   * looked at; see `DraftSession.startedAt`.
+   */
+  startedAt?: string | null;
   now?: Date;
 }
 
@@ -311,6 +326,7 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
     unitSystem,
     defaultRestSeconds,
     defaultTransitionRestSeconds = defaultRestSeconds + 30,
+    startedAt = null,
     now = new Date(),
   } = params;
 
@@ -355,7 +371,7 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
     localId: uid('session'),
     routineId: routine.id,
     title: routine.name,
-    startedAt: now.toISOString(),
+    startedAt,
     entries,
   };
 }
@@ -371,6 +387,7 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
  */
 export function draftToSetHistory(session: DraftSession): SetHistory[] {
   const rows: SetHistory[] = [];
+  const performedAt = sessionPerformedAt(session);
 
   for (const entry of session.entries) {
     entry.sets.forEach((set, index) => {
@@ -379,7 +396,7 @@ export function draftToSetHistory(session: DraftSession): SetHistory[] {
         id: uid('sh'),
         sessionId: session.localId,
         exerciseId: entry.exercise.id,
-        performedAt: session.startedAt, // denormalized: enables the fast history scan
+        performedAt, // denormalized: enables the fast history scan
         setIndex: index,
         weightKg: entry.exercise.requiresWeight ? set.weightKg : null,
         count: set.count,
@@ -395,6 +412,27 @@ export function draftToSetHistory(session: DraftSession): SetHistory[] {
   }
 
   return rows;
+}
+
+/**
+ * When the session happened, for the rows it writes.
+ *
+ * `startedAt` normally answers this, and does whenever a set was logged — the
+ * first ✓ starts the clock if `Start` didn't. The fallbacks exist so a row can
+ * never carry `null` as its date: the earliest set that was actually completed,
+ * and failing that now.
+ */
+export function sessionPerformedAt(session: DraftSession): string {
+  if (session.startedAt) return session.startedAt;
+
+  let earliest: string | null = null;
+  for (const entry of session.entries) {
+    for (const set of entry.sets) {
+      if (!set.isCompleted || !set.completedAt) continue;
+      if (earliest == null || set.completedAt < earliest) earliest = set.completedAt;
+    }
+  }
+  return earliest ?? new Date().toISOString();
 }
 
 /** Session volume in kg — only meaningful for rep-based, weighted work. */

@@ -15,7 +15,7 @@
  *                      ╰─────────────────────────────────────╯
  *
  * Same slot, same instrument, same shadow and same colours as the rest timer —
- * see `FloatingPill`. Three things here are specific to timing a set:
+ * see `TimerPill`. Three things here are specific to timing a set:
  *
  *  • THE CLOCK IS THE WHOLE PILL. During a hold the user is not reading a list;
  *    they are staring at the ceiling and glancing down. So the numerals get the
@@ -34,7 +34,7 @@ import { Pressable, Text, View } from 'react-native';
 import { formatClock } from '../lib/units';
 import { useSetTimer } from '../hooks/useSetTimer';
 import { useActiveWorkout } from '../state/activeWorkoutStore';
-import { FINAL_SECONDS, FloatingPill, PillClock, PillLabel, pillTone } from './FloatingPill';
+import { FINAL_SECONDS, PillClock, PillLabel, pillTone, TimerPill } from './TimerPill';
 import { Icon } from './Icon';
 
 export function SetTimerPill() {
@@ -63,7 +63,7 @@ export function SetTimerPill() {
       : (exerciseName ?? 'working');
 
   return (
-    <FloatingPill inverted={finalTen} remainingFraction={reading.remainingFraction}>
+    <TimerPill inverted={finalTen} remainingFraction={reading.remainingFraction}>
       <View className="flex-1 flex-row items-baseline">
         <PillClock
           value={preparing ? reading.display : formatClock(reading.display)}
@@ -143,6 +143,6 @@ export function SetTimerPill() {
           <Icon name="x" size={16} color={finalTen ? tone.primary : tone.label} />
         </Pressable>
       </View>
-    </FloatingPill>
+    </TimerPill>
   );
 }

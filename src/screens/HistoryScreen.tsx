@@ -9,7 +9,9 @@
  *   │ │ Pull + swimming          17 Aug · 74 min │ │
  *   │ │ 6 exercises · 18 sets · 4 720 kg       ⌄ │ │
  *   │ │  Weighted 90° pull-ups   +40 kg · 4 4 4  │ │  ← open
+ *   │ │                             12 REPS TOTAL │ │
  *   │ │  Plank                   2:00 · 2:00     │ │
+ *   │ │                                4:00 TOTAL │ │
  *   │ │  Delete this workout                     │ │
  *   │ └──────────────────────────────────────────┘ │
  *   │ ┌──────────────────────────────────────────┐ │
@@ -31,6 +33,11 @@
  *  • DELETE IS INSIDE THE OPEN ROW, AND IT ASKS. History is the one thing in this
  *    app that must be true, so removing a piece of it is never a swipe away: you
  *    open the workout, read what it was, and then confirm.
+ *  • EVERY EXERCISE STATES ITS TOTAL. Under the per-set line — "+40 kg · 4 4 4"
+ *    — sits the sum of those counts: 12 reps, or 4:00 of plank. It is the number
+ *    you actually compare between sessions, and reading a row of per-set counts is
+ *    the one piece of mental arithmetic this screen used to make you do. Only when
+ *    there was more than one set, because the total of one set is the set.
  *  • THE TOTALS LINE IS A FACT, NOT A GOAL. No streaks, no badges, no weekly
  *    target. Three numbers that say how much training is in here.
  */
@@ -43,8 +50,8 @@ import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Kicker, ListCard, Separator } from '../components/primitives';
 import { tap, undo } from '../lib/feedback';
-import { monthKey, type CompletedWorkout } from '../lib/completedWorkout';
-import { formatShortDate } from '../lib/units';
+import { monthKey, type CompletedExercise, type CompletedWorkout } from '../lib/completedWorkout';
+import { formatDuration, formatShortDate } from '../lib/units';
 import { historyTotals } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import type { ID } from '../types/models';
@@ -192,17 +199,27 @@ function WorkoutRow({
 
       {isOpen ? (
         <View className="bg-surface-alt pb-sm">
-          {workout.exercises.map((exercise) => (
-            <View
-              key={`${exercise.exerciseId}-${exercise.name}`}
-              className="flex-row items-baseline px-lg py-sm"
-            >
-              <Text numberOfLines={1} className="flex-1 pr-md text-label font-medium text-ink">
-                {exercise.name}
-              </Text>
-              <Text className="text-label tabular-nums text-ink-muted">{exercise.summary}</Text>
-            </View>
-          ))}
+          {workout.exercises.map((exercise) => {
+            const total = describeTotal(exercise);
+            return (
+              <View
+                key={`${exercise.exerciseId}-${exercise.name}`}
+                className="flex-row items-start px-lg py-sm"
+              >
+                <Text numberOfLines={1} className="flex-1 pr-md text-label font-medium text-ink">
+                  {exercise.name}
+                </Text>
+                <View className="items-end">
+                  <Text className="text-label tabular-nums text-ink-muted">{exercise.summary}</Text>
+                  {total ? (
+                    <Text className="mt-[2px] text-micro font-semibold uppercase tabular-nums text-green-bright">
+                      {total}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
 
           {/* No red, and not a swipe: see the file header. */}
           <Pressable
@@ -270,10 +287,25 @@ function groupByMonth(
 /** "August", or "August 2025" once the year stops being obvious. */
 function monthLabel(iso: string, now: Date): string {
   const date = new Date(iso);
-  const name = MONTHS[date.getUTCMonth()] ?? '';
-  return date.getUTCFullYear() === now.getUTCFullYear()
-    ? name
-    : `${name} ${date.getUTCFullYear()}`;
+  const name = MONTHS[date.getMonth()] ?? '';
+  return date.getFullYear() === now.getFullYear() ? name : `${name} ${date.getFullYear()}`;
+}
+
+/**
+ * "12 reps total" / "4:00 total" — every set of one exercise added up.
+ *
+ * Null for a single set, where the total is just the set restated, and for work
+ * whose counts don't add to anything meaningful. Rounds state both numbers,
+ * because "12 rounds" and "36:00" are two different facts about the same session.
+ */
+function describeTotal(exercise: CompletedExercise): string | null {
+  const { totalCount, setCount, countUnit } = exercise;
+  if (setCount <= 1 || totalCount <= 0) return null;
+
+  if (countUnit === 'seconds') return `${formatDuration(totalCount)} total`;
+  if (countUnit === 'rounds') return `${setCount} rounds · ${formatDuration(totalCount)}`;
+  if (countUnit === 'meters') return `${totalCount} m total`;
+  return `${totalCount} reps total`;
 }
 
 /**

@@ -29,7 +29,7 @@
  */
 
 import type { CountUnit, ID, ISODateTime, LoadMode, SetHistory } from '../types/models';
-import { draftToSetHistory, totalVolumeKg, type DraftSession } from './draft';
+import { draftToSetHistory, sessionPerformedAt, totalVolumeKg, type DraftSession } from './draft';
 import { summarizeSessionSets } from './history';
 
 /** One exercise inside a finished workout. */
@@ -43,6 +43,12 @@ export interface CompletedExercise {
   setCount: number;
   /** "+40 kg · 4 4 4 3" — the same shorthand every other screen uses. */
   summary: string;
+  /**
+   * Every set's count added up — 4 + 4 + 4 + 3 = 15 reps, or 2:00 + 2:00 + 1:31
+   * of plank. The number you actually compare between sessions, and the one thing
+   * a list of per-set counts makes you do in your head.
+   */
+  totalCount: number;
   topWeightKg: number | null;
 }
 
@@ -75,7 +81,8 @@ export function buildCompletedWorkout(
   const sets = draftToSetHistory(session);
   if (sets.length === 0) return null;
 
-  const startedMs = new Date(session.startedAt).getTime();
+  const startedAt = sessionPerformedAt(session);
+  const startedMs = new Date(startedAt).getTime();
   const endedMs = endedAt.getTime();
   const durationMinutes =
     Number.isFinite(startedMs) && endedMs > startedMs
@@ -98,6 +105,7 @@ export function buildCompletedWorkout(
       loadMode: entry.exercise.loadMode,
       setCount: rows.length,
       summary: drops ? `${lead}${drops}` : lead,
+      totalCount: rows.reduce((sum, row) => sum + (Number.isFinite(row.count) ? row.count : 0), 0),
       topWeightKg,
     });
   }
@@ -108,7 +116,7 @@ export function buildCompletedWorkout(
     id: session.localId,
     title: session.title,
     ...(session.routineId ? { routineId: session.routineId } : {}),
-    startedAt: session.startedAt,
+    startedAt,
     endedAt: endedAt.toISOString(),
     durationMinutes,
     setCount: sets.length,
@@ -169,8 +177,14 @@ export function recentlyUsedExerciseIds(
   return seen;
 }
 
-/** "17 Aug" grouping key for the history list: the month a workout belongs to. */
+/**
+ * Grouping key for the history list: the month a workout belongs to.
+ *
+ * The phone's own months, matching the dates the rows print (`formatShortDate`).
+ * Grouping in UTC while dating in local time put a workout logged just after
+ * midnight under the previous month's heading with next month's date on it.
+ */
 export function monthKey(iso: string): string {
   const date = new Date(iso);
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }

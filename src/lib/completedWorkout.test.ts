@@ -25,6 +25,7 @@ function draft(startedAt = '2026-08-17T17:00:00.000Z'): DraftSession {
     unitSystem: 'metric',
     defaultRestSeconds: 120,
     defaultTransitionRestSeconds: 150,
+    startedAt,
     now: new Date(startedAt),
   });
 }
@@ -121,6 +122,54 @@ describe('buildCompletedWorkout', () => {
   });
 });
 
+describe('a workout that was never formally started', () => {
+  it('dates itself from the first set that was logged', () => {
+    // `Start` was never pressed — the first ✓ started the workout, so the store
+    // has stamped `startedAt` by the time this runs. Here that stamp is missing
+    // entirely (an older persisted session), and the record still has to say when
+    // the training happened rather than carrying a null.
+    const session = logFirstEntry(draft(), 2);
+    const completedAt = '2026-08-17T17:05:00.000Z';
+    const unstarted: DraftSession = {
+      ...session,
+      startedAt: null,
+      entries: session.entries.map((entry, i) =>
+        i === 0
+          ? { ...entry, sets: entry.sets.map((s) => (s.isCompleted ? { ...s, completedAt } : s)) }
+          : entry,
+      ),
+    };
+
+    const workout = buildCompletedWorkout(unstarted, new Date('2026-08-17T18:00:00.000Z'));
+    expect(workout?.startedAt).toBe(completedAt);
+    expect(workout?.sets.every((row) => row.performedAt === completedAt)).toBe(true);
+    expect(workout?.durationMinutes).toBe(55);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+describe('the per-exercise total', () => {
+  it('adds up every logged set', () => {
+    const session = logFirstEntry(draft(), 3, 40);
+    const workout = buildCompletedWorkout(session, new Date('2026-08-17T18:00:00.000Z'));
+    const exercise = workout?.exercises[0];
+
+    const counts = session.entries[0].sets.slice(0, 3).map((s) => s.count);
+    expect(exercise?.setCount).toBe(3);
+    expect(exercise?.totalCount).toBe(counts.reduce((sum, c) => sum + c, 0));
+  });
+
+  it('counts only what was completed', () => {
+    // The planned rows that were never logged are an intention, and an intention
+    // must not inflate a total the user reads as a fact.
+    const one = buildCompletedWorkout(logFirstEntry(draft(), 1, 40));
+    const two = buildCompletedWorkout(logFirstEntry(draft(), 2, 40));
+
+    expect(one!.exercises[0].totalCount).toBeLessThan(two!.exercises[0].totalCount);
+  });
+});
+
 /* ------------------------------------------------------------------ */
 
 describe('recentlyUsedExerciseIds', () => {
@@ -142,6 +191,7 @@ describe('recentlyUsedExerciseIds', () => {
         loadMode: 'none' as const,
         setCount: 1,
         summary: '10',
+        totalCount: 10,
         topWeightKg: null,
       })),
     };

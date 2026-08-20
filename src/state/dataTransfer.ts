@@ -38,6 +38,7 @@ export function currentSnapshot(): BackupPayload {
     settings: sanitizeSettings(useSettings.getState()),
     exercises: library.exercises,
     routines: library.routines,
+    sequence: library.sequence,
     workouts: useWorkoutHistory.getState().workouts,
   };
 }
@@ -68,6 +69,7 @@ export function applyBackup(payload: BackupPayload): AppliedCounts {
   const library = useLibrary.getState().importLibrary({
     exercises: payload.exercises,
     routines: payload.routines,
+    sequence: payload.sequence,
   });
   const workouts = useWorkoutHistory.getState().importWorkouts(payload.workouts);
 

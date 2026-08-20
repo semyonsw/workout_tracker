@@ -27,6 +27,7 @@ function loggedDraft(startedAt: string, count = 2, weightKg = 40): DraftSession 
     unitSystem: 'metric',
     defaultRestSeconds: 120,
     defaultTransitionRestSeconds: 150,
+    startedAt,
     now: new Date(startedAt),
   });
 
