@@ -23,7 +23,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Kicker, ListCard, Separator } from '../components/primitives';
-import { TopWeightChart } from '../components/TopWeightChart';
+import { TrendChart } from '../components/TrendChart';
 import { describeHistory, sessionRows, topWeightSeries } from '../lib/history';
 import type { OverloadVerdict } from '../lib/progressiveOverload';
 import { formatShortDate } from '../lib/units';
@@ -89,7 +89,7 @@ export function ExerciseHistoryScreen({
           <>
             <Kicker className="mx-lg mt-xl">Top working weight</Kicker>
             <View className="mx-lg mt-md">
-              <TopWeightChart points={series} />
+              <TrendChart points={series} />
             </View>
           </>
         ) : null}

@@ -28,12 +28,14 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { PrimaryButton } from '../components/primitives';
+import { Segmented } from '../components/primitives';
 import { TabBar, type TabName } from '../components/TabBar';
 import { ActiveWorkoutScreen } from '../screens/ActiveWorkoutScreen';
 import { CreateExerciseScreen } from '../screens/CreateExerciseScreen';
 import { ExerciseHistoryScreen } from '../screens/ExerciseHistoryScreen';
 import { ExerciseLibraryScreen, clusterKey, muscleKey } from '../screens/ExerciseLibraryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
+import { ProgressScreen } from '../screens/ProgressScreen';
 import {
   HomeScreen,
   type RoutineChoice,
@@ -44,7 +46,7 @@ import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SequenceScreen } from '../screens/SequenceScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { historyByExerciseId, recentlyUsedExerciseIds } from '../lib/completedWorkout';
+import { historyByExerciseId, recentlyUsedExerciseIds, workoutNumbers } from '../lib/completedWorkout';
 import { buildDraftEntry, defaultTargetCount } from '../lib/draft';
 import {
   applyDraftToExercise,
@@ -61,7 +63,8 @@ import { routineUsageCount, useLibrary } from '../state/libraryStore';
 import { useSettings } from '../state/settingsStore';
 import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore';
 import { seedUser } from '../data/seed';
-import type { Exercise, ID, MuscleGroup } from '../types/models';
+import type { CompletedWorkout } from '../lib/completedWorkout';
+import type { Exercise, ID, MuscleGroup, SetHistory } from '../types/models';
 
 /** Screens pushed on top of a tab. `session` is pushed and owns the screen. */
 type Route =
@@ -137,6 +140,8 @@ export function AppShell() {
   const workouts = useWorkoutHistory((s) => s.workouts);
   const saveSession = useWorkoutHistory((s) => s.saveSession);
   const deleteWorkout = useWorkoutHistory((s) => s.deleteWorkout);
+  const numbering = useWorkoutHistory((s) => s.numbering);
+  const setWorkoutNumber = useWorkoutHistory((s) => s.setWorkoutNumber);
 
   const exercisesById = useMemo<Record<ID, Exercise>>(
     () => Object.fromEntries(exercises.map((e) => [e.id, e])),
@@ -294,6 +299,14 @@ export function AppShell() {
   const historyById = useMemo(() => historyByExerciseId(workouts), [workouts]);
 
   const recent = useMemo(() => recentSummaries(workouts), [workouts]);
+
+  /**
+   * Every workout's ordinal — "workout 92" — from the one pinned pair.
+   *
+   * Derived here rather than stored per workout, so a session deleted or a number
+   * re-pinned renumbers the whole log in one place. See `workoutNumbers`.
+   */
+  const numbers = useMemo(() => workoutNumbers(workouts, numbering), [numbering, workouts]);
 
   const verdicts = useMemo(
     () =>
@@ -714,6 +727,7 @@ export function AppShell() {
             sequence={sequenceView}
             choices={choices}
             recent={recent}
+            numbers={numbers}
             onOpen={handleOpenWorkout}
             onOpenSequence={() => push({ name: 'sequence' })}
             // A past session opens where past sessions live. The History row is
@@ -723,7 +737,14 @@ export function AppShell() {
         ) : null}
 
         {tab === 'History' ? (
-          <HistoryScreen workouts={workouts} onDelete={deleteWorkout} />
+          <HistoryTab
+            workouts={workouts}
+            numbers={numbers}
+            historyByExerciseId={historyById}
+            exercisesById={exercisesById}
+            onDelete={deleteWorkout}
+            onSetNumber={setWorkoutNumber}
+          />
         ) : null}
 
         {tab === 'Routines' ? (
@@ -766,6 +787,73 @@ export function AppShell() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * The `History` tab: the log, or the graphs of it.
+ *
+ * One tab rather than a sixth root, because both answer the same question — what
+ * have I actually trained — and the tab bar's five labels are already the width of
+ * the screen. The switch is a `Segmented` under the shared header, which is where
+ * the two screens' own `toolbar` slot puts it, so the control stays in exactly the
+ * same place as the view changes under it.
+ *
+ * Which view is showing is held HERE rather than in either screen: it has to
+ * survive switching between them, and neither screen should know the other exists.
+ */
+function HistoryTab({
+  workouts,
+  numbers,
+  historyByExerciseId: history,
+  exercisesById,
+  onDelete,
+  onSetNumber,
+}: {
+  workouts: CompletedWorkout[];
+  numbers: Record<ID, number>;
+  historyByExerciseId: Record<ID, SetHistory[]>;
+  exercisesById: Record<ID, Exercise>;
+  onDelete: (id: ID) => void;
+  onSetNumber: (id: ID, number: number) => void;
+}) {
+  const [view, setView] = useState<'log' | 'graphs'>('log');
+
+  const toolbar = (
+    <View className="mt-md">
+      <Segmented
+        options={VIEWS}
+        value={view}
+        onChange={setView}
+        accessibilityLabel="Show the log or the graphs"
+      />
+    </View>
+  );
+
+  if (view === 'graphs') {
+    return (
+      <ProgressScreen
+        workouts={workouts}
+        historyByExerciseId={history}
+        exercisesById={exercisesById}
+        toolbar={toolbar}
+      />
+    );
+  }
+
+  return (
+    <HistoryScreen
+      workouts={workouts}
+      numbers={numbers}
+      onDelete={onDelete}
+      onSetNumber={onSetNumber}
+      toolbar={toolbar}
+    />
+  );
+}
+
+const VIEWS = [
+  { value: 'log' as const, label: 'Log' },
+  { value: 'graphs' as const, label: 'Graphs' },
+];
 
 type LibraryProps = React.ComponentProps<typeof ExerciseLibraryScreen>;
 

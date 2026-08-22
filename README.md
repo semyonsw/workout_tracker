@@ -12,7 +12,7 @@ set that repeats last session costs one tap.**
 ```bash
 npm ci                   # exactly the locked tree — see BUILD_ANDROID.md
 npx expo start           # dev server
-npm test                 # 280+ tests: timers, overload, stores, backups
+npm test                 # 310+ tests: timers, overload, trends, stores, backups
 npm run typecheck
 ```
 
@@ -31,6 +31,8 @@ npm run typecheck
 | Exercise library | a muscle tree — `push → chest → dips` — with search, create-from-query, edit in place (a rename keeps every set ever logged) and delete |
 | Overload nudges | derived from your own set history: a weight that has been the same for N days over M sessions, with the suggestion applied to every unlogged set in one tap |
 | History | every finished workout, newest first, by month: date, duration, sets, volume, each exercise in the app's shorthand **and its total** — `+40 kg · 4 4 4` with `12 reps total` under it |
+| Workout numbers | every workout carries an ordinal — `Workout 92`. Pin the number on any one session (`Set the workout number` inside it) and every other workout counts from there, backwards and forwards, so a log that starts at 91 because ninety happened before this app says so |
+| Graphs | `History → Graphs`: reps per workout and kilograms per workout over time, or pick one exercise for its reps per session and top weight per session. Each line states its own direction — `up 34 reps since 11 Jun` — because the shape is visible but the arithmetic isn't |
 | Settings | every duration the app counts, plus sound, vibration, screen-on and notification switches |
 | Export / Import | everything you own — exercises, routines, the sequence, every workout with its set rows, your settings — as one readable JSON file, and back again through the phone's file browser |
 
@@ -55,8 +57,8 @@ src/components/             SetRow, ExerciseCard, TimerPill, primitives,
                             ErrorBoundary, ConfirmSheet…
 src/hooks/                  the two timers and the count-in
 src/lib/                    the decisions: overload, set timer, count-in cue,
-                            muscles, draft, completed workout, history, shape,
-                            units, backup — all pure, all tested. Plus
+                            muscles, draft, completed workout, history, trends,
+                            shape, units, backup — all pure, all tested. Plus
                             beeper/notify/feedback, the three wrappers around
                             native side effects that must never throw mid-set
 src/state/                  the live session, the finished workouts, the library

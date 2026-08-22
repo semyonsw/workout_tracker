@@ -6,8 +6,8 @@
  *   │ 12 workouts · 214 sets · 41 200 kg           │
  *   │ AUGUST                                       │
  *   │ ┌──────────────────────────────────────────┐ │
- *   │ │ Pull + swimming          17 Aug · 74 min │ │
- *   │ │ 6 exercises · 18 sets · 4 720 kg       ⌄ │ │
+ *   │ │ #92  Pull + swimming     17 Aug · 74 min │ │
+ *   │ │      6 exercises · 18 sets · 4 720 kg  ⌄ │ │
  *   │ │  Weighted 90° pull-ups   +40 kg · 4 4 4  │ │  ← open
  *   │ │                             12 REPS TOTAL │ │
  *   │ │  Plank                   2:00 · 2:00     │ │
@@ -38,15 +38,21 @@
  *    you actually compare between sessions, and reading a row of per-set counts is
  *    the one piece of mental arithmetic this screen used to make you do. Only when
  *    there was more than one set, because the total of one set is the set.
+ *  • EVERY WORKOUT IS NUMBERED, AND THE NUMBERING IS YOURS. `Workout 92` is an
+ *    ordinal, not an id: one workout is pinned to a number you type and every other
+ *    one counts from it, forwards and backwards. That is what makes a log that
+ *    starts at session 91 — because ninety of them happened before this app
+ *    existed — say so. See `workoutNumbers`.
  *  • THE TOTALS LINE IS A FACT, NOT A GOAL. No streaks, no badges, no weekly
  *    target. Three numbers that say how much training is in here.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { Icon } from '../components/Icon';
+import { NumberSheet } from '../components/NumberSheet';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Kicker, ListCard, Separator } from '../components/primitives';
 import { tap, undo } from '../lib/feedback';
@@ -73,20 +79,34 @@ const MONTHS = [
 
 interface HistoryScreenProps {
   workouts: CompletedWorkout[];
+  /** Every workout's ordinal, keyed by id — see `workoutNumbers`. */
+  numbers: Record<ID, number>;
   onDelete: (id: ID) => void;
+  /** Pin this workout's number; everything else renumbers from it. */
+  onSetNumber: (id: ID, number: number) => void;
+  /** The `Log | Graphs` switch, rendered under the header by whoever owns it. */
+  toolbar?: ReactNode;
 }
 
-export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
-  /** The open workout, and the one being deleted. Both are screen-local. */
+export function HistoryScreen({
+  workouts,
+  numbers,
+  onDelete,
+  onSetNumber,
+  toolbar,
+}: HistoryScreenProps) {
+  /** The open workout, the one being deleted, the one being renumbered. */
   const [openId, setOpenId] = useState<ID | null>(null);
   const [deleting, setDeleting] = useState<CompletedWorkout | null>(null);
+  const [numbering, setNumbering] = useState<CompletedWorkout | null>(null);
 
   const totals = useMemo(() => historyTotals(workouts), [workouts]);
   const months = useMemo(() => groupByMonth(workouts), [workouts]);
+  const dimmed = deleting != null || numbering != null;
 
   return (
     <View className="flex-1 bg-bg">
-      <View className="flex-1" style={deleting ? { opacity: 0.28 } : undefined}>
+      <View className="flex-1" style={dimmed ? { opacity: 0.28 } : undefined}>
         <ScreenHeader
           kicker="History"
           subtitle={
@@ -97,7 +117,9 @@ export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
               : undefined
           }
           bordered={false}
-        />
+        >
+          {toolbar}
+        </ScreenHeader>
 
         {workouts.length === 0 ? (
           <Empty />
@@ -106,7 +128,7 @@ export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
             className="flex-1"
             contentContainerStyle={{ paddingTop: 8, paddingBottom: 40 }}
             showsVerticalScrollIndicator={false}
-            scrollEnabled={!deleting}
+            scrollEnabled={!dimmed}
           >
             {months.map((month) => (
               <View key={month.key}>
@@ -117,6 +139,7 @@ export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
                       {index > 0 ? <Separator /> : null}
                       <WorkoutRow
                         workout={workout}
+                        number={numbers[workout.id]}
                         isOpen={openId === workout.id}
                         onPress={() => {
                           tap();
@@ -125,6 +148,10 @@ export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
                         onDelete={() => {
                           undo();
                           setDeleting(workout);
+                        }}
+                        onEditNumber={() => {
+                          tap();
+                          setNumbering(workout);
                         }}
                       />
                     </View>
@@ -135,6 +162,19 @@ export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
           </ScrollView>
         )}
       </View>
+
+      {numbering ? (
+        <NumberSheet
+          title="Which workout was this?"
+          body="Every other workout renumbers from this one — the ones before it count down, the ones after it count up. Set it once on any session and the whole log lines up, including the sessions you did before this app existed."
+          initial={numbers[numbering.id] ?? null}
+          onConfirm={(value) => {
+            onSetNumber(numbering.id, value);
+            setNumbering(null);
+          }}
+          onCancel={() => setNumbering(null)}
+        />
+      ) : null}
 
       {deleting ? (
         <ConfirmSheet
@@ -160,16 +200,22 @@ export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
 
 function WorkoutRow({
   workout,
+  number,
   isOpen,
   onPress,
   onDelete,
+  onEditNumber,
 }: {
   workout: CompletedWorkout;
+  /** Its ordinal, or undefined / below 1 when the pinning leaves it without one. */
+  number?: number;
   isOpen: boolean;
   onPress: () => void;
   onDelete: () => void;
+  onEditNumber: () => void;
 }) {
   const exerciseCount = workout.exercises.length;
+  const numbered = number != null && number >= 1;
 
   return (
     <View>
@@ -177,14 +223,30 @@ function WorkoutRow({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityState={{ expanded: isOpen }}
-        accessibilityLabel={`${workout.title}, ${formatShortDate(workout.startedAt)}, ${workout.setCount} sets, ${workout.durationMinutes} minutes`}
+        accessibilityLabel={[
+          numbered ? `Workout ${number},` : '',
+          workout.title,
+          formatShortDate(workout.startedAt),
+          `${workout.setCount} sets`,
+          `${workout.durationMinutes} minutes`,
+        ]
+          .filter(Boolean)
+          .join(' ')}
         className="min-h-[64px] flex-row items-center px-lg py-md"
       >
+        {/* The ordinal is its own left column so the numbers line up down the
+            list like a ledger, and so a long title can never push it off. The
+            gutter is reserved even when a workout has no number, because a row
+            that shifts left is harder to scan than one with a gap. */}
+        <Text className="w-[38px] text-label font-semibold tabular-nums text-green-bright">
+          {numbered ? `#${number}` : ''}
+        </Text>
+
         <View className="flex-1 pr-md">
           <Text numberOfLines={1} className="text-body font-medium text-ink">
             {workout.title}
           </Text>
-          <Text className="mt-[2px] text-label tabular-nums text-ink-faint">
+          <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
             {exerciseCount} {exerciseCount === 1 ? 'exercise' : 'exercises'} · {workout.setCount}{' '}
             {workout.setCount === 1 ? 'set' : 'sets'}
             {workout.totalVolumeKg > 0 ? ` · ${formatKg(workout.totalVolumeKg)}` : ''}
@@ -220,6 +282,22 @@ function WorkoutRow({
               </View>
             );
           })}
+
+          {/* Renumbering sits above delete because it is the one you actually
+              reach for, and both are inside the open row for the same reason:
+              you read what the workout was before you touch it. */}
+          <Pressable
+            onPress={onEditNumber}
+            accessibilityRole="button"
+            accessibilityLabel={
+              numbered ? `Change the number of workout ${number}` : 'Set this workout\'s number'
+            }
+            className="h-hit justify-center px-lg"
+          >
+            <Text className="text-label font-medium text-green-bright">
+              {numbered ? `Workout number: ${number}` : 'Set the workout number'}
+            </Text>
+          </Pressable>
 
           {/* No red, and not a swipe: see the file header. */}
           <Pressable

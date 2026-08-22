@@ -14,6 +14,7 @@
  */
 
 import type { Exercise, ID, SetHistory } from '../types/models';
+import type { TrendPoint } from './trends';
 import { formatDuration } from './units';
 
 export interface SessionRow {
@@ -97,11 +98,14 @@ export function summarizeSessionSets(
   };
 }
 
-/** Oldest-first series for the chart. Unweighted exercises have no line to draw. */
-export function topWeightSeries(rows: SessionRow[]) {
+/**
+ * Oldest-first series for the chart, in the shape every chart in the app takes
+ * (see `lib/trends.ts`). Unweighted exercises have no line to draw.
+ */
+export function topWeightSeries(rows: SessionRow[]): TrendPoint[] {
   return rows
     .filter((r): r is SessionRow & { topWeightKg: number } => r.topWeightKg != null)
-    .map((r) => ({ performedAt: r.performedAt, topWeightKg: r.topWeightKg }))
+    .map((r) => ({ at: r.performedAt, value: r.topWeightKg }))
     .reverse();
 }
 

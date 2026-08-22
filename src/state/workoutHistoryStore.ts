@@ -31,7 +31,13 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { buildCompletedWorkout, type CompletedExercise, type CompletedWorkout } from '../lib/completedWorkout';
+import {
+  buildCompletedWorkout,
+  workoutNumbers,
+  type CompletedExercise,
+  type CompletedWorkout,
+  type WorkoutNumberAnchor,
+} from '../lib/completedWorkout';
 import type { DraftSession } from '../lib/draft';
 import type { ID, RecentSessionSummary, SetHistory } from '../types/models';
 
@@ -50,6 +56,14 @@ export const MAX_WORKOUTS = 250;
 interface WorkoutHistoryState {
   /** Finished workouts, newest first. */
   workouts: CompletedWorkout[];
+  /**
+   * The one pinned workout number, or null for "the oldest one is 1".
+   *
+   * See `WorkoutNumberAnchor`: people arrive with a training history the app has
+   * never seen, and one pinned pair — "this session was number 91" — is what makes
+   * every other workout land on the right ordinal without editing ninety rows.
+   */
+  numbering: WorkoutNumberAnchor | null;
 
   /**
    * Record a finished session. Returns what was stored, or null if there was
@@ -58,6 +72,16 @@ interface WorkoutHistoryState {
   saveSession: (session: DraftSession, endedAt?: Date) => CompletedWorkout | null;
   deleteWorkout: (id: ID) => void;
   clearHistory: () => void;
+  /**
+   * Pin one workout's number. Everything before and after renumbers from it.
+   *
+   * A number below 1 is refused rather than clamped: "this is workout 0" is a typo
+   * every time, and silently storing 1 instead would make the row the user was
+   * looking at disagree with what they typed.
+   */
+  setWorkoutNumber: (id: ID, number: number) => void;
+  /** Back to "the oldest workout is 1". */
+  clearWorkoutNumbering: () => void;
   /**
    * Replace the log from a restored backup, returning how many workouts actually
    * survived validation — the honest number for the screen to report, which is not
@@ -68,13 +92,14 @@ interface WorkoutHistoryState {
    * every id matched, and rule 3 of this store says finishing twice is one workout.
    * A restore is "make this phone look like that backup".
    */
-  importWorkouts: (raw: unknown) => number;
+  importWorkouts: (raw: unknown, numbering?: unknown) => number;
 }
 
 export const useWorkoutHistory = create<WorkoutHistoryState>()(
   persist(
     (set, get) => ({
       workouts: [],
+      numbering: null,
 
       saveSession: (session, endedAt) => {
         const workout = buildCompletedWorkout(session, endedAt);
@@ -89,16 +114,53 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()(
         return workout;
       },
 
-      deleteWorkout: (id) => set({ workouts: get().workouts.filter((w) => w.id !== id) }),
+      /**
+       * Delete one workout.
+       *
+       * If it was the workout the numbering was pinned to, the pin MOVES to a
+       * neighbour carrying the number that neighbour already had — otherwise
+       * deleting the one session someone had numbered would silently reset the
+       * whole column to "the oldest is 1". The other workouts' numbers are
+       * unaffected by the move, which is the point of it.
+       */
+      deleteWorkout: (id) => {
+        const { workouts, numbering } = get();
+        const remaining = workouts.filter((w) => w.id !== id);
 
-      clearHistory: () => set({ workouts: [] }),
+        if (!numbering || numbering.workoutId !== id) {
+          set({ workouts: remaining });
+          return;
+        }
 
-      importWorkouts: (raw) => {
+        const numbers = workoutNumbers(workouts, numbering);
+        const index = workouts.findIndex((w) => w.id === id);
+        // The workout just newer than the one going, or just older if it was the
+        // newest. Both keep every surviving number exactly where it was.
+        const heir = workouts[index - 1] ?? workouts[index + 1] ?? null;
+        set({
+          workouts: remaining,
+          numbering: heir ? { workoutId: heir.id, number: numbers[heir.id] } : null,
+        });
+      },
+
+      // The pin points at a workout that is about to stop existing.
+      clearHistory: () => set({ workouts: [], numbering: null }),
+
+      setWorkoutNumber: (id, number) => {
+        const rounded = Math.round(number);
+        if (!Number.isFinite(rounded) || rounded < 1) return;
+        if (!get().workouts.some((w) => w.id === id)) return;
+        set({ numbering: { workoutId: id, number: rounded } });
+      },
+
+      clearWorkoutNumbering: () => set({ numbering: null }),
+
+      importWorkouts: (raw, numbering) => {
         // The same guard rehydration uses: a file off an SD card is exactly as
         // trustworthy as a blob off disk, and one validator cannot disagree with
         // itself. See `sanitizeWorkouts`.
         const workouts = sanitizeWorkouts(raw, []);
-        set({ workouts });
+        set({ workouts, numbering: sanitizeNumbering(numbering, workouts) });
         return workouts.length;
       },
     }),
@@ -106,10 +168,13 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()(
       name: 'workout-history',
       version: 1,
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ workouts: state.workouts }),
+      partialize: (state) => ({ workouts: state.workouts, numbering: state.numbering }),
       merge: (persisted, current) => {
-        const raw = (persisted ?? {}) as Partial<Pick<WorkoutHistoryState, 'workouts'>>;
-        return { ...current, workouts: sanitizeWorkouts(raw.workouts, current.workouts) };
+        const raw = (persisted ?? {}) as Partial<
+          Pick<WorkoutHistoryState, 'workouts' | 'numbering'>
+        >;
+        const workouts = sanitizeWorkouts(raw.workouts, current.workouts);
+        return { ...current, workouts, numbering: sanitizeNumbering(raw.numbering, workouts) };
       },
     },
   ),
@@ -130,6 +195,27 @@ function sanitizeWorkouts(raw: unknown, fallback: CompletedWorkout[]): Completed
     .filter((w): w is CompletedWorkout => w !== null)
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
     .slice(0, MAX_WORKOUTS);
+}
+
+/**
+ * A pin that still points at something, or null.
+ *
+ * Dropped rather than repaired when the workout is gone: the anchor's whole
+ * meaning is "THIS session is number N", and keeping the number while losing the
+ * session it belonged to would renumber the log by an arbitrary offset.
+ */
+function sanitizeNumbering(
+  value: unknown,
+  workouts: readonly CompletedWorkout[],
+): WorkoutNumberAnchor | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as Partial<WorkoutNumberAnchor>;
+  if (typeof raw.workoutId !== 'string') return null;
+  if (typeof raw.number !== 'number' || !Number.isFinite(raw.number)) return null;
+  const number = Math.round(raw.number);
+  if (number < 1) return null;
+  if (!workouts.some((w) => w.id === raw.workoutId)) return null;
+  return { workoutId: raw.workoutId, number };
 }
 
 const COUNT_UNITS = new Set(['reps', 'seconds', 'meters', 'rounds']);

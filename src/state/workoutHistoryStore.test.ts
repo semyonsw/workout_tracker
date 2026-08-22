@@ -258,3 +258,78 @@ describe('derived', () => {
     expect(recentSummaries([])).toEqual([]);
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+describe('workout numbering', () => {
+  /** Three finished workouts, oldest first in time. */
+  function threeWorkouts() {
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-01T10:00:00.000Z'));
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-08T10:00:00.000Z'));
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-15T10:00:00.000Z'));
+    // Newest first, as the store keeps them.
+    return useWorkoutHistory.getState().workouts;
+  }
+
+  it('ships unpinned', () => {
+    expect(useWorkoutHistory.getState().numbering).toBeNull();
+  });
+
+  it('pins a number to one workout', () => {
+    const [newest] = threeWorkouts();
+    useWorkoutHistory.getState().setWorkoutNumber(newest.id, 91);
+
+    expect(useWorkoutHistory.getState().numbering).toEqual({ workoutId: newest.id, number: 91 });
+  });
+
+  it('refuses a number below 1, and a workout that is not there', () => {
+    const [newest] = threeWorkouts();
+
+    useWorkoutHistory.getState().setWorkoutNumber(newest.id, 0);
+    useWorkoutHistory.getState().setWorkoutNumber('nope', 40);
+
+    expect(useWorkoutHistory.getState().numbering).toBeNull();
+  });
+
+  it('moves the pin to a neighbour when the pinned workout is deleted', () => {
+    const workouts = threeWorkouts();
+    const [newest, middle] = workouts;
+    useWorkoutHistory.getState().setWorkoutNumber(newest.id, 91);
+
+    useWorkoutHistory.getState().deleteWorkout(newest.id);
+
+    // The pin survives as the number that workout already had, so nothing else
+    // in the log renumbers.
+    expect(useWorkoutHistory.getState().numbering).toEqual({ workoutId: middle.id, number: 90 });
+  });
+
+  it('leaves the pin alone when some other workout is deleted', () => {
+    const workouts = threeWorkouts();
+    const [newest, , oldest] = workouts;
+    useWorkoutHistory.getState().setWorkoutNumber(newest.id, 91);
+
+    useWorkoutHistory.getState().deleteWorkout(oldest.id);
+
+    expect(useWorkoutHistory.getState().numbering).toEqual({ workoutId: newest.id, number: 91 });
+  });
+
+  it('drops the pin when the whole log is cleared', () => {
+    const [newest] = threeWorkouts();
+    useWorkoutHistory.getState().setWorkoutNumber(newest.id, 91);
+
+    useWorkoutHistory.getState().clearHistory();
+
+    expect(useWorkoutHistory.getState().numbering).toBeNull();
+  });
+
+  it('keeps an imported pin only when it points at an imported workout', () => {
+    const [newest] = threeWorkouts();
+    const workouts = useWorkoutHistory.getState().workouts;
+
+    useWorkoutHistory.getState().importWorkouts(workouts, { workoutId: newest.id, number: 91 });
+    expect(useWorkoutHistory.getState().numbering).toEqual({ workoutId: newest.id, number: 91 });
+
+    useWorkoutHistory.getState().importWorkouts(workouts, { workoutId: 'gone', number: 91 });
+    expect(useWorkoutHistory.getState().numbering).toBeNull();
+  });
+});

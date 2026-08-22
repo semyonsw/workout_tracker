@@ -180,6 +180,7 @@ export function FieldWell({
   onPress,
   autoFocus = false,
   selectAllOnFocus = false,
+  keyboardType = 'default',
   accessibilityLabel,
 }: {
   value: string;
@@ -198,6 +199,8 @@ export function FieldWell({
    * placeholder name instead of appending to it.
    */
   selectAllOnFocus?: boolean;
+  /** `number-pad` for a field that only ever holds digits. */
+  keyboardType?: 'default' | 'number-pad';
   accessibilityLabel: string;
 }) {
   const box = [
@@ -222,6 +225,7 @@ export function FieldWell({
           selectionColor={palette.greenBright}
           autoFocus={autoFocus}
           selectTextOnFocus={selectAllOnFocus}
+          keyboardType={keyboardType}
           accessibilityLabel={accessibilityLabel}
           returnKeyType="done"
           className={`flex-1 ${textClass}`}

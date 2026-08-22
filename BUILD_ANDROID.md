@@ -4,9 +4,26 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
+## 0.11.0 — what changed on the phone
+
+`versionCode` 11. **No prebuild needed** — nothing native changed, it is all JS.
+
+- **Every workout is numbered.** History rows lead with `Workout 92`. Open any
+  workout and tap **`Set the workout number`**: everything before it counts down
+  and everything after it counts up, so telling the app once that your last
+  session was 91 puts the whole log — including the ninety sessions that happened
+  before this app existed — on the right ordinal. The pin travels in your export
+  file, and deleting the session it is pinned to moves the pin instead of losing it.
+- **`History → Graphs`.** A switch at the top of History. `All workouts` draws
+  reps per workout and kilograms per workout over time; picking one exercise draws
+  its reps per session and its top working weight per session. Each graph states
+  its own direction in words — `up 34 reps since 11 Jun`, or `level` — because a
+  plateau is the finding this app exists to surface.
+
 ## 0.10.0 — what changed on the phone
 
-`versionCode` 10. **It needs a prebuild**: `expo-sqlite` (and the Drizzle
+
+`versionCode` 10. **It needed a prebuild**: `expo-sqlite` (and the Drizzle
 packages behind it) were unused and are gone, so the set of native modules in the
 APK is different from 0.9.0's.
 

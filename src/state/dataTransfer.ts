@@ -40,6 +40,7 @@ export function currentSnapshot(): BackupPayload {
     routines: library.routines,
     sequence: library.sequence,
     workouts: useWorkoutHistory.getState().workouts,
+    numbering: useWorkoutHistory.getState().numbering,
   };
 }
 
@@ -71,7 +72,7 @@ export function applyBackup(payload: BackupPayload): AppliedCounts {
     routines: payload.routines,
     sequence: payload.sequence,
   });
-  const workouts = useWorkoutHistory.getState().importWorkouts(payload.workouts);
+  const workouts = useWorkoutHistory.getState().importWorkouts(payload.workouts, payload.numbering);
 
   let sets = 0;
   for (const workout of useWorkoutHistory.getState().workouts) sets += workout.sets.length;

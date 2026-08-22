@@ -1,13 +1,14 @@
 {
   "name": "workout-tracker",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "main": "expo/AppEntry.js",
   "private": true,
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

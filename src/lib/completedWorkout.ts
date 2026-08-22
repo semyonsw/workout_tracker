@@ -177,6 +177,61 @@ export function recentlyUsedExerciseIds(
   return seen;
 }
 
+/* ------------------------------------------------------------------ */
+/* Workout numbers                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * "This workout is number N." One workout is pinned; every other one counts from
+ * it.
+ *
+ * Why an anchor rather than a number stored on every row: most people arrive with
+ * a training history the app has never seen — "my last session was workout 91" —
+ * and what they want is to say that ONCE and have everything before and after fall
+ * into place. Numbering each row would mean editing ninety of them, and the first
+ * session inserted or deleted would put the whole column out of step. One pinned
+ * pair cannot disagree with itself.
+ */
+export interface WorkoutNumberAnchor {
+  workoutId: ID;
+  number: number;
+}
+
+/**
+ * The number of every workout, keyed by id.
+ *
+ * `workouts` must be NEWEST FIRST — the order the store keeps them in. Numbers are
+ * ORDINALS, so they are positional by definition: without an anchor the oldest
+ * workout is 1, and with one every workout is the anchor's number plus however many
+ * sessions separate the two. Deleting a session therefore closes the gap it left:
+ * a workout that did not happen does not hold a place in the count.
+ *
+ * A number can come out below 1 — pin "1" to the newest of five workouts and the
+ * four before it have nowhere to go. Those are left unnumbered by the UI rather
+ * than shown as 0 or −3, which reads as a bug rather than as a choice.
+ */
+export function workoutNumbers(
+  workouts: readonly CompletedWorkout[],
+  anchor: WorkoutNumberAnchor | null = null,
+): Record<ID, number> {
+  const numbers: Record<ID, number> = {};
+  if (workouts.length === 0) return numbers;
+
+  /* Chronological position, oldest = 0, out of a newest-first array. */
+  const chrono = (index: number) => workouts.length - 1 - index;
+
+  const anchorIndex = anchor ? workouts.findIndex((w) => w.id === anchor.workoutId) : -1;
+  // No anchor, or one pinned to a workout that has since been deleted: the oldest
+  // workout the app knows about is number 1.
+  const base = anchorIndex === -1 || !anchor ? 1 : anchor.number;
+  const baseChrono = anchorIndex === -1 ? 0 : chrono(anchorIndex);
+
+  workouts.forEach((workout, index) => {
+    numbers[workout.id] = base + (chrono(index) - baseChrono);
+  });
+  return numbers;
+}
+
 /**
  * Grouping key for the history list: the month a workout belongs to.
  *
