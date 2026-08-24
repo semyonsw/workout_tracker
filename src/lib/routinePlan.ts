@@ -171,6 +171,86 @@ export function clearItemRest(item: RoutineItem): RoutineItem {
 }
 
 /* ------------------------------------------------------------------ */
+/* Supersets                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Is this item supersetted WITH THE ONE ABOVE IT?
+ *
+ * The editor exposes exactly one superset control — a toggle on the row saying
+ * "with the exercise above" — and this is what it reads. That framing is
+ * deliberate: `supersetGroup` is a string, and a UI that let people name groups
+ * would need a group-name concept, a picker, and an answer for two groups with
+ * the same name. A superset is a run of adjacent exercises, which is also what it
+ * is in a gym, so adjacency is the whole model.
+ */
+export function isSupersettedWithAbove(items: readonly RoutineItem[], index: number): boolean {
+  const item = items[index];
+  const above = items[index - 1];
+  return item?.supersetGroup != null && item.supersetGroup === above?.supersetGroup;
+}
+
+/**
+ * Group this item with the one above it, or split it away again.
+ *
+ * Joining takes the group above where there is one and mints a new id otherwise,
+ * so toggling the second and then the third exercise of a run builds one group of
+ * three rather than two pairs. The id is derived from the item's own id — stable,
+ * unique per routine, and never shown to anybody.
+ *
+ * SPLITTING re-groups what is BELOW rather than only clearing this row. Ungrouping
+ * the middle of A–B–C means B leaves, and the honest reading of that is that C
+ * stays with A only if it is still adjacent to it — which it is not. So B and
+ * everything below it in the same run start a fresh group, which the caller sees
+ * as "A alone, B–C together". A run of two simply becomes two singletons, and
+ * `supersetPosition` renders a group of one as no group at all.
+ */
+export function toggleSupersetWithAbove(
+  items: readonly RoutineItem[],
+  index: number,
+): RoutineItem[] {
+  const item = items[index];
+  const above = items[index - 1];
+  if (!item || !above) return [...items];
+
+  if (isSupersettedWithAbove(items, index)) {
+    const leaving = item.supersetGroup;
+    const fresh = `sg_${item.id}`;
+    return items.map((candidate, i) =>
+      i >= index && candidate.supersetGroup === leaving
+        ? { ...candidate, supersetGroup: fresh }
+        : candidate,
+    );
+  }
+
+  const group = above.supersetGroup ?? `sg_${above.id}`;
+  return items.map((candidate, i) => {
+    if (i === index) return { ...candidate, supersetGroup: group };
+    if (i === index - 1) return { ...candidate, supersetGroup: group };
+    return candidate;
+  });
+}
+
+/**
+ * The bracket state of a row: does it open a group, continue one, or neither.
+ *
+ * A group of ONE is `none`. Splitting a pair leaves two items each carrying a
+ * unique group string, and a bracket around a single exercise says nothing — so
+ * the render decision is "are there at least two of us, adjacent" rather than "do
+ * I have a group id".
+ */
+export function supersetRunPosition(
+  items: readonly RoutineItem[],
+  index: number,
+): 'none' | 'start' | 'continue' {
+  const item = items[index];
+  if (!item?.supersetGroup) return 'none';
+  const members = items.filter((i) => i.supersetGroup === item.supersetGroup);
+  if (members.length < 2) return 'none';
+  return isSupersettedWithAbove(items, index) ? 'continue' : 'start';
+}
+
+/* ------------------------------------------------------------------ */
 /* Reading the cascade                                                 */
 /* ------------------------------------------------------------------ */
 

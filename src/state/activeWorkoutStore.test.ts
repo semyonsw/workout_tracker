@@ -17,7 +17,7 @@ import { buildDraftEntry, type DraftEntry } from '../lib/draft';
 import { DEFAULT_OVERLOAD_POLICY } from '../lib/progressiveOverload';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
-import type { Exercise, ID } from '../types/models';
+import type { Exercise, ID, Routine } from '../types/models';
 
 const exercisesById = Object.fromEntries(seedExercises.map((e) => [e.id, e])) as Record<
   ID,
@@ -1004,5 +1004,156 @@ describe('editing the session while it runs', () => {
     useActiveWorkout.getState().completeSet(entry.localId, entry.sets[1].localId);
 
     expect(useActiveWorkout.getState().session?.startedAt).toBe(first);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The third branch of `completeSet`: a superset round.
+ *
+ * `RoutineItem.supersetGroup` said "rest only fires after the last member" from
+ * the first release and this function never read it. The decision itself is
+ * `nextInSupersetRound` and is tested over a draft in `lib/superset.test.ts`;
+ * these are the two things only the store can show — that no pill appears
+ * mid-round, and that the cursor lands on the partner.
+ */
+describe('supersets', () => {
+  /** A two-exercise superset plus one ordinary exercise after it. */
+  function startSuperset(sets = [3, 3]) {
+    const [dipsSets, rowsSets] = sets;
+    const routine: Routine = {
+      id: 'r_ss',
+      ownerId: 'u1',
+      name: 'Superset day',
+      items: [
+        {
+          id: 'ri0',
+          exerciseId: 'ex_pushups',
+          order: 0,
+          targetSets: dipsSets,
+          targetRepsMax: 10,
+          supersetGroup: 'sg_a',
+        },
+        {
+          id: 'ri1',
+          exerciseId: 'ex_row_stomach',
+          order: 1,
+          targetSets: rowsSets,
+          targetRepsMax: 10,
+          supersetGroup: 'sg_a',
+        },
+        { id: 'ri2', exerciseId: 'ex_plank', order: 2, targetSets: 2, targetRepsMax: 60 },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    useActiveWorkout.getState().discardSession();
+    useActiveWorkout.getState().startSession({
+      routine,
+      exercisesById,
+      historyByExerciseId: {},
+      policy: seedUser.overloadPolicy,
+      unitSystem: 'metric',
+      defaultRestSeconds: 120,
+      defaultTransitionRestSeconds: 150,
+    });
+    const session = useActiveWorkout.getState().session;
+    if (!session) throw new Error('the superset routine built no session');
+    return session;
+  }
+
+  it('starts no rest and moves the cursor to the partner', () => {
+    const session = startSuperset();
+    const [a, b] = session.entries;
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[0].localId);
+    const state = useActiveWorkout.getState();
+
+    // No pill: the next thing to do is the other exercise, and a countdown over
+    // its rows is the timer getting in the way of the work.
+    expect(isResting(state.rest)).toBe(false);
+    expect(state.activeEntryId).toBe(b.localId);
+  });
+
+  it('rests only after the last member of the round', () => {
+    const session = startSuperset();
+    const [a, b] = session.entries;
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[0].localId);
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(false);
+
+    useActiveWorkout.getState().completeSet(b.localId, b.sets[0].localId);
+    const { rest } = useActiveWorkout.getState();
+
+    expect(isResting(rest)).toBe(true);
+    expect(rest.source).toBe('set');
+  });
+
+  it('goes back round for the next set', () => {
+    const session = startSuperset();
+    const [a, b] = session.entries;
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[0].localId);
+    useActiveWorkout.getState().completeSet(b.localId, b.sets[0].localId);
+    useActiveWorkout.getState().skipRest();
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[1].localId);
+    const state = useActiveWorkout.getState();
+
+    expect(state.activeEntryId).toBe(b.localId);
+    expect(isResting(state.rest)).toBe(false);
+  });
+
+  it('rests immediately on the unequal tail', () => {
+    // Three sets against two: the third round has one member in it.
+    const session = startSuperset([3, 2]);
+    const [a, b] = session.entries;
+
+    for (let round = 0; round < 2; round += 1) {
+      useActiveWorkout.getState().completeSet(a.localId, a.sets[round].localId);
+      useActiveWorkout.getState().completeSet(b.localId, b.sets[round].localId);
+      useActiveWorkout.getState().skipRest();
+    }
+
+    // `b` is finished, so `a`'s last set is an ordinary set — and it is also the
+    // last of its exercise, so it earns the longer transition rest.
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[2].localId);
+    const { rest } = useActiveWorkout.getState();
+
+    expect(isResting(rest)).toBe(true);
+    expect(rest.source).toBe('transition');
+  });
+
+  it('leaves no orphaned cursor when a member is removed mid-session', () => {
+    const session = startSuperset();
+    const [a, b, plank] = session.entries;
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[0].localId);
+    expect(useActiveWorkout.getState().activeEntryId).toBe(b.localId);
+
+    // The machine is taken. `b` comes off the workout.
+    useActiveWorkout.getState().removeEntry(b.localId);
+    const afterRemoval = useActiveWorkout.getState();
+
+    // The cursor moved off the entry that is gone, and it points at something that
+    // exists.
+    const ids = afterRemoval.session?.entries.map((e) => e.localId) ?? [];
+    expect(ids).not.toContain(b.localId);
+    expect(ids).toContain(afterRemoval.activeEntryId);
+    expect(afterRemoval.activeEntryId).toBe(plank.localId);
+
+    // And `a` now behaves like an exercise with no group: its next ✓ rests.
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[1].localId);
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
+  });
+
+  it('leaves an exercise outside the group alone', () => {
+    const session = startSuperset();
+    const plank = session.entries[2];
+
+    useActiveWorkout.getState().completeSet(plank.localId, plank.sets[0].localId);
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
   });
 });

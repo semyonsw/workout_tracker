@@ -18,6 +18,19 @@
  * Not a badge, not a chip, not a count: the suggestion is not urgent, it just
  * needs to be findable.
  *
+ * ── SUPERSETS READ AS A BRACKET ─────────────────────────────────────────────
+ *
+ * A member of a superset carries a 2 dp `green-dim` rule down its left edge, and
+ * the members of one group carry it continuously, so a pair reads as one block.
+ * The same vocabulary the routine editor's drop target uses, for the same reason:
+ * `green-dim` means "these belong together", never "something is wrong". No second
+ * hue, no label, no badge — the behaviour speaks for itself the first time a ✓
+ * moves the cursor sideways instead of starting a rest.
+ *
+ * A group of ONE renders no rule. `supersetPosition` decides that, not this
+ * component: a bracket around a single exercise says nothing, and one is easy to
+ * produce by removing a partner mid-session.
+ *
  * ── `ADD SET` AND `REMOVE SET` ARE ONE CONTROL, SPLIT IN TWO ────────────────
  *
  * Sets are decided in the gym: four today, three when the fourth isn't there. The
@@ -53,6 +66,11 @@ interface ExerciseCardProps {
   entry: DraftEntry;
   isActive: boolean;
   unitSystem: UnitSystem;
+  /**
+   * Where this card sits in a superset run. Computed by the screen, which is the
+   * only place that can see the cards either side of this one.
+   */
+  superset?: 'none' | 'start' | 'continue';
   /** The set in this card whose clock is running, if any. */
   timingSetId?: ID | null;
   /** This card is being dragged: it follows the finger and marks itself. */
@@ -90,6 +108,7 @@ function ExerciseCardComponent({
   entry,
   isActive,
   unitSystem,
+  superset = 'none',
   timingSetId = null,
   isLifted = false,
   dimmed = false,
@@ -139,12 +158,19 @@ function ExerciseCardComponent({
         accessibilityRole="button"
         accessibilityLabel={`${entry.exercise.name}, ${completed} of ${total} sets done${
           nudgeWaiting ? ', suggestion waiting' : ''
-        }`}
+        }${superset === 'none' ? '' : ', part of a superset'}`}
         accessibilityHint={onLift ? 'Long press, then slide to reorder' : undefined}
         style={dimmed ? { opacity: 0.4 } : undefined}
         className={[
           'mx-lg mb-sm rounded-surface border p-lg',
           isLifted ? 'border-green-dim bg-surface-alt' : 'border-hairline bg-surface',
+          /*
+           * The bracket, as a left border rather than an extra View: a collapsed
+           * card is one Pressable and threading a sibling through it would mean
+           * wrapping every card in a row just to draw 2 px. `border-l-2` reads as
+           * the same rule the expanded card draws beside its set list.
+           */
+          superset === 'none' ? '' : 'border-l-2 border-l-green-dim',
         ].join(' ')}
       >
         <View className="flex-row items-center">
@@ -235,6 +261,7 @@ function ExerciseCardComponent({
         className={[
           'mx-lg overflow-hidden rounded-surface border bg-surface',
           isLifted ? 'border-green-dim' : 'border-hairline',
+          superset === 'none' ? '' : 'border-l-2 border-l-green-dim',
         ].join(' ')}
       >
         {entry.sets.map((set, index) => (

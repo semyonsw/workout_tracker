@@ -55,6 +55,19 @@ export interface DraftEntry {
   restSeconds: number;
   transitionRestSeconds: number;
   /**
+   * The superset this exercise belongs to, carried straight off the routine item.
+   *
+   * Same string = same superset, and the behaviour is `completeSet`'s: no rest
+   * between members, one rest after the last member of a round. `lib/superset.ts`
+   * owns the "whose turn is it" decision.
+   *
+   * Absent on an exercise added mid-session, for the same reason
+   * `restSecondsOverride` is: there is no routine item behind it. Joining a
+   * superset mid-workout is a plan change, and the place to make one is the
+   * routine editor.
+   */
+  supersetGroup?: string;
+  /**
    * THIS EXERCISE'S OWN between-sets rest, if the routine item set one.
    *
    * The difference between "an override of 2:00" and "following Settings, which
@@ -292,6 +305,8 @@ export interface BuildEntryParams {
   transitionRestSeconds: number;
   /** The routine item's own rest, if it has one. See `DraftEntry`. */
   restSecondsOverride?: number;
+  /** The routine item's superset group, if it is in one. See `DraftEntry`. */
+  supersetGroup?: string;
   /** What the header states — "4 × 8–10". */
   targetSets: number;
   targetRepsMin?: number;
@@ -361,6 +376,7 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
     ...(params.restSecondsOverride != null
       ? { restSecondsOverride: params.restSecondsOverride }
       : {}),
+    ...(params.supersetGroup ? { supersetGroup: params.supersetGroup } : {}),
     sets,
     overload,
     overloadAccepted: false,
@@ -429,6 +445,13 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
         restSeconds: rest.seconds,
         transitionRestSeconds: defaultTransitionRestSeconds,
         ...(rest.source === 'item' ? { restSecondsOverride: rest.seconds } : {}),
+        /*
+         * Carried onto the entry rather than looked up later. The session is what
+         * `completeSet` and the cards read, and a store action reaching back into
+         * the routine store to ask which group an exercise is in would tie the
+         * live session to a template the user may have edited since.
+         */
+        ...(item.supersetGroup ? { supersetGroup: item.supersetGroup } : {}),
         targetSets: item.targetSets,
         targetRepsMin: item.targetRepsMin,
         targetRepsMax: item.targetRepsMax,

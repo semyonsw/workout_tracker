@@ -21,9 +21,10 @@
  *     frozen — and a paused rest cannot expire in the user's pocket.
  *
  *  3. `completeSet` is the only action the finger needs in the happy path: it
- *     marks the set, starts the right rest period, and advances the cursor.
- *     `commitSetTimer` routes through it rather than reimplementing it, so a
- *     plank logged by the clock and a set logged by the ✓ take the same path.
+ *     marks the set, starts the right rest period — or none, mid-superset — and
+ *     advances the cursor. `commitSetTimer` routes through it rather than
+ *     reimplementing it, so a plank logged by the clock and a set logged by the ✓
+ *     take the same path.
  *
  *  4. THE SESSION'S SHAPE IS EDITABLE, NOT FIXED AT START. Exercises can be
  *     appended (`addEntry`), dropped (`removeEntry`), reordered (`moveEntry`), and
@@ -55,6 +56,7 @@ import {
   withWorkAdjusted,
   type SetTimerSpec,
 } from '../lib/setTimer';
+import { nextInSupersetRound } from '../lib/superset';
 import { currentSettings } from './settingsStore';
 import type { ID } from '../types/models';
 
@@ -311,6 +313,22 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
        *     exercise's rows is in the way — a rest the user started by hand used
        *     to be wiped by the next ✓. Now rest is only ever REPLACED, by a rest
        *     this set actually earned.
+       *
+       * ── AND THE THIRD BRANCH: A SUPERSET ROUND ─────────────────────────────
+       *
+       * This used to choose between two rests, set and transition. A superset adds
+       * a third answer, which is NO rest: if another member of the group still
+       * owes a set in this round, the next thing to do is that set, so the cursor
+       * moves there and no pill appears. Rest fires after the LAST member of the
+       * round, exactly as `RoutineItem.supersetGroup` has said since the model was
+       * written — the identifier existed in one file for two releases and this
+       * function never consulted it.
+       *
+       * "Whose turn is it" is `nextInSupersetRound`, in `lib/superset.ts`, because
+       * that is where the edge cases live: unequal set counts between members, a
+       * member removed mid-session, a member already finished, sets logged out of
+       * order. All of them testable without a store, none of them a session in a
+       * gym.
        */
       completeSet: (entryId, setId) => {
         const { session, rest } = get();
@@ -333,7 +351,20 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         entries[index] = { ...target, sets };
 
         const exerciseDone = sets.every((s) => s.isCompleted);
-        const advanceTo = exerciseDone ? (session.entries[index + 1]?.localId ?? null) : null;
+
+        /*
+         * The superset question, asked against the session AS IT NOW IS — the ✓
+         * that just landed is what moves the group's round on, so the check has to
+         * see it. Null means "not in a superset, or the round is over", which is
+         * every non-superset exercise and therefore the old behaviour untouched.
+         */
+        const partner = nextInSupersetRound({ ...session, entries }, entryId);
+
+        const advanceTo = partner
+          ? partner.entryId
+          : exerciseDone
+            ? (session.entries[index + 1]?.localId ?? null)
+            : null;
         /*
          * The workout is over: every set of every exercise is logged, so there is
          * nothing to rest FOR. Deliberately not "this was the last exercise in the
@@ -362,7 +393,12 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         const restSeconds = exerciseDone
           ? settings.restSecondsBetweenExercises
           : (target.restSecondsOverride ?? settings.restSecondsBetweenSets);
-        const startsRest = settings.autoStartRest && restSeconds > 0 && !workoutDone;
+        /*
+         * `!partner` is the superset rule: mid-round, the next thing to do is the
+         * other exercise, and a countdown over its rows is the pill getting in the
+         * way of the work. The round's rest comes after its last member.
+         */
+        const startsRest = settings.autoStartRest && restSeconds > 0 && !workoutDone && !partner;
 
         set({
           session: {

@@ -112,6 +112,7 @@ import { SetTimerPill } from '../components/SetTimerPill';
 import type { DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
 import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
+import { supersetPosition } from '../lib/superset';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
 import { PrimaryButton } from '../components/primitives';
@@ -447,7 +448,7 @@ export function ActiveWorkoutScreen({
               listTop.current = e.nativeEvent.layout.y;
             }}
           >
-            {session.entries.map((entry) => {
+            {session.entries.map((entry, index) => {
               const isLifted = entry.localId === lifted;
               return (
                 <Animated.View
@@ -469,6 +470,9 @@ export function ActiveWorkoutScreen({
                     entry={entry}
                     isActive={entry.localId === activeEntryId}
                     unitSystem={unitSystem}
+                    /* The bracket down a superset's left edge. Computed here
+                       because only the screen can see the cards either side. */
+                    superset={supersetPosition(session.entries, index)}
                     timingSetId={setTimer?.entryId === entry.localId ? setTimer.setId : null}
                     isLifted={isLifted}
                     dimmed={lifted != null && !isLifted}

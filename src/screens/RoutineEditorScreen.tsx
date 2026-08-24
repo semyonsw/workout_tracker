@@ -14,6 +14,7 @@
  *   │ │      Down to                4   ( − )( + )│ │
  *   │ │      Rest · this exercise 3:00  ( − )( + )│ │
  *   │ │      Follow the setting instead           │ │
+ *   │ │      Superset with the one above  [ ●━ ]  │ │
  *   │ │      Open its history                     │ │
  *   │ │ ≡  Wide pull-ups machine           ›  ✕  │ │
  *   │ │ +  Add exercise                          │ │
@@ -42,6 +43,15 @@
  * optional low end of a rep range: nudging it to or past the target switches it
  * off, so one chip both opens and closes the range and there is no second control
  * for a thing that is either on or off.
+ *
+ * SUPERSETS ARE ONE TOGGLE: "with the exercise above". `supersetGroup` is a
+ * string, and a UI that let people NAME groups would need a group-name concept, a
+ * picker, and an answer for two groups that share a name — for a feature whose
+ * whole content is "these two are done back to back". A superset is a run of
+ * adjacent exercises, which is also what it is in a gym, so adjacency is the
+ * model. Members carry a `green-dim` rule down their left edge — the same
+ * vocabulary the drop target uses, because both mean "these belong together"
+ * rather than "something is wrong".
  *
  * REST NAMES ITS SOURCE, and that is the point of the row rather than a detail of
  * it. `rest · setting` and `rest · this exercise` are two different facts, and
@@ -102,6 +112,7 @@ import {
   ListCard,
   Separator,
   TextButton,
+  Toggle,
 } from '../components/primitives';
 import { commit, tap, undo } from '../lib/feedback';
 import {
@@ -111,8 +122,11 @@ import {
   bumpTargetMin,
   bumpTargetSets,
   clearItemRest,
+  isSupersettedWithAbove,
   resolveItemRest,
+  supersetRunPosition,
   targetCountStep,
+  toggleSupersetWithAbove,
 } from '../lib/routinePlan';
 import { countUnitLabel, formatClock, formatDuration } from '../lib/units';
 import { palette } from '../theme/tokens';
@@ -313,6 +327,7 @@ export function RoutineEditorScreen({
                     exercise={exercise}
                     dimmed={moving != null}
                     isOpen={openId === item.id}
+                    superset={supersetRunPosition(rest, index)}
                     summary={summarizeItem(item, exercise, defaultRestSeconds)}
                     onPress={() => {
                       if (moving) return setMoving({ ...moving, targetIndex: index });
@@ -335,7 +350,16 @@ export function RoutineEditorScreen({
                       item={item}
                       exercise={exercise}
                       settingsRestSeconds={defaultRestSeconds}
+                      /* The first row has nothing above it to pair with. */
+                      supersetWithAbove={index === 0 ? null : isSupersettedWithAbove(rest, index)}
                       onPatch={(fn) => patchItem(item.id, fn)}
+                      onToggleSuperset={() => {
+                        tap();
+                        setItems((current) => {
+                          const at = current.findIndex((i) => i.id === item.id);
+                          return at <= 0 ? current : toggleSupersetWithAbove(current, at);
+                        });
+                      }}
                       onOpenHistory={() => onOpenItem(item, draft())}
                     />
                   ) : null}
@@ -389,6 +413,7 @@ function RoutineRow({
   exercise,
   dimmed,
   isOpen,
+  superset,
   summary,
   onPress,
   onLongPress,
@@ -397,6 +422,8 @@ function RoutineRow({
   exercise: Exercise;
   dimmed: boolean;
   isOpen: boolean;
+  /** Where this row sits in a superset run — drives the rule down its left edge. */
+  superset: 'none' | 'start' | 'continue';
   /** Built by the screen, which is the only place that knows the live setting. */
   summary: string;
   onPress: () => void;
@@ -406,13 +433,27 @@ function RoutineRow({
 }) {
   return (
     <View className="flex-row items-center" style={dimmed ? { opacity: 0.5 } : undefined}>
+      {/* The bracket. A 2 dp `green-dim` rule down the left edge of every member,
+          so a run reads as one block without a second hue or a label. */}
+      <View
+        className={[
+          'h-row-lg w-[2px]',
+          superset === 'none' ? 'bg-transparent' : 'bg-green-dim',
+        ].join(' ')}
+      />
       <Pressable
         onPress={onPress}
         onLongPress={onLongPress}
         delayLongPress={280}
         accessibilityRole="button"
         accessibilityState={{ expanded: isOpen }}
-        accessibilityLabel={`${exercise.name}, ${summary}`}
+        accessibilityLabel={[
+          exercise.name,
+          summary,
+          superset === 'continue' ? 'supersetted with the exercise above' : '',
+        ]
+          .filter(Boolean)
+          .join(', ')}
         accessibilityHint="Long press to reorder"
         className="h-row-lg flex-1 flex-row items-center pl-md"
       >
@@ -516,13 +557,18 @@ function ItemEditor({
   item,
   exercise,
   settingsRestSeconds,
+  supersetWithAbove,
   onPatch,
+  onToggleSuperset,
   onOpenHistory,
 }: {
   item: RoutineItem;
   exercise: Exercise;
   settingsRestSeconds: number;
+  /** On / off, or null on the first row — which has nothing above it to pair with. */
+  supersetWithAbove: boolean | null;
   onPatch: (fn: (item: RoutineItem) => RoutineItem) => void;
+  onToggleSuperset: () => void;
   onOpenHistory: () => void;
 }) {
   const { countUnit } = exercise;
@@ -604,6 +650,29 @@ function ItemEditor({
           </Pressable>
         </>
       ) : null}
+
+      {/* One toggle, and only where there is an exercise above to pair with. See
+          the file header for why there is no group-name concept. */}
+      {supersetWithAbove == null ? null : (
+        <>
+          <Separator inset={40} />
+          <View className="min-h-[56px] flex-row items-center py-sm pl-xxl pr-lg">
+            <View className="flex-1 pr-md">
+              <Text className="text-label font-medium text-ink">Superset with the one above</Text>
+              <Text className="mt-[2px] text-micro text-ink-faint">
+                {supersetWithAbove
+                  ? 'No rest between them — rest comes after the pair'
+                  : 'Rest after every set, as normal'}
+              </Text>
+            </View>
+            <Toggle
+              value={supersetWithAbove}
+              onChange={onToggleSuperset}
+              accessibilityLabel="Superset with the exercise above"
+            />
+          </View>
+        </>
+      )}
 
       <Separator inset={40} />
       {/* Where tapping the row used to go, one level down: it is what you do

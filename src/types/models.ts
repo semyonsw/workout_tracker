@@ -239,7 +239,18 @@ export interface RoutineItem {
   restSeconds?: number;
   /** Extra rest after the LAST set, before moving on. */
   transitionRestSeconds?: number;
-  /** Same string = same superset; rest only fires after the last member. */
+  /**
+   * Same string = same superset; rest only fires after the last member.
+   *
+   * Set by the routine editor's one superset control — a toggle reading "with the
+   * exercise above" — so the string itself is never shown to anybody and is only
+   * ever compared. `lib/superset.ts` owns whose turn is next, `completeSet` owns
+   * the no-rest branch, and `lib/routinePlan.ts` owns joining and splitting.
+   *
+   * ADJACENCY IS THE MODEL. Two items sharing a group but separated by a third are
+   * read as no superset at all: a bracket that skips a row is a lie about what
+   * happens in the gym, and it is reachable just by reordering a routine.
+   */
   supersetGroup?: string;
 }
 

@@ -11,9 +11,12 @@ import {
   bumpTargetSets,
   clearItemRest,
   describePlannedSetDiff,
+  isSupersettedWithAbove,
   performedSetCounts,
   plannedSetDiff,
   resolveItemRest,
+  supersetRunPosition,
+  toggleSupersetWithAbove,
 } from './routinePlan';
 import type { RoutineItem } from '../types/models';
 
@@ -330,5 +333,83 @@ describe('performedSetCounts', () => {
         },
       ]),
     ).toEqual([{ exerciseId: 'ex_dips', name: 'Dips', completedSets: 2 }]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The one superset control: "with the exercise above".
+ *
+ * `supersetGroup` is a string, and a UI that let people name groups would need a
+ * group-name concept, a picker, and an answer for two groups sharing a name — for
+ * a feature whose whole content is "these two are done back to back". Adjacency
+ * is the model, which is also what a superset is in a gym.
+ */
+describe('supersets in the routine editor', () => {
+  const three = [
+    item({ id: 'ri1', exerciseId: 'a' }),
+    item({ id: 'ri2', exerciseId: 'b' }),
+    item({ id: 'ri3', exerciseId: 'c' }),
+  ];
+
+  it('joins two adjacent items into one group', () => {
+    const next = toggleSupersetWithAbove(three, 1);
+
+    expect(next[0].supersetGroup).toBeDefined();
+    expect(next[1].supersetGroup).toBe(next[0].supersetGroup);
+    expect(next[2].supersetGroup).toBeUndefined();
+    expect(isSupersettedWithAbove(next, 1)).toBe(true);
+  });
+
+  it('grows the same group rather than making a second pair', () => {
+    // Toggling the second and then the third builds one group of three.
+    const next = toggleSupersetWithAbove(toggleSupersetWithAbove(three, 1), 2);
+    const groups = new Set(next.map((i) => i.supersetGroup));
+
+    expect(groups.size).toBe(1);
+    expect(next.every((i) => i.supersetGroup != null)).toBe(true);
+  });
+
+  it('does nothing on the first row, which has nothing above it', () => {
+    expect(toggleSupersetWithAbove(three, 0)).toEqual(three);
+  });
+
+  it('splits a pair back into two singletons', () => {
+    const joined = toggleSupersetWithAbove(three, 1);
+    const split = toggleSupersetWithAbove(joined, 1);
+
+    expect(isSupersettedWithAbove(split, 1)).toBe(false);
+    // Two distinct groups of one, which render as no group at all.
+    expect(split[0].supersetGroup).not.toBe(split[1].supersetGroup);
+    expect(supersetRunPosition(split, 0)).toBe('none');
+    expect(supersetRunPosition(split, 1)).toBe('none');
+  });
+
+  it('splits A–B–C in the middle into A alone and B–C together', () => {
+    // Ungrouping B means B leaves; C stays with A only if it is still next to it,
+    // and it is not. So B takes what is below it with it.
+    const run = toggleSupersetWithAbove(toggleSupersetWithAbove(three, 1), 2);
+    const split = toggleSupersetWithAbove(run, 1);
+
+    expect(supersetRunPosition(split, 0)).toBe('none');
+    expect(split[1].supersetGroup).toBe(split[2].supersetGroup);
+    expect(supersetRunPosition(split, 1)).toBe('start');
+    expect(supersetRunPosition(split, 2)).toBe('continue');
+  });
+
+  it('reads a group id shared by non-adjacent items as no group', () => {
+    // Reachable by reordering a routine, and a bracket that skips a row is a lie
+    // about what happens in the gym.
+    const scattered = [
+      item({ id: 'ri1', exerciseId: 'a', supersetGroup: 'sg' }),
+      item({ id: 'ri2', exerciseId: 'b' }),
+      item({ id: 'ri3', exerciseId: 'c', supersetGroup: 'sg' }),
+    ];
+
+    expect(isSupersettedWithAbove(scattered, 2)).toBe(false);
+    // Two members exist, so the run positions are honest about the first one
+    // opening a bracket the second does not continue.
+    expect(supersetRunPosition(scattered, 1)).toBe('none');
   });
 });
