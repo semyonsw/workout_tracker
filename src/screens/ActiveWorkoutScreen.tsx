@@ -111,11 +111,12 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
 import type { DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
+import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
 import { PrimaryButton } from '../components/primitives';
 import { palette } from '../theme/tokens';
-import type { ID, UnitSystem } from '../types/models';
+import type { ID, RoutineItem, UnitSystem } from '../types/models';
 
 interface ActiveWorkoutScreenProps {
   unitSystem: UnitSystem;
@@ -127,7 +128,18 @@ interface ActiveWorkoutScreenProps {
    * a screen whose job is logging sets should not be the thing that decides what
    * that record looks like. `lib/completedWorkout.ts` owns that shape.
    */
-  onFinish: (session: DraftSession) => Promise<void> | void;
+  onFinish: (session: DraftSession, updatePlan?: boolean) => Promise<void> | void;
+  /**
+   * The routine items this session was built from, for the `Finish` sheet's one
+   * extra offer: "Dips did 5 sets, not 4 — update the routine?"
+   *
+   * Absent when the session did not come from a routine, which is also the answer
+   * to whether there is a plan to update. The DIFF is not computed here — this
+   * screen hands the items to `plannedSetDiff` and renders the sentence it gets
+   * back, because "which exercise's item learns from which entry" is a decision
+   * and decisions live in `lib/`.
+   */
+  routineItems?: readonly RoutineItem[];
   /**
    * Leave the logging screen. The CALLER decides what that means for the session
    * itself — a started workout keeps running, an unstarted one is thrown away
@@ -150,6 +162,7 @@ interface CardLayout {
 
 export function ActiveWorkoutScreen({
   unitSystem,
+  routineItems,
   onFinish,
   onExit,
   onAddExercise,
@@ -255,13 +268,31 @@ export function ActiveWorkoutScreen({
     [commitSetTimer, setTimer?.setId, startSetTimer],
   );
 
-  const commitFinish = useCallback(async () => {
-    setConfirming(null);
-    const finished = finishSession();
-    if (!finished) return;
-    await onFinish(finished);
-    onExit();
-  }, [finishSession, onExit, onFinish]);
+  /**
+   * Where the finished session's set counts disagree with the routine's plan.
+   *
+   * Computed while the sheet is open, from the LIVE session — the draft is gone by
+   * the time `commitFinish` has run, so this cannot be derived afterwards.
+   * `null`/empty means there is nothing to offer, and the sheet renders no offer.
+   */
+  const planChanges = useMemo(
+    () =>
+      session?.routineId && routineItems
+        ? plannedSetDiff(routineItems, performedSetCounts(session.entries))
+        : [],
+    [routineItems, session?.entries, session?.routineId],
+  );
+
+  const commitFinish = useCallback(
+    async (updatePlan = false) => {
+      setConfirming(null);
+      const finished = finishSession();
+      if (!finished) return;
+      await onFinish(finished, updatePlan);
+      onExit();
+    },
+    [finishSession, onExit, onFinish],
+  );
 
   /** ▶ Start — the workout is happening as of now. */
   const handleStart = useCallback(() => {
@@ -491,7 +522,9 @@ export function ActiveWorkoutScreen({
         <FinishSheet
           unloggedCount={progress.total - progress.done}
           loggedCount={progress.done}
+          planChange={describePlannedSetDiff(planChanges)}
           onConfirm={() => void commitFinish()}
+          onConfirmAndUpdatePlan={() => void commitFinish(true)}
           onDismiss={() => setConfirming(null)}
         />
       ) : null}

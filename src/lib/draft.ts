@@ -18,6 +18,7 @@ import type {
   UnitSystem,
 } from '../types/models';
 import { countUnitLabel, effectiveLoadKg, formatDuration } from './units';
+import { resolveItemRest } from './routinePlan';
 import { summarizeSessionSets } from './history';
 import { evaluateOverload, type OverloadVerdict } from './progressiveOverload';
 
@@ -45,14 +46,28 @@ export interface DraftEntry {
   /**
    * The two rest lengths this session was BUILT with, in seconds.
    *
-   * Recorded, not obeyed: rest is started by `completeSet`, which reads the live
-   * Settings values at the moment it starts one, so changing a rest length
-   * mid-workout takes effect on the next set instead of the next session. These
-   * fields are what the session began with — useful in a log or a test, and the
+   * Recorded, not obeyed. Rest is started by `completeSet`, and what it runs is
+   * `restSecondsOverride ?? the live Settings value` — so changing a setting
+   * mid-workout takes effect on the very next set rather than on the next session.
+   * These two are what the session began with: useful in a log or a test, and the
    * shape older persisted sessions already have.
    */
   restSeconds: number;
   transitionRestSeconds: number;
+  /**
+   * THIS EXERCISE'S OWN between-sets rest, if the routine item set one.
+   *
+   * The difference between "an override of 2:00" and "following Settings, which
+   * currently says 2:00" is not visible in a number, and it is the whole
+   * distinction the routine editor now exposes: an item with no override tracks
+   * the setting as it changes, an item with one does not. `completeSet` needs to
+   * know which, so it is carried separately rather than folded into
+   * `restSeconds` — a single field could not tell the two apart.
+   *
+   * Absent on an exercise added mid-session: there is no routine item behind it,
+   * so there is nothing it could be overriding.
+   */
+  restSecondsOverride?: number;
   sets: DraftSet[];
   /** Computed once at session start — history doesn't change mid-workout. */
   overload: OverloadVerdict;
@@ -193,6 +208,32 @@ export function defaultTargetCount(exercise: Pick<Exercise, 'countUnit' | 'defau
   return 10;
 }
 
+/**
+ * How many sets a brand-new routine item plans, by count unit.
+ *
+ * `appendToRoutine` used to write a bare `4` here (12 for rounds), and because
+ * nothing else in the app could write `targetSets`, that 4 was not a starting
+ * point — it was the answer, on every routine, forever. The editor can change it
+ * now, so this is a starting point again, and it lives here beside
+ * `defaultTargetCount` as a per-unit decision rather than a literal inside a store
+ * action.
+ *
+ * Deliberately NOT read from a new `Exercise.defaultSets` field: nothing would
+ * write one. The create screen asks for a starting weight and a target count, not
+ * a set count, and a model field with no writer is the thing Phase 1 spent a
+ * commit deleting five of.
+ *
+ * Per unit, because "four" means different things: four sets of reps, twelve
+ * rounds on a bag, three holds of a plank (nobody plans four two-minute planks),
+ * and one swim — a distance is done once.
+ */
+export function defaultTargetSets(exercise: Pick<Exercise, 'countUnit'>): number {
+  if (exercise.countUnit === 'rounds') return 12;
+  if (exercise.countUnit === 'seconds') return 3;
+  if (exercise.countUnit === 'meters') return 1;
+  return 4;
+}
+
 export interface BuildDraftParams {
   routine: Routine;
   /** Exercise library rows keyed by id, for the routine's items. */
@@ -240,6 +281,8 @@ export interface BuildEntryParams {
   unitSystem: UnitSystem;
   restSeconds: number;
   transitionRestSeconds: number;
+  /** The routine item's own rest, if it has one. See `DraftEntry`. */
+  restSecondsOverride?: number;
   /** What the header states — "4 × 8–10". */
   targetSets: number;
   targetRepsMin?: number;
@@ -306,6 +349,9 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
     targetRepsMax,
     restSeconds,
     transitionRestSeconds,
+    ...(params.restSecondsOverride != null
+      ? { restSecondsOverride: params.restSecondsOverride }
+      : {}),
     sets,
     overload,
     overloadAccepted: false,
@@ -333,29 +379,47 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
       const exercise = exercisesById[item.exerciseId];
       if (!exercise) return null;
 
+      const rest = resolveItemRest(item, defaultRestSeconds);
+
       return buildDraftEntry({
         exercise,
         history: historyByExerciseId[exercise.id] ?? [],
         policy,
         unitSystem,
         /*
-         * REST COMES FROM SETTINGS, NOT FROM THE ROUTINE.
+         * REST: THE ITEM'S OVERRIDE IF IT HAS ONE, OTHERWISE SETTINGS.
          *
-         * This used to read `item.restSeconds ?? exercise.defaultRestSeconds ??
-         * defaultRestSeconds`, which sounds like a sensible cascade and is, in
-         * practice, a bug: nearly every shipped routine item and exercise carries
-         * its own rest, so the two numbers in Settings — the only rest controls
-         * anywhere in the app the user can actually reach — were shadowed on
-         * almost every exercise. Setting "Between sets" to 1:30 and then watching
-         * a 3:00 countdown is indistinguishable from a broken setting.
+         * That day arrived. This used to be `defaultRestSeconds` and nothing else,
+         * with a note saying per-exercise rest could come back once the routine
+         * editor let someone SET it — because the cascade it replaced went through
+         * `exercise.defaultRestSeconds`, which nearly every shipped exercise
+         * carries and nobody could see or change. The two numbers in Settings were
+         * the only rest controls in the app, and they were shadowed on almost
+         * every exercise: setting "Between sets" to 1:30 and then watching a 3:00
+         * countdown is indistinguishable from a broken setting.
          *
-         * Per-exercise rest can come back the day the routine editor lets someone
-         * SET it, at which point an override is a choice the user made and can
-         * see. Until then the honest rule is that the setting wins. It is also
-         * live: `completeSet` re-reads it each time rest starts.
+         * The editor sets `item.restSeconds` now, shows which of the two is in
+         * force on the row, and can clear it back to "follow Settings". So an
+         * override is a choice the user made and can see, which is the whole
+         * condition that was missing. `resolveItemRest` is the one place the
+         * cascade lives, and it is two levels — the exercise's own default is
+         * still not in it, for exactly the reason above. It seeds an override in
+         * `appendToRoutine`, where it becomes visible and clearable, and reaches a
+         * session no other way.
+         *
+         * NO OVERRIDE STILL MEANS LIVE. `completeSet` re-reads Settings every time
+         * it starts a rest, so an item that is following Settings tracks the
+         * setting as it changes mid-workout. The value recorded here is what the
+         * session was BUILT with — see the note on `DraftEntry.restSeconds`.
+         *
+         * `transitionRestSeconds` deliberately still comes from Settings alone.
+         * `RoutineItem` declares one, and nothing sets it and no control edits it
+         * — so honouring it would recreate the original bug for the
+         * between-exercises setting, on a number nobody can reach.
          */
-        restSeconds: defaultRestSeconds,
+        restSeconds: rest.seconds,
         transitionRestSeconds: defaultTransitionRestSeconds,
+        ...(rest.source === 'item' ? { restSecondsOverride: rest.seconds } : {}),
         targetSets: item.targetSets,
         targetRepsMin: item.targetRepsMin,
         targetRepsMax: item.targetRepsMax,

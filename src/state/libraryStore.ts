@@ -33,7 +33,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { defaultTargetCount } from '../lib/draft';
+import { defaultTargetCount, defaultTargetSets } from '../lib/draft';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import type {
   Exercise,
@@ -211,10 +211,27 @@ export const useLibrary = create<LibraryState>()(
       },
 
       /**
-       * The target comes from `defaultTargetCount` — the exercise's own number where
-       * it has one, and a per-unit fallback where it doesn't. Shared with the
+       * A new routine item, starting from what the EXERCISE says about itself.
+       *
+       * The target comes from `defaultTargetCount` — the exercise's own number
+       * where it has one, and a per-unit fallback where it doesn't. Shared with the
        * mid-workout add path so an exercise appended to a running session and the
        * same exercise appended to a routine plan the same set.
+       *
+       * The set count used to be a hardcoded 4 (12 for rounds), which is where
+       * "every plan is four sets forever" came from: nothing else in the app wrote
+       * `targetSets`, so 4 was not a starting point, it was the answer. It comes
+       * from `defaultTargetSets` now — a per-unit decision that lives in `lib/`
+       * beside `defaultTargetCount` — and the editor can change it afterwards,
+       * which is what makes it a starting point rather than the answer.
+       *
+       * `restSeconds` starts from the exercise's own `defaultRestSeconds` where it
+       * has one, which makes it an ITEM override: visible on the row, nudgeable,
+       * and clearable back to "follow Settings". That is the difference between
+       * this and the cascade it replaces — the old one read the same field but
+       * behind the user's back, where it silently shadowed the only rest control
+       * they could reach. An exercise with no default rest starts with no override,
+       * which is the honest default: follow Settings until told otherwise.
        */
       appendToRoutine: (routineId, exerciseId) => {
         const { exercises, routines } = get();
@@ -222,7 +239,7 @@ export const useLibrary = create<LibraryState>()(
         if (!exercise) return;
 
         const target = defaultTargetCount(exercise);
-        const sets = exercise.countUnit === 'rounds' ? 12 : 4;
+        const sets = defaultTargetSets(exercise);
 
         set({
           routines: routines.map((routine) =>
@@ -238,7 +255,16 @@ export const useLibrary = create<LibraryState>()(
                       order: routine.items.length,
                       targetSets: sets,
                       targetRepsMax: target,
-                      restSeconds: exercise.defaultRestSeconds,
+                      // Spread conditionally rather than assigned: an exercise with
+                      // no default rest must have NO override, not one whose value
+                      // is `undefined` — `resolveItemRest` reads the two the same
+                      // way, but a persisted `"restSeconds": null` is a claim about
+                      // the format that isn't true.
+                      ...(typeof exercise.defaultRestSeconds === 'number' &&
+                      Number.isFinite(exercise.defaultRestSeconds) &&
+                      exercise.defaultRestSeconds >= 0
+                        ? { restSeconds: exercise.defaultRestSeconds }
+                        : {}),
                     },
                   ],
                 }

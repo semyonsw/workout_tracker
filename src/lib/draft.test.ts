@@ -4,6 +4,7 @@ import {
   buildDraftEntry,
   buildDraftSession,
   defaultTargetCount,
+  defaultTargetSets,
   sessionVolume,
   type DraftSession,
 } from './draft';
@@ -319,5 +320,73 @@ describe('sessionVolume', () => {
     const session = build({ ...machine, loadMode: 'external' });
     // Straight from `buildDraftSession`: rows exist, none are ✓.
     expect(sessionVolume(session, 82)).toEqual({ kg: 0, unweighable: 0 });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Rest, back to two levels.
+ *
+ * `buildDraftSession` deliberately ignored `item.restSeconds` for a release,
+ * because the cascade it replaced went one level further — through
+ * `exercise.defaultRestSeconds`, which nearly every shipped exercise carries and
+ * nobody could see or change — so the only two rest controls in the app were
+ * shadowed almost everywhere. The routine editor can set, show and clear an item
+ * override now, which is the condition that was missing.
+ */
+describe('the rest an entry is built with', () => {
+  function routineWithRest(restSeconds?: number): Routine {
+    return {
+      ...routineFor(machine.id),
+      items: [
+        {
+          id: 'ri1',
+          exerciseId: machine.id,
+          order: 0,
+          targetSets: 4,
+          ...(restSeconds != null ? { restSeconds } : {}),
+        },
+      ],
+    };
+  }
+
+  it('follows Settings when the item has no override', () => {
+    const session = build(machine, [], routineWithRest());
+    expect(session.entries[0].restSeconds).toBe(120);
+    // And says so: no override recorded, which is what `completeSet` checks.
+    expect(session.entries[0].restSecondsOverride).toBeUndefined();
+  });
+
+  it("uses the ITEM's rest where the routine set one", () => {
+    const session = build(machine, [], routineWithRest(180));
+    expect(session.entries[0].restSeconds).toBe(180);
+    expect(session.entries[0].restSecondsOverride).toBe(180);
+  });
+
+  it('records an explicit no-rest as an override, not as missing', () => {
+    // A swim rests for nothing on purpose.
+    const session = build(machine, [], routineWithRest(0));
+    expect(session.entries[0].restSeconds).toBe(0);
+    expect(session.entries[0].restSecondsOverride).toBe(0);
+  });
+
+  it('never reads the exercise’s own default rest', () => {
+    // The level that was removed, and the reason the setting looked broken.
+    const withOwnRest: Exercise = { ...machine, defaultRestSeconds: 240 };
+    const session = build(withOwnRest, [], routineWithRest());
+    expect(session.entries[0].restSeconds).toBe(120);
+    expect(session.entries[0].restSecondsOverride).toBeUndefined();
+  });
+});
+
+describe('defaultTargetSets', () => {
+  it('is four sets of reps, twelve rounds, three holds and one distance', () => {
+    // Per unit, because "four" means different things: four sets of reps, twelve
+    // rounds on a bag, three holds of a plank, one swim.
+    expect(defaultTargetSets({ countUnit: 'reps' })).toBe(4);
+    expect(defaultTargetSets({ countUnit: 'rounds' })).toBe(12);
+    expect(defaultTargetSets({ countUnit: 'seconds' })).toBe(3);
+    expect(defaultTargetSets({ countUnit: 'meters' })).toBe(1);
   });
 });

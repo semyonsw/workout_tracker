@@ -46,6 +46,7 @@ import { SequenceScreen } from '../screens/SequenceScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { historyByExerciseId, recentlyUsedExerciseIds } from '../lib/completedWorkout';
 import { buildDraftEntry, defaultTargetCount } from '../lib/draft';
+import { applyPlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import {
   applyDraftToExercise,
   draftToExercise,
@@ -129,6 +130,12 @@ export function AppShell() {
   const advanceSequence = useLibrary((s) => s.advanceSequence);
 
   const unitSystem = useSettings((s) => s.unitSystem);
+  /*
+   * Subscribed, not read once: the routine editor states which rows are FOLLOWING
+   * this number, and a row saying "rest · setting 2:00" has to change when the
+   * setting does. A primitive selector, so it is a stable snapshot.
+   */
+  const restSecondsBetweenSets = useSettings((s) => s.restSecondsBetweenSets);
 
   const session = useActiveWorkout((s) => s.session);
   const startSession = useActiveWorkout((s) => s.startSession);
@@ -530,8 +537,14 @@ export function AppShell() {
         {/* No TabBar. See the file header. */}
         <ActiveWorkoutScreen
           unitSystem={unitSystem}
+          /*
+           * The plan this session was built from, so the Finish sheet can offer to
+           * update it. Absent for a session with no routine behind it, which is
+           * also the answer to "is there a plan to update".
+           */
+          routineItems={session?.routineId ? routinesById[session.routineId]?.items : undefined}
           onAddExercise={() => push({ name: 'addExercise', routineId: null, target: 'session' })}
-          onFinish={(finished) => {
+          onFinish={(finished, updatePlan) => {
             /*
              * The one write to permanent history. Everything downstream —
              * the History tab, the prefills, the overload verdicts — reads what
@@ -546,6 +559,25 @@ export function AppShell() {
             // gets recorded. A session with nothing logged saves nothing, and a
             // workout from some other routine is not this step being done.
             if (saved) advanceSequence(saved.routineId);
+
+            /*
+             * ...and only if the user asked, the plan learns what actually
+             * happened. Recomputed here rather than passed down as a list, so the
+             * write is against the routine as the STORE has it: the sheet's copy
+             * was rendered from a snapshot, and between rendering it and this line
+             * the routine could have been edited on another screen. The diff is the
+             * same pure function either way.
+             */
+            const routine = finished.routineId ? routinesById[finished.routineId] : undefined;
+            if (updatePlan && routine) {
+              const changes = plannedSetDiff(routine.items, performedSetCounts(finished.entries));
+              if (changes.length > 0) {
+                updateRoutine(routine.id, {
+                  name: routine.name,
+                  items: applyPlannedSetDiff(routine.items, changes),
+                });
+              }
+            }
           }}
           onExit={leaveSession}
         />
@@ -561,6 +593,7 @@ export function AppShell() {
       <RoutineEditorScreen
         routine={routine}
         exercisesById={exercisesById}
+        defaultRestSeconds={restSecondsBetweenSets}
         isNew={route.isNew}
         onBack={() => handleLeaveEditor(route)}
         onSave={(draft) => {

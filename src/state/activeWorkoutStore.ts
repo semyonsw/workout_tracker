@@ -344,9 +344,24 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
           exerciseDone && entries.every((e) => e.sets.every((s) => s.isCompleted));
 
         const settings = currentSettings();
+        /*
+         * BETWEEN SETS: this exercise's own rest if the routine gave it one,
+         * otherwise the live setting. BETWEEN EXERCISES: always the live setting.
+         *
+         * The asymmetry is deliberate and it is the same rule stated twice. A
+         * number only overrides the setting if the user can SEE that it does — the
+         * routine editor shows the between-sets override on the row and can clear
+         * it, so it is a choice; nothing anywhere edits
+         * `RoutineItem.transitionRestSeconds`, so honouring it would be the old bug
+         * again, a setting silently doing nothing.
+         *
+         * Read at the moment rest starts rather than captured at session start, so
+         * an item that is FOLLOWING Settings follows it live: change "Between sets"
+         * mid-workout and the very next set rests for the new length.
+         */
         const restSeconds = exerciseDone
           ? settings.restSecondsBetweenExercises
-          : settings.restSecondsBetweenSets;
+          : (target.restSecondsOverride ?? settings.restSecondsBetweenSets);
         const startsRest = settings.autoStartRest && restSeconds > 0 && !workoutDone;
 
         set({

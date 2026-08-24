@@ -229,6 +229,72 @@ describe('appendToRoutine', () => {
     expect(added.targetRepsMax).toBe(60);
   });
 
+  /*
+   * The set count came from a bare `4` (12 for rounds) inside this action, and
+   * because nothing else in the app could write `targetSets`, that 4 was not a
+   * starting point — it was the answer, on every routine, forever. It is
+   * `defaultTargetSets` now: a per-unit decision in `lib/` beside its sibling, and
+   * editable in the routine editor afterwards, which is what makes it a starting
+   * point again.
+   */
+  it('starts a hold at three sets, not four — nobody plans four two-minute planks', () => {
+    const routineId = seedRoutines[0].id;
+    const timed = seedExercises.find((e) => e.countUnit === 'seconds');
+    if (!timed) throw new Error('no time-counted exercise in the fixtures');
+
+    useLibrary.getState().appendToRoutine(routineId, timed.id);
+    const items = useLibrary.getState().routines.find((r) => r.id === routineId)?.items ?? [];
+
+    expect(items[items.length - 1].targetSets).toBe(3);
+  });
+
+  it('starts a distance at one set — a distance is done once', () => {
+    // Built rather than found: the shipped library counts swimming in seconds,
+    // because a phone in a locker cannot measure metres.
+    const routineId = seedRoutines[0].id;
+    useLibrary.getState().addExercise(
+      newExercise({
+        id: 'ex_row_2k',
+        countUnit: 'meters',
+        requiresWeight: false,
+        loadMode: 'none',
+      }),
+    );
+    useLibrary.getState().appendToRoutine(routineId, 'ex_row_2k');
+    const items = useLibrary.getState().routines.find((r) => r.id === routineId)?.items ?? [];
+
+    expect(items[items.length - 1].targetSets).toBe(1);
+  });
+
+  /*
+   * The exercise's own default rest becomes an ITEM OVERRIDE, which is the whole
+   * difference between this and the cascade it replaces: the old one read the same
+   * field behind the user's back, where it silently shadowed the only rest control
+   * they could reach. Here it is on the row, nudgeable, and clearable.
+   */
+  it("seeds the item's rest from the exercise, as a visible override", () => {
+    const routineId = seedRoutines[0].id;
+    const withRest = seedExercises.find((e) => (e.defaultRestSeconds ?? 0) > 0);
+    if (!withRest) throw new Error('no exercise with a default rest in the fixtures');
+
+    useLibrary.getState().appendToRoutine(routineId, withRest.id);
+    const items = useLibrary.getState().routines.find((r) => r.id === routineId)?.items ?? [];
+
+    expect(items[items.length - 1].restSeconds).toBe(withRest.defaultRestSeconds);
+  });
+
+  it('leaves an exercise with no default rest following Settings', () => {
+    const routineId = seedRoutines[0].id;
+    useLibrary
+      .getState()
+      .addExercise(newExercise({ id: 'ex_no_rest', defaultRestSeconds: undefined }));
+    useLibrary.getState().appendToRoutine(routineId, 'ex_no_rest');
+    const items = useLibrary.getState().routines.find((r) => r.id === routineId)?.items ?? [];
+
+    // No override at all, rather than a copy of whatever Settings says today.
+    expect('restSeconds' in items[items.length - 1]).toBe(false);
+  });
+
   it('defaults rounds to twelve threes', () => {
     const routineId = seedRoutines[0].id;
     const rounds = seedExercises.find((e) => e.countUnit === 'rounds');
