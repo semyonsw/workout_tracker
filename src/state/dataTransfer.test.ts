@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { applyBackup, currentSnapshot, exportBackupText } from './dataTransfer';
+import {
+  applyBackup,
+  currentSnapshot,
+  exportBackupText,
+  mergeBackupWorkouts,
+} from './dataTransfer';
 import { useLibrary } from './libraryStore';
 import { DEFAULT_SETTINGS, useSettings } from './settingsStore';
 import { useWorkoutHistory } from './workoutHistoryStore';
@@ -233,5 +238,75 @@ describe('the training sequence rides along', () => {
       routineIds: [],
       cursor: 0,
     });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The two ways in, and why they are not the same operation.
+ *
+ * `applyBackup` REPLACES — that is what a restore is. `mergeBackupWorkouts` ADDS
+ * the workouts this phone does not have, and nothing else, because a replaced phone
+ * and a second device were otherwise unserviceable. Only workouts merge: a merged
+ * library resurrects every exercise the user has deleted.
+ */
+describe('merging workouts in', () => {
+  it('adds what is missing and reports what actually landed', () => {
+    // A workout on this phone, and a file with that one plus one more.
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-10T17:00:00.000Z'));
+    const mine = useWorkoutHistory.getState().workouts[0];
+
+    useWorkoutHistory.getState().clearHistory();
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    const theirs = useWorkoutHistory.getState().workouts[0];
+
+    useWorkoutHistory.getState().importWorkouts([mine]);
+    const merged = mergeBackupWorkouts({ workouts: [mine, theirs] });
+
+    expect(merged.workoutsAdded).toBe(1);
+    expect(merged.setsAdded).toBe(theirs.sets.length);
+    expect(useWorkoutHistory.getState().workouts).toHaveLength(2);
+  });
+
+  it('leaves the library, the sequence and the settings alone', () => {
+    const kept = useLibrary.getState().createRoutine('Made on this phone');
+    useSettings.getState().setNumber('restSecondsBetweenSets', 45);
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    const theirs = useWorkoutHistory.getState().workouts[0];
+    useWorkoutHistory.getState().clearHistory();
+
+    mergeBackupWorkouts({ workouts: [theirs] });
+
+    // The whole point: a merge cannot lose a library the way a restore can.
+    expect(useLibrary.getState().routines.some((r) => r.id === kept.id)).toBe(true);
+    expect(useLibrary.getState().exercises.length).toBe(seedExercises.length);
+    expect(useSettings.getState().restSecondsBetweenSets).toBe(45);
+  });
+
+  it('is zero, and changes nothing, when the file adds nothing', () => {
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    const before = useWorkoutHistory.getState().workouts;
+
+    expect(mergeBackupWorkouts({ workouts: before })).toEqual({
+      workoutsAdded: 0,
+      setsAdded: 0,
+    });
+    expect(useWorkoutHistory.getState().workouts).toEqual(before);
+  });
+
+  it('reads a real exported file back as a merge', () => {
+    // The end-to-end shape: export from one phone, add on another.
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    const text = exportBackupText();
+
+    useWorkoutHistory.getState().clearHistory();
+    const parsed = parseBackup(text);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const merged = mergeBackupWorkouts(parsed.envelope);
+    expect(merged.workoutsAdded).toBe(1);
+    expect(useWorkoutHistory.getState().workouts[0].sets.length).toBeGreaterThan(0);
   });
 });

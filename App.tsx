@@ -3,12 +3,16 @@
  *
  * Everything about WHICH screen is showing lives in `src/navigation/AppShell`;
  * everything about WHAT the data is lives in the three stores under `src/state`
- * (the library and routines, the settings, the finished workouts). Swap those for
- * SQLite queries and neither this file nor any screen below it changes: they
- * already speak the real types.
+ * (the library and routines, the settings, the finished workouts).
  *
- * The three side effects set up here are all "make the phone able to reach the
- * user", and all three are allowed to fail:
+ * That paragraph used to end "swap those for SQLite queries and neither this file
+ * nor any screen below it changes". As of 0.11.0 the finished workouts DID move to
+ * SQLite (`src/state/historyDb.ts`) and the claim held: no screen changed, and the
+ * only line this file gained is the one below that brings the old AsyncStorage log
+ * across. The other two stores are a few dozen rows and stay where they are.
+ *
+ * The side effects set up here are all "make the phone able to reach the user" —
+ * plus, now, one storage migration — and every one of them is allowed to fail:
  *
  *   • the notification handler, which decides what a timer alert does when it
  *     arrives with the app already on screen
@@ -18,9 +22,15 @@
  *     sound belongs to the channel and not to the notification
  *   • the audio session, so the countdown's beeps play over their music and
  *     through a silent switch
+ *   • the HISTORY MIGRATION, which brings a log written by 0.10.0 or earlier out of
+ *     AsyncStorage and into the database. It runs once, it never deletes the old
+ *     key, and it stays quiet either way: a migration that could not run tries
+ *     again next launch, and a dialog on launch about a storage system the user has
+ *     never heard of is worse than a History tab that fills itself in tomorrow.
  *
  * None of them are load-bearing: the on-screen pill derives from a stored
- * deadline and is correct whether or not any of this works.
+ * deadline and is correct whether or not any of this works, and the log already on
+ * disk is read synchronously before the first render whatever the migration does.
  */
 
 import { useEffect } from 'react';
@@ -33,6 +43,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { AppShell } from './src/navigation/AppShell';
 import { prepareAudio } from './src/lib/beeper';
 import { ensureTimerChannels, requestNotificationPermission } from './src/lib/notify';
+import { migrateHistoryIfNeeded } from './src/state/workoutHistoryStore';
 
 /*
  * Timer alerts — rest ending, and the bell on a timed hold.
@@ -72,6 +83,13 @@ export default function App() {
     // Warmed here rather than on the first beep, so 0:05 of a plank isn't where
     // the audio session gets configured.
     void prepareAudio();
+    /*
+     * Once, on the first launch after upgrading. In an effect rather than at module
+     * scope because it is async and it touches two storage systems, and a side
+     * effect that size hiding inside an import is how a launch crash becomes hard
+     * to place.
+     */
+    void migrateHistoryIfNeeded();
   }, []);
 
   return (

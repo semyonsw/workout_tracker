@@ -18,10 +18,12 @@
  *  3. FINISHING TWICE IS ONE WORKOUT. A save for an id that is already present
  *     REPLACES it. The id is the session's own, so a double-tap on Finish, or a
  *     finish that raced a rehydration, cannot produce two rows for one workout.
- *  4. REHYDRATION IS VALIDATED, NOT TRUSTED. A half-written blob used to be a
- *     crash on the screen that read it, and because it is persisted, a crash that
+ *  4. WHAT COMES OFF DISK IS VALIDATED, NOT TRUSTED. A half-written blob used to be
+ *     a crash on the screen that read it, and because it is persisted, a crash that
  *     came back on every launch. Malformed workouts and malformed set rows are
- *     dropped on the way in; what survives is renderable by construction.
+ *     dropped on the way in; what survives is renderable by construction. That did
+ *     not change when the bytes moved into SQLite: a column can hold nonsense
+ *     exactly as a JSON blob can, and there is still one guard per shape.
  *  5. THE LOG IS APPEND-MOSTLY, AND NOTHING IN HERE IS REWRITTEN BY THE APP.
  *     That sentence used to end "nothing in here is rewritten", full stop, and it
  *     is now more precise rather than weaker: the APP still never rewrites a
@@ -41,11 +43,33 @@
  *     Deleting the LAST row of a workout is refused. That is deleting the workout,
  *     `deleteWorkout` already exists, and it asks first — which a set row's ✕
  *     should not have to.
+ *
+ * ── 6. IT LIVES IN SQLITE NOW, AND THERE IS NO CAP ──────────────────────────
+ *
+ * There used to be a `MAX_WORKOUTS = 250`, and its own comment was honest that it
+ * was a STORAGE decision rather than a product one: AsyncStorage is one string per
+ * key, every `Finish` re-serialised the entire history — every workout, every set
+ * row — and wrote it back as one blob, so the cap was a guess at where that string
+ * gets too big to write safely. It picked the right failure mode ("the oldest
+ * workout falls off" beats "the write silently fails and the last month is gone")
+ * and it was SILENT, which on an app whose value is a log long enough to show a
+ * plateau is a workout lost with nothing said about it.
+ *
+ * `historyDb.ts` replaces the blob with two tables and the index `models.ts` has
+ * described since the first release. A save is now one workout and its rows, not
+ * the whole log, so the reason for the cap is gone and the cap is gone with it.
+ * Nothing in this store's public interface changed: `workouts` is still the
+ * newest-first array every screen reads, every action still returns what it
+ * returned, and no screen was touched.
+ *
+ * One thing is worth knowing rather than fixing: the whole log is still held in
+ * MEMORY, because `historyByExerciseId` builds its index from it and every screen
+ * reads the array. That is fine at a few thousand rows and it is where a paged read
+ * would slot in — `historyByExerciseId` is the one read path everything goes
+ * through, which is exactly what its own comment says it is for.
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
   buildCompletedWorkout,
@@ -54,20 +78,16 @@ import {
   type CompletedWorkout,
 } from '../lib/completedWorkout';
 import type { DraftSession } from '../lib/draft';
+import {
+  clearAllWorkouts,
+  deleteWorkoutRow,
+  migrateFromAsyncStorage,
+  readAllWorkouts,
+  replaceAllWorkouts,
+  writeWorkouts,
+} from './historyDb';
 import { currentSettings } from './settingsStore';
 import type { CountUnit, ID, LoadMode, RecentSessionSummary, SetHistory } from '../types/models';
-
-/**
- * How many workouts are kept.
- *
- * Not a product decision — a storage one. This store lives in AsyncStorage, which
- * is one string per key and has a real (platform-dependent) ceiling, and every
- * workout carries its set rows. 250 sessions is about two years of training four
- * times a week, which is far past the point where SQLite should have taken over.
- * The cap exists so the failure mode at year three is "the oldest workout falls off" rather than "the write silently fails
- * and the last month is gone".
- */
-export const MAX_WORKOUTS = 250;
 
 interface WorkoutHistoryState {
   /** Finished workouts, newest first. */
@@ -111,103 +131,195 @@ interface WorkoutHistoryState {
    * A restore is "make this phone look like that backup".
    */
   importWorkouts: (raw: unknown) => number;
+  /**
+   * MERGE a log in, rather than replacing this one. Returns how many workouts were
+   * actually ADDED — not how many the file held, and not the total afterwards.
+   *
+   * Alongside `importWorkouts`, never instead of it. Replace is right for a
+   * restore: "make this phone look like that backup", and the argument on
+   * `importWorkouts` about a merged LIBRARY resurrecting every exercise you have
+   * deleted still stands — which is why only workouts merge, and the library and
+   * settings stay replace-only.
+   *
+   * A merged LOG is a different case, and it is safe for a reason already written
+   * down: rule 3 of this store says finishing twice is one workout, because the id
+   * is the session's own. So a union keyed on id cannot produce two rows for one
+   * workout, which is the failure mode that makes merging a library unauditable. A
+   * replaced phone and a second device become serviceable, and nothing else changes.
+   *
+   * ON A COLLISION THE LOCAL COPY WINS. The row on this phone is the one whose
+   * corrections, if any, were made here — and "the file is authoritative" is what
+   * `importWorkouts` is for. Merging is additive by definition: it never rewrites a
+   * row that is already here.
+   */
+  mergeWorkouts: (raw: unknown) => number;
 }
 
-export const useWorkoutHistory = create<WorkoutHistoryState>()(
-  persist(
-    (set, get) => ({
-      workouts: [],
+/**
+ * The log, read out of SQLite before the first render.
+ *
+ * SYNCHRONOUS, which is the visible win of the move: under AsyncStorage the store
+ * started empty and filled in a frame later, so the History tab flickered from
+ * "Nothing finished yet" to a full list on every launch. `expo-sqlite`'s sync API
+ * means the array is already there the first time a screen reads it.
+ *
+ * Guarded, because this runs at module scope. A throw here — a corrupt database
+ * file, an OS error opening it — would be a crash on launch before any
+ * `ErrorBoundary` exists, which is the exact failure mode `App.tsx` wraps its
+ * notification handler against. An empty log is recoverable; a process that dies
+ * at import is not, and the AsyncStorage key is still on disk either way.
+ */
+function loadWorkouts(): CompletedWorkout[] {
+  try {
+    return sanitizeWorkouts(readAllWorkouts(), []);
+  } catch {
+    return [];
+  }
+}
 
-      saveSession: (session, endedAt) => {
-        /*
-         * The bodyweight is read HERE rather than passed in by a screen, for the
-         * same reason `completeSet` reads the rest lengths here: it is a setting,
-         * the screen has no opinion about it, and wiring it through props would
-         * make every caller responsible for a number it does not own. Volume is
-         * computed once from the value the app has at this instant and never
-         * recomputed — history is not rewritten when a setting changes.
-         */
-        const workout = buildCompletedWorkout(
-          session,
-          endedAt,
-          currentSettings().bodyweightKg ?? null,
-        );
-        if (!workout) return null;
+export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
+  workouts: loadWorkouts(),
 
-        const withoutDuplicate = get().workouts.filter((w) => w.id !== workout.id);
-        set({
-          workouts: [workout, ...withoutDuplicate]
-            .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-            .slice(0, MAX_WORKOUTS),
-        });
-        return workout;
-      },
+  saveSession: (session, endedAt) => {
+    /*
+     * The bodyweight is read HERE rather than passed in by a screen, for the
+     * same reason `completeSet` reads the rest lengths here: it is a setting,
+     * the screen has no opinion about it, and wiring it through props would
+     * make every caller responsible for a number it does not own. Volume is
+     * computed once from the value the app has at this instant and never
+     * recomputed — history is not rewritten when a setting changes.
+     */
+    const workout = buildCompletedWorkout(session, endedAt, currentSettings().bodyweightKg ?? null);
+    if (!workout) return null;
 
-      deleteWorkout: (id) => set({ workouts: get().workouts.filter((w) => w.id !== id) }),
+    /*
+     * The DATABASE first, then the in-memory array. In that order deliberately:
+     * the write is what has to survive the process dying, and a state update that
+     * lands before a write that throws is a screen showing a workout that is not
+     * on disk. `writeWorkouts` is one transaction, so it either happened or it did
+     * not.
+     */
+    writeWorkouts([workout]);
 
-      updateWorkoutSet: (workoutId, setId, patch) => {
-        const workout = get().workouts.find((w) => w.id === workoutId);
-        if (!workout) return false;
-        if (!workout.sets.some((row) => row.id === setId)) return false;
+    const withoutDuplicate = get().workouts.filter((w) => w.id !== workout.id);
+    set({
+      workouts: [workout, ...withoutDuplicate].sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+      ),
+    });
+    return workout;
+  },
 
-        const sets = workout.sets.map((row) => {
-          if (row.id !== setId) return row;
-          return {
-            ...row,
-            // `undefined` means "not in the patch"; `null` is a real weight for an
-            // unweighted set, so the two cannot be collapsed.
-            ...(patch.weightKg !== undefined ? { weightKg: patch.weightKg } : {}),
-            ...(patch.count !== undefined ? { count: Math.max(0, Math.round(patch.count)) } : {}),
-            ...(patch.isWarmup !== undefined ? { isWarmup: patch.isWarmup } : {}),
-          };
-        });
+  deleteWorkout: (id) => {
+    deleteWorkoutRow(id);
+    set({ workouts: get().workouts.filter((w) => w.id !== id) });
+  },
 
-        return writeRecomputed(set, get, workoutId, sets);
-      },
+  updateWorkoutSet: (workoutId, setId, patch) => {
+    const workout = get().workouts.find((w) => w.id === workoutId);
+    if (!workout) return false;
+    if (!workout.sets.some((row) => row.id === setId)) return false;
 
-      deleteWorkoutSet: (workoutId, setId) => {
-        const workout = get().workouts.find((w) => w.id === workoutId);
-        if (!workout) return false;
-        if (!workout.sets.some((row) => row.id === setId)) return false;
-        /*
-         * The last row takes the workout with it — so it is refused here rather
-         * than done quietly. `deleteWorkout` exists, it is one tap away inside the
-         * same expanded row, and it asks first; a set row's ✕ silently deleting a
-         * session would be the one destructive action in the app that does not.
-         */
-        if (workout.sets.length <= 1) return false;
+    const sets = workout.sets.map((row) => {
+      if (row.id !== setId) return row;
+      return {
+        ...row,
+        // `undefined` means "not in the patch"; `null` is a real weight for an
+        // unweighted set, so the two cannot be collapsed.
+        ...(patch.weightKg !== undefined ? { weightKg: patch.weightKg } : {}),
+        ...(patch.count !== undefined ? { count: Math.max(0, Math.round(patch.count)) } : {}),
+        ...(patch.isWarmup !== undefined ? { isWarmup: patch.isWarmup } : {}),
+      };
+    });
 
-        return writeRecomputed(
-          set,
-          get,
-          workoutId,
-          workout.sets.filter((row) => row.id !== setId),
-        );
-      },
+    return writeRecomputed(set, get, workoutId, sets);
+  },
 
-      clearHistory: () => set({ workouts: [] }),
+  deleteWorkoutSet: (workoutId, setId) => {
+    const workout = get().workouts.find((w) => w.id === workoutId);
+    if (!workout) return false;
+    if (!workout.sets.some((row) => row.id === setId)) return false;
+    /*
+     * The last row takes the workout with it — so it is refused here rather
+     * than done quietly. `deleteWorkout` exists, it is one tap away inside the
+     * same expanded row, and it asks first; a set row's ✕ silently deleting a
+     * session would be the one destructive action in the app that does not.
+     */
+    if (workout.sets.length <= 1) return false;
 
-      importWorkouts: (raw) => {
-        // The same guard rehydration uses: a file off an SD card is exactly as
-        // trustworthy as a blob off disk, and one validator cannot disagree with
-        // itself. See `sanitizeWorkouts`.
-        const workouts = sanitizeWorkouts(raw, []);
-        set({ workouts });
-        return workouts.length;
-      },
-    }),
-    {
-      name: 'workout-history',
-      version: 1,
-      storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ workouts: state.workouts }),
-      merge: (persisted, current) => {
-        const raw = (persisted ?? {}) as Partial<Pick<WorkoutHistoryState, 'workouts'>>;
-        return { ...current, workouts: sanitizeWorkouts(raw.workouts, current.workouts) };
-      },
-    },
-  ),
-);
+    return writeRecomputed(
+      set,
+      get,
+      workoutId,
+      workout.sets.filter((row) => row.id !== setId),
+    );
+  },
+
+  clearHistory: () => {
+    clearAllWorkouts();
+    set({ workouts: [] });
+  },
+
+  importWorkouts: (raw) => {
+    // The same guard the database read uses: a file off an SD card is exactly as
+    // trustworthy as a column off disk, and one validator cannot disagree with
+    // itself. See `sanitizeWorkouts`.
+    const workouts = sanitizeWorkouts(raw, []);
+    // One transaction: a restore that throws halfway leaves the previous log
+    // intact rather than half of each.
+    replaceAllWorkouts(workouts);
+    set({ workouts });
+    return workouts.length;
+  },
+
+  mergeWorkouts: (raw) => {
+    // Same validator, same reason: a file off an SD card is exactly as
+    // trustworthy as a column off disk, and there is one guard per shape.
+    const incoming = sanitizeWorkouts(raw, []);
+    if (incoming.length === 0) return 0;
+
+    const local = get().workouts;
+    const known = new Set(local.map((w) => w.id));
+    const added = incoming.filter((w) => !known.has(w.id));
+    if (added.length === 0) return 0;
+
+    writeWorkouts(added);
+    set({
+      workouts: [...local, ...added].sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+      ),
+    });
+    return added.length;
+  },
+}));
+
+/**
+ * Bring the AsyncStorage log across, once, and refresh the store from what landed.
+ *
+ * Called from `App.tsx` rather than run at module scope: it is async (AsyncStorage
+ * is), it touches two storage systems, and a side effect of that size hiding inside
+ * an import is how a launch crash becomes hard to place.
+ *
+ * `migrateFromAsyncStorage` is where the paranoia lives — one transaction, read
+ * back and counted before anything is recorded as done, and the old key never
+ * deleted. This function's only job is to hand it the store's own validator, so
+ * there is still exactly one guard per shape, and to re-read the log if anything
+ * moved.
+ *
+ * Failure is silent on purpose. A migration that could not run leaves the old key
+ * where it is and tries again next launch; there is nothing the user could do about
+ * it, and a dialog on launch about a storage system they have never heard of is
+ * worse than an empty History that fills itself in tomorrow.
+ */
+export async function migrateHistoryIfNeeded(): Promise<void> {
+  try {
+    const outcome = await migrateFromAsyncStorage((raw) => sanitizeWorkouts(raw, []));
+    if (outcome.status !== 'migrated') return;
+    useWorkoutHistory.setState({ workouts: sanitizeWorkouts(readAllWorkouts(), []) });
+  } catch {
+    // See above: next launch tries again, from a key that is still there.
+  }
+}
 
 /**
  * Write a corrected row list back, with every derived number regenerated.
@@ -234,29 +346,42 @@ function writeRecomputed(
   sets: SetHistory[],
 ): boolean {
   const bodyweightKg = currentSettings().bodyweightKg ?? null;
-  set({
-    workouts: get().workouts.map((w) =>
-      w.id === workoutId ? recomputeWorkout({ ...w, sets }, bodyweightKg) : w,
-    ),
-  });
+  const workouts = get().workouts.map((w) =>
+    w.id === workoutId ? recomputeWorkout({ ...w, sets }, bodyweightKg) : w,
+  );
+
+  /*
+   * The database first, as everywhere else in this store: a state update that lands
+   * before a write that throws is a screen showing a correction that is not on
+   * disk. `writeWorkouts` deletes and reinserts the row list inside one
+   * transaction, which is what stops a removed set surviving as an orphan.
+   */
+  const corrected = workouts.find((w) => w.id === workoutId);
+  if (corrected) writeWorkouts([corrected]);
+
+  set({ workouts });
   return true;
 }
 
 /* ------------------------------------------------------------------ */
-/* Rehydration guards                                                  */
+/* Guards on everything that comes from outside                        */
 /* ------------------------------------------------------------------ */
 
 /**
- * A renderable, newest-first, capped log out of anything at all — a persisted blob
- * or a backup file. `fallback` is what a MISSING array becomes.
+ * A renderable, newest-first log out of anything at all — database rows, a backup
+ * file, or a legacy AsyncStorage blob during the migration. `fallback` is what a
+ * MISSING array becomes.
+ *
+ * No `.slice()` any more: the cap is gone with the blob that needed it (rule 6).
+ * Everything else about this function is unchanged, because moving the bytes into
+ * columns does not make them trustworthy — see rule 4.
  */
 function sanitizeWorkouts(raw: unknown, fallback: CompletedWorkout[]): CompletedWorkout[] {
   if (!Array.isArray(raw)) return fallback;
   return raw
     .map(sanitizeWorkout)
     .filter((w): w is CompletedWorkout => w !== null)
-    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-    .slice(0, MAX_WORKOUTS);
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
 }
 
 const COUNT_UNITS = new Set(['reps', 'seconds', 'meters', 'rounds']);

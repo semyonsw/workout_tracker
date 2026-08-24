@@ -55,7 +55,8 @@
           "recordAudioAndroid": false
         }
       ],
-      "./plugins/withoutMicrophone"
+      "./plugins/withoutMicrophone",
+      "expo-sqlite"
     ]
   }
 }

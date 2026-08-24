@@ -82,11 +82,23 @@ import {
   type BackupCounts,
   type BackupEnvelope,
 } from '../lib/backup';
-import { describeError, pickJsonFile, readTextFile, saveJsonFile } from '../lib/backupFile';
+import {
+  describeError,
+  pickJsonFile,
+  readTextFile,
+  saveCsvFile,
+  saveJsonFile,
+} from '../lib/backupFile';
+import { csvBaseName, workoutsToCsv } from '../lib/csv';
 import { commit, countFinal, countTick, tap } from '../lib/feedback';
 import { restMedians } from '../lib/restHistory';
 import { formatClock, formatWeight, kgToLb, lbToKg, unitLabel, weightSteps } from '../lib/units';
-import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
+import {
+  applyBackup,
+  currentSnapshot,
+  exportBackupText,
+  mergeBackupWorkouts,
+} from '../state/dataTransfer';
 import { SETTING_LIMITS, useSettings, type NumericSetting } from '../state/settingsStore';
 import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
@@ -132,11 +144,20 @@ function formatSeconds(seconds: number, zeroLabel = 'Off'): string {
   return formatClock(seconds);
 }
 
-/** A file that has been read and understood, waiting for a yes. */
+/**
+ * A file that has been read and understood, waiting for a yes.
+ *
+ * `mode` is the whole difference between the two actions, and it is carried here
+ * rather than in a second piece of state so the sheet cannot be shown for one and
+ * confirmed as the other.
+ */
 interface PendingImport {
+  mode: 'replace' | 'merge';
   file: string;
   envelope: BackupEnvelope;
   counts: BackupCounts;
+  /** For a merge: how many of the file's workouts this phone does not have. */
+  newWorkouts: number;
 }
 
 /** The one line under the two rows. `quiet` is "nothing happened", not an alarm. */
@@ -237,13 +258,54 @@ export function SettingsScreen() {
   };
 
   /**
+   * EXPORT SETS — the same log, flat, one row per set.
+   *
+   * A copy you can read, not a second backup: there is no CSV import and there will
+   * not be one, because a table of set rows carries no exercises, no routines and
+   * no settings. `lib/csv.ts` has the whole argument.
+   */
+  const exportSets = async () => {
+    if (busy) return;
+    tap();
+    setBusy(true);
+    setDataStatus(null);
+    try {
+      const rows = workouts.reduce((n, w) => n + w.sets.length, 0);
+      if (rows === 0) {
+        setDataStatus({ tone: 'quiet', text: 'There are no logged sets to export yet.' });
+        return;
+      }
+      const outcome = await saveCsvFile(csvBaseName(), workoutsToCsv(workouts));
+      if (!outcome.saved) {
+        setDataStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
+        return;
+      }
+      commit();
+      setDataStatus({
+        tone: 'ok',
+        text: `Saved ${outcome.name} to ${outcome.where} — ${rows} ${rows === 1 ? 'set' : 'sets'}.`,
+      });
+    } catch (error) {
+      setDataStatus({ tone: 'quiet', text: describeError(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
    * IMPORT — the phone's own file browser, then a question.
    *
    * Reading the file and APPLYING it are deliberately two steps: this is the only
    * irreversible action in the app that isn't a delete, so the sheet gets to state
    * what is in the file and what is on the phone before anything is replaced.
+   *
+   * TWO ACTIONS, ONE PICKER. `mode` decides what the sheet asks and what the yes
+   * does: `replace` is a restore, `merge` adds only the workouts this phone does
+   * not already have. They share this function because reading and validating a
+   * file is identical work, and they must never share a confirmation — see
+   * `PendingImport`.
    */
-  const importData = async () => {
+  const importData = async (mode: 'replace' | 'merge') => {
     if (busy) return;
     tap();
     setBusy(true);
@@ -259,7 +321,25 @@ export function SettingsScreen() {
         setDataStatus({ tone: 'quiet', text: `${file.name}: ${result.error}` });
         return;
       }
-      setPendingImport({ file: file.name, envelope: result.envelope, counts: result.counts });
+      /*
+       * How many workouts a merge would ADD, counted before asking, so the
+       * confirmation states a number rather than a hope. Counted from the file's
+       * ids against this phone's — the same union the store performs, so the sheet
+       * cannot promise more than the merge delivers.
+       */
+      const known = new Set(workouts.map((w) => w.id));
+      const newWorkouts = result.envelope.workouts.filter((w) => {
+        const id = (w as { id?: unknown }).id;
+        return typeof id === 'string' && !known.has(id);
+      }).length;
+
+      setPendingImport({
+        mode,
+        file: file.name,
+        envelope: result.envelope,
+        counts: result.counts,
+        newWorkouts,
+      });
     } catch (error) {
       setDataStatus({ tone: 'quiet', text: describeError(error) });
     } finally {
@@ -269,6 +349,23 @@ export function SettingsScreen() {
 
   const confirmImport = () => {
     if (!pendingImport) return;
+
+    if (pendingImport.mode === 'merge') {
+      const merged = mergeBackupWorkouts(pendingImport.envelope);
+      commit();
+      setPendingImport(null);
+      setDataStatus({
+        tone: 'ok',
+        text:
+          merged.workoutsAdded === 0
+            ? 'Nothing to add — every workout in that file was already here.'
+            : `Added ${merged.workoutsAdded} ${
+                merged.workoutsAdded === 1 ? 'workout' : 'workouts'
+              } and ${merged.setsAdded} ${merged.setsAdded === 1 ? 'set' : 'sets'}.`,
+      });
+      return;
+    }
+
     const applied = applyBackup(pendingImport.envelope);
     commit();
     setPendingImport(null);
@@ -505,7 +602,24 @@ export function SettingsScreen() {
           <View className="mx-lg mt-xxl overflow-hidden rounded-surface border border-hairline bg-surface">
             <TextButton label="Export data" tone="green" onPress={() => void exportData()} />
             <Separator inset={0} />
-            <TextButton label="Import data" tone="green" onPress={() => void importData()} />
+            <TextButton label="Export sets as CSV" tone="green" onPress={() => void exportSets()} />
+            <Separator inset={0} />
+            {/* TWO CLEARLY-DIFFERENT IMPORTS, named for what they do rather than
+                for what they are. "Replace everything" and "Add workouts from a
+                file" cannot be confused for each other by somebody reading fast,
+                which one row labelled "Import data" with a mode picker behind it
+                absolutely could. */}
+            <TextButton
+              label="Replace everything from a file"
+              tone="green"
+              onPress={() => void importData('replace')}
+            />
+            <Separator inset={0} />
+            <TextButton
+              label="Add workouts from a file"
+              tone="green"
+              onPress={() => void importData('merge')}
+            />
             <Separator inset={0} />
             <TextButton label="Reset settings to defaults" onPress={() => setConfirming('reset')} />
             {/* Last, and only when there is something to lose. One workout at a
@@ -534,9 +648,19 @@ export function SettingsScreen() {
 
           <Text className="mx-lg mt-md text-label text-ink-faint">
             A backup is plain JSON, so you can read it, keep it anywhere, and move it to another
-            phone. Importing REPLACES what is on this phone — it is never merged — so export first
-            if there is anything here you would miss. A workout in progress is not part of a backup:
-            it carries a running clock.
+            phone. <Text className="text-ink-muted">Replace everything</Text> makes this phone look
+            like the file — exercises, routines, workouts and settings — so export first if there is
+            anything here you would miss. <Text className="text-ink-muted">Add workouts</Text> only
+            ever adds: workouts from the file that this phone does not already have, and nothing
+            else. Your exercises, routines and settings are never merged, because a merged library
+            brings back every exercise you have deleted. A workout in progress is not part of a
+            backup: it carries a running clock.
+          </Text>
+
+          <Text className="mx-lg mt-md text-label text-ink-faint">
+            The CSV is one row per set — date, workout, exercise, set number, weight, count, and
+            whether it was a warm-up — for a spreadsheet. It is an export only; the JSON file is the
+            backup.
           </Text>
         </ScrollView>
       </View>
@@ -555,7 +679,7 @@ export function SettingsScreen() {
         />
       ) : null}
 
-      {pendingImport ? (
+      {pendingImport?.mode === 'replace' ? (
         <ConfirmSheet
           title="Replace everything with this file?"
           body={[
@@ -565,6 +689,32 @@ export function SettingsScreen() {
           ].join(' ')}
           confirmLabel="Import it"
           cancelLabel="Keep what I have"
+          onConfirm={confirmImport}
+          onCancel={() => setPendingImport(null)}
+        />
+      ) : null}
+
+      {/* The merge asks a different question, so it says a different sentence: HOW
+          MANY workouts will be added, and what will not be touched. A confirmation
+          that reused the replace copy would be the one place this feature could
+          mislead somebody into losing a library. */}
+      {pendingImport?.mode === 'merge' ? (
+        <ConfirmSheet
+          title={
+            pendingImport.newWorkouts === 0
+              ? 'Nothing to add'
+              : `Add ${pendingImport.newWorkouts} ${
+                  pendingImport.newWorkouts === 1 ? 'workout' : 'workouts'
+                }?`
+          }
+          body={[
+            pendingImport.newWorkouts === 0
+              ? `Every workout in ${pendingImport.file} is already on this phone.`
+              : `${pendingImport.newWorkouts} of the ${pendingImport.counts.workouts} workouts in ${pendingImport.file} are not on this phone yet.`,
+            'Your exercises, routines and settings are not touched, and nothing already here is changed or removed.',
+          ].join(' ')}
+          confirmLabel={pendingImport.newWorkouts === 0 ? 'Fine' : 'Add them'}
+          cancelLabel="Not now"
           onConfirm={confirmImport}
           onCancel={() => setPendingImport(null)}
         />
