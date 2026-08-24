@@ -36,7 +36,6 @@ function sets(
     loadMode: 'added_bodyweight' as const,
     isWarmup: opts.isWarmup ?? false,
     isCompleted: true,
-    estimated1RM: null,
   }));
 }
 

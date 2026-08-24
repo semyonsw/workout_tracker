@@ -60,12 +60,22 @@ import {
 } from '../lib/backup';
 import { describeError, pickJsonFile, readTextFile, saveJsonFile } from '../lib/backupFile';
 import { commit, countFinal, countTick, tap } from '../lib/feedback';
-import { formatClock } from '../lib/units';
+import { formatClock, formatWeight, kgToLb, lbToKg, unitLabel, weightSteps } from '../lib/units';
 import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
 import { SETTING_LIMITS, useSettings, type NumericSetting } from '../state/settingsStore';
 import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import type { UnitSystem } from '../types/models';
+
+/**
+ * Where the bodyweight row starts from when it has never been set.
+ *
+ * A visible starting point for the ± chips, not a default: it is stored only once
+ * the user taps the row, and what they see immediately is the number they are
+ * adjusting. `sanitizeSettings` still has no fallback — an unset bodyweight stays
+ * unset everywhere else in the app.
+ */
+const BODYWEIGHT_START_KG = 70;
 
 const UNIT_OPTIONS: readonly { value: UnitSystem; label: string }[] = [
   { value: 'metric', label: 'Kilograms' },
@@ -127,6 +137,29 @@ export function SettingsScreen() {
   const bump = (key: NumericSetting, direction: 1 | -1) => {
     tap();
     settings.bumpNumber(key, SETTING_LIMITS[key].step * direction);
+  };
+
+  /**
+   * ± on the bodyweight, in the user's own units.
+   *
+   * THE FIRST TAP SEEDS, it does not nudge. Nudging from "not set" has to start
+   * somewhere, and starting from zero would walk up from 20 kg while
+   * `BODYWEIGHT_START_KG` puts the number on screen in one tap where it can be
+   * read and corrected. It is a starting point the user is looking at, not a
+   * guess the app acts on: nothing is stored until this row is touched, and
+   * `Clear my bodyweight` puts it back.
+   */
+  const bumpBodyweight = (direction: 1 | -1) => {
+    tap();
+    if (settings.bodyweightKg == null) {
+      settings.setBodyweightKg(BODYWEIGHT_START_KG);
+      return;
+    }
+    const { coarse } = weightSteps(settings.unitSystem);
+    const display =
+      settings.unitSystem === 'imperial' ? kgToLb(settings.bodyweightKg) : settings.bodyweightKg;
+    const next = Number((display + coarse * direction).toFixed(2));
+    settings.setBodyweightKg(settings.unitSystem === 'imperial' ? lbToKg(next) : next);
   };
 
   /**
@@ -303,6 +336,54 @@ export function SettingsScreen() {
             <TestBeepRow />
           </ListCard>
 
+          {/* ----------------------------------------------------------
+              BODY — one number, and it is opt-in.
+
+              This is what makes bodyweight and assisted work COUNTABLE, and it is
+              the only thing it does. A +40 kg dip moves a body plus forty; a
+              −20 kg assisted pull-up moves a body minus twenty; a push-up moves a
+              body. Without this number the app cannot weigh any of them, so it
+              leaves them out of session volume and drops the volume figure from
+              the history line rather than printing one that undercounts.
+
+              It is NOT a weigh-in log, a target, or a chart. There is one value,
+              it is the current one, and nothing tracks it over time — that is a
+              different app, and this one has no opinion about anybody's weight.
+              Nudged by the app's own coarse weight step (2 kg / 5 lb) because
+              bodyweight to the nearest couple of kilos is all volume needs, and
+              because a once-ever setting nudged in half-kilos is forty taps. */}
+          <Kicker className="mx-lg mb-sm mt-xxl">Body</Kicker>
+          <ListCard className="mx-lg">
+            <StepperRow
+              label="Bodyweight"
+              hint="What makes push-ups, dips and assisted work countable"
+              value={
+                settings.bodyweightKg == null
+                  ? 'Not set'
+                  : `${formatWeight(settings.bodyweightKg, settings.unitSystem)} ${unitLabel(settings.unitSystem)}`
+              }
+              onDecrease={() => bumpBodyweight(-1)}
+              onIncrease={() => bumpBodyweight(1)}
+            />
+            {settings.bodyweightKg != null ? (
+              <>
+                <Separator />
+                <TextButton
+                  label="Clear my bodyweight"
+                  onPress={() => {
+                    tap();
+                    settings.setBodyweightKg(undefined);
+                  }}
+                />
+              </>
+            ) : null}
+          </ListCard>
+          <Text className="mx-lg mt-sm text-label text-ink-faint">
+            {settings.bodyweightKg == null
+              ? 'Until this is set, a session of push-ups or dips reports no volume — the app will not guess what your body weighs. Nothing else reads it.'
+              : 'Read only when working out session volume. It is not logged, charted or compared to anything.'}
+          </Text>
+
           {/* ---------------------------------------------------------- */}
           <Kicker className="mx-lg mb-sm mt-xxl">Units</Kicker>
           <View className="mx-lg">
@@ -375,7 +456,7 @@ export function SettingsScreen() {
       {confirming === 'reset' ? (
         <ConfirmSheet
           title="Reset settings?"
-          body="Every duration and switch goes back to its default. Your exercises, routines and history are untouched."
+          body="Every duration and switch goes back to its default, and your bodyweight is cleared. Your exercises, routines and history are untouched."
           confirmLabel="Reset settings"
           cancelLabel="Keep mine"
           onConfirm={() => {

@@ -182,7 +182,6 @@ describe('rehydration', () => {
       loadMode: 'added_bodyweight',
       isWarmup: false,
       isCompleted: true,
-      estimated1RM: null,
     };
 
     const workouts = await rehydrateWith({
@@ -204,6 +203,125 @@ describe('rehydration', () => {
     });
 
     expect(workouts[0].sets.map((s) => s.id)).toEqual(['sh1']);
+  });
+
+  /*
+   * 0.11.0 deleted five fields from `SetHistory`: `estimated1RM`, `rpe`, `notes`,
+   * `side` and `partials`. Every blob already on a phone, and every backup file
+   * already exported, still carries them.
+   *
+   * This is the test that made the guard change: it used to be a PREDICATE feeding
+   * `{ ...row, isCompleted: true }`, which validated the fields it knew about and
+   * copied the rest straight through — so a deleted field would have survived
+   * rehydration in memory and been written back out on the next save, for the life
+   * of the install. `sanitizeSetRow` names every key instead, which is the same
+   * argument `sanitizeSettings` makes about `partialize`.
+   */
+  it('drops fields that are no longer part of a set row', async () => {
+    const workouts = await rehydrateWith({
+      workouts: [
+        {
+          id: 'w1',
+          title: 'Pull',
+          startedAt: '2026-08-17T17:00:00.000Z',
+          exercises: [],
+          sets: [
+            {
+              id: 'sh1',
+              sessionId: 'w1',
+              exerciseId: 'ex_pullup_90',
+              performedAt: '2026-08-17T17:00:00.000Z',
+              setIndex: 0,
+              weightKg: 40,
+              count: 4,
+              countUnit: 'reps',
+              loadMode: 'added_bodyweight',
+              isWarmup: false,
+              isCompleted: true,
+              // Everything below this line was declared on `SetHistory` in 0.10.0.
+              estimated1RM: 45.33,
+              rpe: 8,
+              notes: 'felt heavy',
+              side: 'both',
+              partials: 1,
+              // ...and one field nothing has ever declared, for good measure.
+              somethingNobodyWrote: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    const [row] = workouts[0].sets;
+    expect(row.id).toBe('sh1');
+    expect(Object.keys(row).sort()).toEqual([
+      'count',
+      'countUnit',
+      'exerciseId',
+      'id',
+      'isCompleted',
+      'isWarmup',
+      'loadMode',
+      'performedAt',
+      'sessionId',
+      'setIndex',
+      'weightKg',
+    ]);
+  });
+
+  /*
+   * `volumeIsPartial` arrived in 0.11.0 as well, and unlike the five deletions it
+   * has to be RECOVERED rather than dropped: a pre-0.11 workout's volume figure
+   * skipped every bodyweight and assisted set, which is exactly what the flag now
+   * means. Derived from the rows rather than defaulted, so an old all-barbell
+   * session keeps showing its volume.
+   */
+  it('recovers whether an older workout could weigh everything in it', async () => {
+    const row = (id: string, loadMode: string, countUnit = 'reps') => ({
+      id,
+      sessionId: 'w1',
+      exerciseId: 'ex_x',
+      performedAt: '2026-08-17T17:00:00.000Z',
+      setIndex: 0,
+      weightKg: 40,
+      count: 8,
+      countUnit,
+      loadMode,
+      isWarmup: false,
+      isCompleted: true,
+    });
+
+    const workouts = await rehydrateWith({
+      workouts: [
+        {
+          id: 'w1',
+          title: 'Barbell only',
+          startedAt: '2026-08-17T17:00:00.000Z',
+          totalVolumeKg: 2560,
+          exercises: [],
+          sets: [row('a', 'external')],
+        },
+        {
+          id: 'w2',
+          title: 'Dips',
+          startedAt: '2026-08-16T17:00:00.000Z',
+          totalVolumeKg: 320,
+          exercises: [],
+          sets: [row('b', 'external'), row('c', 'added_bodyweight')],
+        },
+        {
+          id: 'w3',
+          title: 'Boxing',
+          startedAt: '2026-08-15T17:00:00.000Z',
+          exercises: [],
+          // Time-counted work has no weight volume to be missing.
+          sets: [row('d', 'none', 'rounds')],
+        },
+      ],
+    });
+
+    const byId = Object.fromEntries(workouts.map((w) => [w.id, w.volumeIsPartial]));
+    expect(byId).toEqual({ w1: false, w2: true, w3: false });
   });
 
   it('keeps at most MAX_WORKOUTS, newest first', async () => {
@@ -256,7 +374,12 @@ describe('derived', () => {
   });
 
   it('is empty, not undefined, before anything has been finished', () => {
-    expect(historyTotals([])).toEqual({ workouts: 0, sets: 0, volumeKg: 0 });
+    expect(historyTotals([])).toEqual({
+      workouts: 0,
+      sets: 0,
+      volumeKg: 0,
+      volumeIsPartial: false,
+    });
     expect(recentSummaries([])).toEqual([]);
   });
 });

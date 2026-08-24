@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDraftEntry, buildDraftSession, defaultTargetCount } from './draft';
+import {
+  buildDraftEntry,
+  buildDraftSession,
+  defaultTargetCount,
+  sessionVolume,
+  type DraftSession,
+} from './draft';
 import { DEFAULT_OVERLOAD_POLICY } from './progressiveOverload';
 import type { Exercise, Routine, SetHistory } from '../types/models';
 
@@ -67,7 +73,6 @@ function loggedSet(overrides: Partial<SetHistory> = {}): SetHistory {
     loadMode: 'external',
     isWarmup: false,
     isCompleted: true,
-    estimated1RM: null,
     ...overrides,
   };
 }
@@ -219,5 +224,100 @@ describe('defaultTargetCount', () => {
   it('treats a NaN that survived a JSON round-trip as not set', () => {
     expect(defaultTargetCount({ countUnit: 'reps', defaultCount: Number.NaN })).toBe(10);
     expect(defaultTargetCount({ countUnit: 'reps', defaultCount: 0 })).toBe(10);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Session volume, and what it does when it cannot weigh a set.
+ *
+ * The old function skipped every exercise with `requiresWeight === false` — so
+ * push-ups, planks, boxing and swimming all contributed zero — and for the two
+ * modes it did count it counted the belt instead of the load. These tests pin the
+ * four load modes and, more importantly, what happens with no bodyweight on file.
+ */
+describe('sessionVolume', () => {
+  /** One exercise, one completed set, in whatever shape the case needs. */
+  function oneSet(
+    overrides: Partial<Exercise>,
+    weightKg: number | null,
+    count: number,
+    isWarmup = false,
+  ): DraftSession {
+    const exercise: Exercise = { ...machine, ...overrides };
+    const session = build(exercise);
+    const [entry] = session.entries;
+    return {
+      ...session,
+      entries: [
+        {
+          ...entry,
+          sets: [
+            {
+              localId: 'set_1',
+              weightKg,
+              count,
+              isWarmup,
+              isCompleted: true,
+              completedAt: '2026-08-17T18:00:00.000Z',
+              isPrefilled: false,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('multiplies an external load by its reps', () => {
+    expect(sessionVolume(oneSet({ loadMode: 'external' }, 80, 8), 82)).toEqual({
+      kg: 640,
+      unweighable: 0,
+    });
+  });
+
+  it('counts a weighted dip as body plus belt', () => {
+    expect(sessionVolume(oneSet({ loadMode: 'added_bodyweight' }, 40, 5), 82).kg).toBe(610);
+  });
+
+  it('counts an assisted pull-up as body MINUS the help', () => {
+    // 62 × 8 = 496. The old maths gave (20 × 8) = 160 and called more help progress.
+    expect(sessionVolume(oneSet({ loadMode: 'assisted' }, 20, 8), 82).kg).toBe(496);
+  });
+
+  it('counts push-ups, which used to be worth nothing at all', () => {
+    const pushups = oneSet({ loadMode: 'none', requiresWeight: false }, null, 20);
+    expect(sessionVolume(pushups, 82).kg).toBe(1640);
+  });
+
+  it('falls back to external-only and says so when no bodyweight is set', () => {
+    // This is the upgrade path for every existing user: the number is exactly what
+    // the old function produced, and `unweighable` is the app admitting it.
+    const dips = oneSet({ loadMode: 'added_bodyweight' }, 40, 5);
+    expect(sessionVolume(dips)).toEqual({ kg: 0, unweighable: 1 });
+
+    const bar = oneSet({ loadMode: 'external' }, 80, 8);
+    expect(sessionVolume(bar)).toEqual({ kg: 640, unweighable: 0 });
+  });
+
+  it('never multiplies kilograms by seconds, metres or rounds', () => {
+    for (const countUnit of ['seconds', 'meters', 'rounds'] as const) {
+      const timed = oneSet({ countUnit, loadMode: 'none', requiresWeight: false }, null, 120);
+      // Not "unweighable" either — a 2:00 plank has no weight volume to be missing.
+      expect(sessionVolume(timed, 82)).toEqual({ kg: 0, unweighable: 0 });
+    }
+  });
+
+  it('leaves warm-ups out, like every other analysis in the app', () => {
+    expect(sessionVolume(oneSet({ loadMode: 'external' }, 80, 8, true), 82)).toEqual({
+      kg: 0,
+      unweighable: 0,
+    });
+  });
+
+  it('ignores planned sets that were never completed', () => {
+    const session = build({ ...machine, loadMode: 'external' });
+    // Straight from `buildDraftSession`: rows exist, none are ✓.
+    expect(sessionVolume(session, 82)).toEqual({ kg: 0, unweighable: 0 });
   });
 });

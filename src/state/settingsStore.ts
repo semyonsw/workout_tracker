@@ -27,6 +27,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { UnitSystem } from '../types/models';
 
 export interface Settings {
+  /**
+   * The user's own bodyweight, in kilograms. UNSET BY DEFAULT, and unset means
+   * unset — see `clampBodyweightKg`.
+   *
+   * It is here rather than derived because nothing else in the app can know it,
+   * and it is optional because guessing it would be worse than not having it: it
+   * is the multiplier on every bodyweight and assisted set the user has ever
+   * logged, so a made-up 80 kg would quietly invent a year of volume figures. The
+   * only thing that reads it is `effectiveLoadKg`.
+   */
+  bodyweightKg?: number;
   /** Rest after a set, when the routine doesn't override it. */
   restSecondsBetweenSets: number;
   /** Rest after the LAST set of an exercise, before the next one. */
@@ -52,6 +63,14 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  /*
+   * Listed, and `undefined`. Rule 2 of this store is that it rehydrates TOTAL —
+   * `merge` fills every key from here — so a key that is absent from this object is
+   * a key a device that upgraded never gets filled. `undefined` IS the default for
+   * a bodyweight: see `clampBodyweightKg` for why there is no number to fall back
+   * to.
+   */
+  bodyweightKg: undefined,
   restSecondsBetweenSets: 120,
   restSecondsBetweenExercises: 150,
   prepareSeconds: 5,
@@ -79,6 +98,42 @@ export const SETTING_LIMITS = {
 } as const satisfies Record<string, { min: number; max: number; step: number }>;
 
 export type NumericSetting = keyof typeof SETTING_LIMITS;
+
+/**
+ * The believable range for a human bodyweight, in kilograms.
+ *
+ * Wide on purpose — it is a guard against a typo and a corrupt blob, not an
+ * opinion about anybody's body. 20 kg is a small child and 300 kg is past the
+ * heaviest person who has ever trained; anything outside that reached the field by
+ * accident.
+ */
+export const BODYWEIGHT_LIMITS = { min: 20, max: 300 } as const;
+
+/**
+ * A believable bodyweight in kilograms, or `undefined` for "not set".
+ *
+ * NOT `clampSetting`: that function's contract is that every setting has a
+ * default, and this one deliberately has none. `undefined` here is a fact the app
+ * acts on — `effectiveLoadKg` returns null for the three bodyweight-dependent
+ * load modes, session volume leaves those sets out, and the history totals line
+ * drops its volume clause rather than printing a figure that undercounts. Falling
+ * back to a number would turn all of that into a silent wrong answer.
+ *
+ * One decimal place: a lifter knows their weight to the half-kilo and nothing
+ * downstream needs more, while a raw float round-tripped through lb would print
+ * 82.30000000000001 in a 40 px numeral.
+ */
+export function clampBodyweightKg(value: unknown): number | undefined {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  const { min, max } = BODYWEIGHT_LIMITS;
+  return Number(Math.min(max, Math.max(min, n)).toFixed(1));
+}
 
 /**
  * Whole seconds inside the setting's own range. Anything unusable → the default.
@@ -117,6 +172,10 @@ export function clampSetting(key: NumericSetting, value: unknown): number {
 export function sanitizeSettings(input: Partial<Settings> | undefined | null): Settings {
   const raw: Settings = { ...DEFAULT_SETTINGS, ...(input ?? {}) };
   return {
+    // Named here like every other key, and `undefined` is a legal result: see
+    // `clampBodyweightKg`. `JSON.stringify` drops it, so an unset bodyweight
+    // costs no bytes on disk and reads back as unset.
+    bodyweightKg: clampBodyweightKg(raw.bodyweightKg),
     restSecondsBetweenSets: clampSetting('restSecondsBetweenSets', raw.restSecondsBetweenSets),
     restSecondsBetweenExercises: clampSetting(
       'restSecondsBetweenExercises',
@@ -144,6 +203,11 @@ interface SettingsState extends Settings {
     value: boolean,
   ) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;
+  /**
+   * Set or clear the bodyweight. `undefined` clears it, which is a real choice —
+   * "I would rather the app said nothing than guessed".
+   */
+  setBodyweightKg: (kg: number | undefined) => void;
   resetToDefaults: () => void;
   /**
    * Replace every setting from a restored backup.
@@ -168,6 +232,8 @@ export const useSettings = create<SettingsState>()(
       setFlag: (key, value) => set({ [key]: value } as Partial<Settings>),
 
       setUnitSystem: (unitSystem) => set({ unitSystem }),
+
+      setBodyweightKg: (kg) => set({ bodyweightKg: clampBodyweightKg(kg) }),
 
       resetToDefaults: () => set({ ...DEFAULT_SETTINGS }),
 

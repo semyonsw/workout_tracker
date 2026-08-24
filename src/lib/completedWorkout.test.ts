@@ -114,11 +114,29 @@ describe('buildCompletedWorkout', () => {
     expect(workout?.exercises[0].topWeightKg).toBe(40);
   });
 
-  it('totals volume only for weighted rep work', () => {
+  /*
+   * This test used to assert `40 * reps` for a set of +40 kg weighted pull-ups and
+   * call it correct. It was asserting the bug: `added_bodyweight` means the body
+   * plus forty, so the belt alone is not the load, and the app had no bodyweight to
+   * add to it. The contract now is that the app either knows the load or says it
+   * does not.
+   */
+  it('leaves bodyweight work out of volume, and says the total is partial', () => {
+    const session = logFirstEntry(draft(), 2, 40);
+    const workout = buildCompletedWorkout(session);
+
+    // `ex_pullup_90` is added_bodyweight, and no bodyweight was passed in.
+    expect(workout?.totalVolumeKg).toBe(0);
+    expect(workout?.volumeIsPartial).toBe(true);
+  });
+
+  it('counts the body plus the belt once a bodyweight is known', () => {
     const session = logFirstEntry(draft(), 2, 40);
     const reps = session.entries[0].sets.slice(0, 2).reduce((n, s) => n + s.count, 0);
+    const workout = buildCompletedWorkout(session, new Date('2026-08-17T19:00:00.000Z'), 82);
 
-    expect(buildCompletedWorkout(session)?.totalVolumeKg).toBe(40 * reps);
+    expect(workout?.totalVolumeKg).toBe((82 + 40) * reps);
+    expect(workout?.volumeIsPartial).toBe(false);
   });
 });
 
@@ -183,6 +201,7 @@ describe('recentlyUsedExerciseIds', () => {
       durationMinutes: 40,
       setCount: exerciseIds.length,
       totalVolumeKg: 0,
+      volumeIsPartial: false,
       sets: [],
       exercises: exerciseIds.map((exerciseId) => ({
         exerciseId,

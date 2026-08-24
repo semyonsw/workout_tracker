@@ -40,7 +40,6 @@ function sets(
     loadMode: exercise.loadMode,
     isWarmup: false,
     isCompleted: true,
-    estimated1RM: null,
   }));
 }
 

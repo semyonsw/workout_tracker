@@ -40,6 +40,13 @@
  *    there was more than one set, because the total of one set is the set.
  *  • THE TOTALS LINE IS A FACT, NOT A GOAL. No streaks, no badges, no weekly
  *    target. Three numbers that say how much training is in here.
+ *  • AND WHEN A NUMBER CANNOT BE STOOD BEHIND, IT IS NOT SHOWN. Session volume
+ *    needs a bodyweight to weigh a push-up or a −20 kg assisted pull-up, and the
+ *    app is only told one if the user types it in `Settings → Body`. A workout
+ *    logged without it carries `volumeIsPartial`, and both the header total and
+ *    the row's own line drop their volume clause rather than print a figure that
+ *    silently omits half the session. A missing clause is a gap somebody can ask
+ *    about; a wrong total is one nobody can spot.
  */
 
 import { useMemo, useState } from 'react';
@@ -92,7 +99,9 @@ export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
           subtitle={
             totals.workouts > 0
               ? `${totals.workouts} ${totals.workouts === 1 ? 'workout' : 'workouts'} · ${totals.sets} sets${
-                  totals.volumeKg > 0 ? ` · ${formatKg(totals.volumeKg)}` : ''
+                  totals.volumeKg > 0 && !totals.volumeIsPartial
+                    ? ` · ${formatKg(totals.volumeKg)}`
+                    : ''
                 }`
               : undefined
           }
@@ -187,7 +196,9 @@ function WorkoutRow({
           <Text className="mt-[2px] text-label tabular-nums text-ink-faint">
             {exerciseCount} {exerciseCount === 1 ? 'exercise' : 'exercises'} · {workout.setCount}{' '}
             {workout.setCount === 1 ? 'set' : 'sets'}
-            {workout.totalVolumeKg > 0 ? ` · ${formatKg(workout.totalVolumeKg)}` : ''}
+            {workout.totalVolumeKg > 0 && !workout.volumeIsPartial
+              ? ` · ${formatKg(workout.totalVolumeKg)}`
+              : ''}
           </Text>
         </View>
 

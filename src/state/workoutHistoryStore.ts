@@ -37,7 +37,8 @@ import {
   type CompletedWorkout,
 } from '../lib/completedWorkout';
 import type { DraftSession } from '../lib/draft';
-import type { ID, RecentSessionSummary, SetHistory } from '../types/models';
+import { currentSettings } from './settingsStore';
+import type { CountUnit, ID, LoadMode, RecentSessionSummary, SetHistory } from '../types/models';
 
 /**
  * How many workouts are kept.
@@ -81,7 +82,19 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()(
       workouts: [],
 
       saveSession: (session, endedAt) => {
-        const workout = buildCompletedWorkout(session, endedAt);
+        /*
+         * The bodyweight is read HERE rather than passed in by a screen, for the
+         * same reason `completeSet` reads the rest lengths here: it is a setting,
+         * the screen has no opinion about it, and wiring it through props would
+         * make every caller responsible for a number it does not own. Volume is
+         * computed once from the value the app has at this instant and never
+         * recomputed — history is not rewritten when a setting changes.
+         */
+        const workout = buildCompletedWorkout(
+          session,
+          endedAt,
+          currentSettings().bodyweightKg ?? null,
+        );
         if (!workout) return null;
 
         const withoutDuplicate = get().workouts.filter((w) => w.id !== workout.id);
@@ -164,7 +177,7 @@ function sanitizeWorkout(value: unknown): CompletedWorkout | null {
   if (!isIsoish(raw.startedAt)) return null;
 
   const sets = Array.isArray(raw.sets)
-    ? raw.sets.filter(isRenderableSet).map((row) => ({ ...row, isCompleted: true }))
+    ? raw.sets.map(sanitizeSetRow).filter((row): row is SetHistory => row !== null)
     : [];
   const exercises = Array.isArray(raw.exercises)
     ? raw.exercises
@@ -181,6 +194,18 @@ function sanitizeWorkout(value: unknown): CompletedWorkout | null {
     durationMinutes: Math.max(1, Math.round(finiteOr(raw.durationMinutes, 1))),
     setCount: Math.max(0, Math.round(finiteOr(raw.setCount, sets.length))),
     totalVolumeKg: Math.max(0, Math.round(finiteOr(raw.totalVolumeKg, 0))),
+    /*
+     * `volumeIsPartial` arrived in 0.11.0, so every workout logged before it has a
+     * volume figure and no flag. Deriving it is exact rather than a guess: volume
+     * used to skip every exercise with `requiresWeight === false` and read
+     * assistance as load, so a pre-0.11 workout containing ANY rep-counted set
+     * that is not plain external work has a total that undercounts. That is
+     * precisely what the flag means.
+     */
+    volumeIsPartial:
+      typeof raw.volumeIsPartial === 'boolean'
+        ? raw.volumeIsPartial
+        : sets.some((row) => row.countUnit === 'reps' && row.loadMode !== 'external'),
     exercises,
     sets,
   };
@@ -225,27 +250,55 @@ function sanitizeCompletedExercise(
 }
 
 /**
- * Does this row have everything the overload engine and the shorthand read?
+ * One set row, rebuilt FIELD BY FIELD, or null.
  *
- * Stricter than the workout itself: these rows are the input to every future
+ * Stricter than the workout around it: these rows are the input to every future
  * suggestion the app makes, and one row with a `NaN` count would poison a verdict
- * rather than break a screen — which is harder to notice and worse.
+ * rather than break a screen — which is harder to notice and worse. A row missing
+ * anything the overload engine or the shorthand indexes into is dropped whole.
+ *
+ * NAMED KEYS, NOT A SPREAD, and that is the change 0.11.0 made here. This used to
+ * be a predicate feeding `{ ...row, isCompleted: true }`, which validated the
+ * fields it knew about and copied everything else straight through — so
+ * `estimated1RM`, `rpe`, `side`, `partials` and `notes`, all deleted from
+ * `SetHistory` this release, would have ridden along in memory out of an old
+ * persisted blob or an old backup file and been written back to disk on the next
+ * save, forever. Listing the keys is the same argument `sanitizeSettings` makes
+ * about `partialize`: a spread writes things you did not mean to write. A field
+ * added to `SetHistory` without being named here is now a type error rather than
+ * an unchecked value reaching a verdict.
  */
-function isRenderableSet(value: unknown): value is SetHistory {
-  if (typeof value !== 'object' || value === null) return false;
+function sanitizeSetRow(value: unknown): SetHistory | null {
+  if (typeof value !== 'object' || value === null) return null;
   const row = value as Partial<SetHistory>;
-  return (
-    typeof row.id === 'string' &&
-    typeof row.sessionId === 'string' &&
-    typeof row.exerciseId === 'string' &&
-    isIsoish(row.performedAt) &&
-    Number.isFinite(row.setIndex) &&
-    Number.isFinite(row.count) &&
-    (row.weightKg == null || Number.isFinite(row.weightKg)) &&
-    COUNT_UNITS.has(row.countUnit as string) &&
-    LOAD_MODES.has(row.loadMode as string) &&
-    typeof row.isWarmup === 'boolean'
-  );
+
+  if (typeof row.id !== 'string') return null;
+  if (typeof row.sessionId !== 'string' || typeof row.exerciseId !== 'string') return null;
+  if (!isIsoish(row.performedAt)) return null;
+  if (!Number.isFinite(row.setIndex) || !Number.isFinite(row.count)) return null;
+  if (row.weightKg != null && !Number.isFinite(row.weightKg)) return null;
+  if (!COUNT_UNITS.has(row.countUnit as string)) return null;
+  if (!LOAD_MODES.has(row.loadMode as string)) return null;
+  if (typeof row.isWarmup !== 'boolean') return null;
+
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    exerciseId: row.exerciseId,
+    performedAt: row.performedAt,
+    setIndex: row.setIndex as number,
+    weightKg: row.weightKg ?? null,
+    count: row.count as number,
+    countUnit: row.countUnit as CountUnit,
+    loadMode: row.loadMode as LoadMode,
+    isWarmup: row.isWarmup,
+    // Only completed sets are ever written (`draftToSetHistory`), so a row in the
+    // log is a set that happened whatever the blob claims.
+    isCompleted: true,
+    ...(typeof row.restTakenSeconds === 'number' && Number.isFinite(row.restTakenSeconds)
+      ? { restTakenSeconds: Math.max(0, Math.round(row.restTakenSeconds)) }
+      : {}),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -256,17 +309,26 @@ export interface HistoryTotals {
   workouts: number;
   sets: number;
   volumeKg: number;
+  /**
+   * True when at least one workout in the log carries a volume figure that is
+   * known to undercount — see `CompletedWorkout.volumeIsPartial`. The screen
+   * omits the volume clause entirely rather than printing a sum of numbers some of
+   * which are missing their bodyweight half.
+   */
+  volumeIsPartial: boolean;
 }
 
 /** The one line above the list: how much training is actually in here. */
 export function historyTotals(workouts: readonly CompletedWorkout[]): HistoryTotals {
   let sets = 0;
   let volumeKg = 0;
+  let volumeIsPartial = false;
   for (const workout of workouts) {
     sets += workout.setCount;
     volumeKg += workout.totalVolumeKg;
+    if (workout.volumeIsPartial) volumeIsPartial = true;
   }
-  return { workouts: workouts.length, sets, volumeKg };
+  return { workouts: workouts.length, sets, volumeKg, volumeIsPartial };
 }
 
 /**

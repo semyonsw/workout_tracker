@@ -29,7 +29,7 @@
  */
 
 import type { CountUnit, ID, ISODateTime, LoadMode, SetHistory } from '../types/models';
-import { draftToSetHistory, sessionPerformedAt, totalVolumeKg, type DraftSession } from './draft';
+import { draftToSetHistory, sessionPerformedAt, sessionVolume, type DraftSession } from './draft';
 import { summarizeSessionSets } from './history';
 
 /** One exercise inside a finished workout. */
@@ -62,6 +62,21 @@ export interface CompletedWorkout {
   durationMinutes: number;
   setCount: number;
   totalVolumeKg: number;
+  /**
+   * True when `totalVolumeKg` is KNOWN TO UNDERCOUNT: this session contained
+   * rep-counted bodyweight or assisted work and there was no bodyweight in
+   * Settings to weigh it with (see `sessionVolume`).
+   *
+   * Stored rather than derived, because it is a fact about the moment the workout
+   * was recorded and nothing later can recover it. Volume is computed once, at
+   * Finish, from the bodyweight the app had then — which is right, because history
+   * is not rewritten when a setting changes. That leaves the screens with a number
+   * and no way to tell whether it is the whole session or the external half of it,
+   * and a volume figure that quietly omits every push-up is worse than a row with
+   * no volume clause on it. So the record says which it is, and the screens drop
+   * the clause when it cannot be stood behind.
+   */
+  volumeIsPartial: boolean;
   exercises: CompletedExercise[];
   /** The rows the overload engine and next session's prefills read. */
   sets: SetHistory[];
@@ -77,6 +92,12 @@ export interface CompletedWorkout {
 export function buildCompletedWorkout(
   session: DraftSession,
   endedAt: Date = new Date(),
+  /**
+   * The user's bodyweight at the moment this workout was finished, from Settings.
+   * Null — the default, and every existing user — means bodyweight and assisted
+   * sets cannot be weighed, and the record says so through `volumeIsPartial`.
+   */
+  bodyweightKg: number | null = null,
 ): CompletedWorkout | null {
   const sets = draftToSetHistory(session);
   if (sets.length === 0) return null;
@@ -88,6 +109,8 @@ export function buildCompletedWorkout(
     Number.isFinite(startedMs) && endedMs > startedMs
       ? Math.max(1, Math.round((endedMs - startedMs) / 60_000))
       : 1;
+
+  const volume = sessionVolume(session, bodyweightKg);
 
   const exercises: CompletedExercise[] = [];
   for (const entry of session.entries) {
@@ -120,7 +143,8 @@ export function buildCompletedWorkout(
     endedAt: endedAt.toISOString(),
     durationMinutes,
     setCount: sets.length,
-    totalVolumeKg: totalVolumeKg(session),
+    totalVolumeKg: volume.kg,
+    volumeIsPartial: volume.unweighable > 0,
     exercises,
     sets,
   };

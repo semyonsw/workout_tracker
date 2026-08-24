@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  BODYWEIGHT_LIMITS,
   DEFAULT_SETTINGS,
   SETTING_LIMITS,
+  clampBodyweightKg,
   clampSetting,
   currentSettings,
   sanitizeSettings,
@@ -119,5 +121,61 @@ describe('the store', () => {
 
     s.resetToDefaults();
     expect(currentSettings()).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The bodyweight is the one setting with no default, and that is the point.
+ *
+ * It is the multiplier on every bodyweight and assisted set the user has ever
+ * logged, so a fallback number would quietly invent a year of volume figures.
+ * `undefined` is a fact the app acts on: `effectiveLoadKg` returns null, session
+ * volume leaves those sets out, and the history line drops its volume clause.
+ */
+describe('the bodyweight', () => {
+  it('is unset by default, and stays unset through a sanitize', () => {
+    expect(DEFAULT_SETTINGS.bodyweightKg).toBeUndefined();
+    expect(sanitizeSettings(undefined).bodyweightKg).toBeUndefined();
+    expect(sanitizeSettings({}).bodyweightKg).toBeUndefined();
+  });
+
+  it('is a declared key, so a device that upgraded gets it filled', () => {
+    // Rule 2 of this store: it rehydrates TOTAL. A key missing from
+    // DEFAULT_SETTINGS is a key `merge` never fills.
+    expect(Object.keys(DEFAULT_SETTINGS)).toContain('bodyweightKg');
+  });
+
+  it('holds a real weight inside a believable range', () => {
+    expect(clampBodyweightKg(82)).toBe(82);
+    expect(clampBodyweightKg(82.4)).toBe(82.4);
+    expect(clampBodyweightKg(1)).toBe(BODYWEIGHT_LIMITS.min);
+    expect(clampBodyweightKg(5000)).toBe(BODYWEIGHT_LIMITS.max);
+  });
+
+  it('reads one decimal place, so a pound round-trip is not a paragraph', () => {
+    expect(clampBodyweightKg(82.34567)).toBe(82.3);
+  });
+
+  it('takes a numeric string, because a text field hands one over', () => {
+    expect(clampBodyweightKg('82.5')).toBe(82.5);
+  });
+
+  it('is UNSET rather than defaulted for anything unusable', () => {
+    // Unlike `clampSetting`, which has a number to fall back to. Every one of
+    // these would pass through `Number()` as a finite 0.
+    for (const bad of [undefined, null, NaN, 0, -5, '', '  ', [], false, {}]) {
+      expect(clampBodyweightKg(bad)).toBeUndefined();
+    }
+  });
+
+  it('can be set and cleared through the store', () => {
+    useSettings.getState().setBodyweightKg(82);
+    expect(currentSettings().bodyweightKg).toBe(82);
+
+    // Clearing is a real choice: "I would rather the app said nothing than guessed".
+    useSettings.getState().setBodyweightKg(undefined);
+    expect(currentSettings().bodyweightKg).toBeUndefined();
   });
 });

@@ -149,14 +149,45 @@ export function countStep(countUnit: CountUnit): number {
 }
 
 /**
- * Epley 1RM estimate. Only meaningful for rep-based, externally-loaded work,
- * and only sane in the 1–12 rep range — above that it inflates badly, so we
- * clamp rather than pretend.
+ * WHAT THE BODY ACTUALLY MOVED on one set, in kilograms — or null when the app
+ * cannot honestly say.
+ *
+ * `weightKg` is what the LOG holds, and for three of the four load modes that is
+ * not the load. A +40 kg dip moves a bodyweight plus forty. A −20 kg assisted
+ * pull-up moves a bodyweight minus twenty — assistance SUBTRACTS, which is the
+ * bug this function exists to fix: session volume used to add it, so a −20 kg
+ * pull-up scored +20 kg a rep and asking for more help read as progress. A
+ * push-up moves a bodyweight with no number on the row at all. Only `external` —
+ * a bar, a stack, a pin — is a number that means itself.
+ *
+ * NULL IS THE IMPORTANT RETURN. The other three modes need a bodyweight, and the
+ * app is never told one unless the user types it in `Settings → Body`. Returning
+ * null rather than falling back to a guess is the whole point: a set of dips is
+ * not "40 kg × reps", and it is not "90 kg × reps" either unless the user said 90.
+ * What to do with a load that will not resolve is the caller's decision — every
+ * caller here leaves the set out of the total and marks the total as partial,
+ * because a number nobody can stand behind is worse than no number.
  */
-export function estimate1RM(weightKg: number | null, reps: number): number | null {
-  if (weightKg == null || weightKg <= 0 || reps <= 0) return null;
-  const cappedReps = Math.min(reps, 12);
-  return Number((weightKg * (1 + cappedReps / 30)).toFixed(2));
+export function effectiveLoadKg(
+  weightKg: number | null,
+  loadMode: LoadMode,
+  bodyweightKg: number | null | undefined,
+): number | null {
+  if (loadMode === 'external') return weightKg;
+
+  const bodyweight =
+    typeof bodyweightKg === 'number' && Number.isFinite(bodyweightKg) && bodyweightKg > 0
+      ? bodyweightKg
+      : null;
+  if (bodyweight == null) return null;
+
+  // A belt with nothing on it, and an assisted machine with the pin out, are both
+  // the bare bodyweight rather than a set with no load.
+  const logged = typeof weightKg === 'number' && Number.isFinite(weightKg) ? weightKg : 0;
+
+  if (loadMode === 'added_bodyweight') return bodyweight + logged;
+  if (loadMode === 'assisted') return Math.max(0, bodyweight - logged);
+  return bodyweight; // 'none' — push-ups, planks, boxing: the body is the load.
 }
 
 /** "1:30" / "12:05" — used by the rest timer and session clock. */

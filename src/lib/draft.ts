@@ -17,7 +17,7 @@ import type {
   SetHistory,
   UnitSystem,
 } from '../types/models';
-import { countUnitLabel, estimate1RM, formatDuration } from './units';
+import { countUnitLabel, effectiveLoadKg, formatDuration } from './units';
 import { summarizeSessionSets } from './history';
 import { evaluateOverload, type OverloadVerdict } from './progressiveOverload';
 
@@ -34,7 +34,6 @@ export interface DraftSet {
   completedAt: string | null;
   /** True until the user edits it — drives the faint "ghost" styling. */
   isPrefilled: boolean;
-  partials?: number;
 }
 
 export interface DraftEntry {
@@ -400,11 +399,8 @@ export function draftToSetHistory(session: DraftSession): SetHistory[] {
         count: set.count,
         countUnit: entry.exercise.countUnit,
         loadMode: entry.exercise.loadMode,
-        partials: set.partials,
         isWarmup: set.isWarmup,
         isCompleted: true,
-        estimated1RM:
-          entry.exercise.countUnit === 'reps' ? estimate1RM(set.weightKg, set.count) : null,
       });
     });
   }
@@ -433,14 +429,68 @@ export function sessionPerformedAt(session: DraftSession): string {
   return earliest ?? new Date().toISOString();
 }
 
-/** Session volume in kg — only meaningful for rep-based, weighted work. */
-export function totalVolumeKg(session: DraftSession): number {
-  let total = 0;
+/**
+ * Kilograms moved this session, and whether that figure is the whole story.
+ *
+ * ── WHAT WAS WRONG ─────────────────────────────────────────────────────────
+ *
+ * This used to skip every exercise with `requiresWeight === false`, which is
+ * most of the seed library: push-ups, planks, boxing and swimming all scored
+ * zero, and a session of nothing but bodyweight work reported no volume at all.
+ * For the two modes it did count it counted the wrong number — a +40 kg dip
+ * scored 40 × reps rather than (bodyweight + 40) × reps, and an assisted pull-up
+ * ADDED the assistance, so a −20 kg set scored +20 kg a rep and asking the
+ * machine for more help made the number go up.
+ *
+ * `effectiveLoadKg` owns that arithmetic now, and it is the only place it lives.
+ *
+ * ── THE TWO RULES ──────────────────────────────────────────────────────────
+ *
+ *  1. REPS ONLY, whatever `requiresWeight` says. A rep-counted set has a load and
+ *     a number of times it was moved, and that multiplies. Seconds, metres and
+ *     rounds do not: kilograms × seconds is not a unit, and a 50-minute swim
+ *     dressed up as a volume figure would swamp every real number in the log.
+ *  2. A SET WHOSE LOAD WILL NOT RESOLVE IS LEFT OUT AND COUNTED AS LEFT OUT.
+ *     Without a bodyweight in Settings, the three bodyweight-dependent modes
+ *     return null — so `kg` is exactly what the old function would have produced
+ *     (the honest fallback: external work only) and `unweighable` is how many sets
+ *     the total is missing. Callers that print the figure use that to drop the
+ *     clause rather than show a number that undercounts. Nothing is guessed and
+ *     no bodyweight is invented.
+ */
+export interface SessionVolume {
+  /** Kilograms of resolvable load × reps, rounded. */
+  kg: number;
+  /**
+   * Completed rep-counted sets whose load could not be resolved — bodyweight or
+   * assisted work with no bodyweight set. Non-zero means `kg` undercounts.
+   */
+  unweighable: number;
+}
+
+export function sessionVolume(session: DraftSession, bodyweightKg?: number | null): SessionVolume {
+  let kg = 0;
+  let unweighable = 0;
+
   for (const entry of session.entries) {
-    if (!entry.exercise.requiresWeight || entry.exercise.countUnit !== 'reps') continue;
+    if (entry.exercise.countUnit !== 'reps') continue;
     for (const set of entry.sets) {
-      if (set.isCompleted && set.weightKg != null) total += set.weightKg * set.count;
+      // Warm-ups are excluded here exactly as they are from the overload engine
+      // and the shorthand: a warm-up is a set that does not count.
+      if (!set.isCompleted || set.isWarmup) continue;
+      const load = effectiveLoadKg(set.weightKg, entry.exercise.loadMode, bodyweightKg);
+      if (load == null) {
+        unweighable += 1;
+        continue;
+      }
+      kg += load * set.count;
     }
   }
-  return Math.round(total);
+
+  return { kg: Math.round(kg), unweighable };
+}
+
+/** Just the kilograms — the shape `CompletedWorkout.totalVolumeKg` stores. */
+export function totalVolumeKg(session: DraftSession, bodyweightKg?: number | null): number {
+  return sessionVolume(session, bodyweightKg).kg;
 }

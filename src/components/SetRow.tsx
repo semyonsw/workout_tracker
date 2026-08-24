@@ -122,7 +122,6 @@ function SetRowComponent({
       <ValueCell
         width={exercise.requiresWeight ? 'min-w-[76px]' : 'min-w-[96px]'}
         value={formatCount(set.count, exercise.countUnit)}
-        partials={set.partials}
         unit={countUnitLabel(exercise.countUnit)}
         tone={valueTone}
         focused={focusedField === 'count'}
@@ -184,7 +183,6 @@ function ValueCell({
   unit,
   tone,
   focused,
-  partials,
   onPress,
   accessibilityLabel,
 }: {
@@ -193,7 +191,6 @@ function ValueCell({
   unit: string;
   tone: string;
   focused: boolean;
-  partials?: number;
   onPress: () => void;
   accessibilityLabel: string;
 }) {
@@ -210,8 +207,6 @@ function ValueCell({
       ].join(' ')}
     >
       <Text className={`text-title font-semibold tabular-nums ${tone}`}>{value}</Text>
-      {/* Trailing partials / cheat reps, e.g. the "+1" in "12 + 1". */}
-      {partials ? <Text className="text-label text-ink-faint">+{partials}</Text> : null}
       <Text className="ml-xs text-micro font-semibold uppercase text-ink-faint">{unit}</Text>
     </Pressable>
   );
