@@ -128,6 +128,7 @@ import {
   targetCountStep,
   toggleSupersetWithAbove,
 } from '../lib/routinePlan';
+import { moveToIndex } from '../lib/reorder';
 import { countUnitLabel, formatClock, formatDuration } from '../lib/units';
 import { palette } from '../theme/tokens';
 import type { Exercise, ID, Routine, RoutineItem } from '../types/models';
@@ -229,19 +230,27 @@ export function RoutineEditorScreen({
     setItems((current) => current.map((item) => (item.id === itemId ? fn(item) : item)));
   };
 
-  /** Release: splice the lifted row into the marked gap and renumber. */
+  /**
+   * Release: splice the lifted row into the marked gap and renumber.
+   *
+   * The splice is `lib/reorder.ts`, shared with the session's drag-reorder. The two
+   * screens choose a drop position completely differently — a finger dragging over
+   * card midpoints there, a tap on a row here — and then do exactly the same thing
+   * with the index, which was written out twice.
+   *
+   * The renumber is this screen's own: `order` is a persisted field and the list
+   * sorts by it, so it has to stay a dense 0..n. A gap in it turns the next reorder
+   * into a drag that jumps.
+   */
   const drop = () => {
     if (!moving || movingIndex < 0) return setMoving(null);
     undo();
 
-    const without = items.filter((i) => i.id !== moving.id);
     // The gap index counts the list WITHOUT the lifted row, which is what the
     // rendered drop band already represents — no off-by-one correction needed.
-    const next = [
-      ...without.slice(0, moving.targetIndex),
-      items[movingIndex],
-      ...without.slice(moving.targetIndex),
-    ].map((item, order) => ({ ...item, order }));
+    const next = moveToIndex(items, (i) => i.id === moving.id, moving.targetIndex).map(
+      (item, order) => ({ ...item, order }),
+    );
 
     setItems(next);
     return setMoving(null);

@@ -4,11 +4,56 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
-## 0.10.0 — what changed on the phone
+## 0.11.0 — what changed on the phone
 
-`versionCode` 10. **It needs a prebuild**: `expo-sqlite` (and the Drizzle
-packages behind it) were unused and are gone, so the set of native modules in the
-APK is different from 0.9.0's.
+`versionCode` 11. **It needs a prebuild**: `expo-sqlite` is a dependency again —
+this time because it is used. The finished-workout log moved out of AsyncStorage
+and into a real database (`src/state/historyDb.ts`), so the set of native modules
+in the APK is different from 0.10.0's.
+
+**Your log is migrated on the first launch, once, and the old copy is not
+deleted.** The migration writes everything into the database in one transaction,
+reads it back and counts it before recording itself as done, and leaves the
+AsyncStorage key exactly where it was. If anything goes wrong it tries again next
+launch from a copy that is still there. Export a backup first anyway — see the
+line at the end of this section.
+
+- **The 250-workout ceiling is gone.** It was a storage limit, not a decision
+  about how much training is worth keeping: every `Finish` used to rewrite the
+  whole log as one string, and 250 was a guess at where that gets too big to
+  write. History is now read straight off disk before the first frame, so the
+  History tab no longer flickers from empty to full on launch.
+- **Volume counts bodyweight work** — once you tell it what you weigh, in
+  **Settings → Body**. A `+40 kg` dip is a body plus forty, an assisted pull-up is
+  a body minus the help (it used to ADD the assistance, so taking more help scored
+  higher), and a push-up is a body. Until you set it, sessions of bodyweight work
+  show no volume figure at all rather than a wrong one.
+- **Sets, reps and rest are editable.** Tap a row in the routine editor and it
+  opens in place with ± chips. Rest says which of the two it is using — this
+  exercise's own, or your Settings value — and can be put back to following
+  Settings. **Supersets**: one toggle, "with the exercise above"; members share a
+  green rule down their left edge, no rest fires between them, and it comes after
+  the last one.
+- **Planks, push-ups and boxing rounds progress now.** The same plateau detection
+  the weighted lifts get, on the count instead of the weight: "3× at 2:00 — try
+  2:15".
+- **Warm-up sets are reachable** — a chip in the set editor. A warm-up reads `W`
+  instead of a number and counts towards nothing: not the volume, not the set
+  count, not the shorthand, and not the suggestions. A heavy warm-up single used
+  to be read as the session's top working weight.
+- **History shows sets per muscle cluster** over 4 weeks / 12 weeks / all, above
+  the month list. Counts and bars, no targets.
+- **A typo no longer costs the workout.** Open a workout in History, tap an
+  exercise, and correct one set with the same ± chips. Everything derived from it
+  is recomputed rather than patched.
+- **Tapping a recent workout opens that workout**, instead of the top of History.
+- **A CSV of every set** beside the JSON backup, for a spreadsheet, and
+  **`Add workouts from a file`** beside `Replace everything` — so a second phone
+  or a replaced one can be reconciled instead of overwritten.
+- **Plate maths under the weight cell** on a barbell lift: `20 + 2×10 + 2×2.5`. It
+  never rounds — an unreachable weight shows no line rather than the nearest one.
+- **Settings tells you what you actually rest**, once there is enough measured,
+  with one tap to adopt it.
 
 - **Opening a workout no longer starts it.** A routine opens on its exercise list
   with nothing timed and nothing dated; the session begins on **`Start the
@@ -66,8 +111,15 @@ $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs \
 
 ## Install it on the phone
 
-1. Copy `workout-tracker-<version>.apk` to the phone (USB, Drive, Telegram —
-   anything).
+The APK comes from the **[Releases page](../../releases)**. It is built and signed
+in CI on a `v*` tag and attached there
+(`.github/workflows/release.yml`) — it is no longer committed to the repo, because
+30 MB per release in git history, permanently, is an expensive way to host a file
+GitHub will host for free. Same download, same "open it and tap install".
+
+1. On the phone, open the **Releases page**, expand **Assets** on the newest
+   release, and download `workout-tracker-<version>.apk`. (From a laptop instead:
+   download it there and copy it over by USB, Drive, Telegram — anything.)
 2. Open it in **Files** and tap install. The first time, Android asks to allow
    installs from that app; allow it and tap install again.
 3. Play Protect will warn that the developer is unknown, because the APK is
@@ -108,7 +160,27 @@ cd android
 On Linux the same three lines are `export JAVA_HOME=…`, `export ANDROID_HOME=…`,
 `./gradlew assembleRelease …`.
 
-The APK lands at `android/app/build/outputs/apk/release/app-release.apk`.
+The APK lands at `android/app/build/outputs/apk/release/app-release.apk`. Copy it
+somewhere with a version in the name before installing it — a Downloads folder
+with four files called `app-release.apk` in it is four files nobody can tell
+apart. This is what a tagged release does automatically; a local build is for
+trying a change before it is worth tagging.
+
+### Or let CI build it
+
+Push a tag and the same APK is built, signed and attached to a draft GitHub
+Release:
+
+```bash
+git tag v0.11.0 && git push origin v0.11.0
+```
+
+`.github/workflows/release.yml` runs the suite first, prebuilds from `app.json`,
+signs with the keystore out of repository secrets (see
+[Signing in CI](#signing-in-ci--the-four-secrets-the-release-workflow-needs)), and
+leaves the release as a **draft** — the notes are the "what changed on the phone"
+section at the top of this file, written by somebody who knows what changed, and a
+tag should not publish prose nobody wrote.
 
 `arm64-v8a` is the only ABI built — every phone from roughly 2017 on is arm64,
 and a single-ABI APK is ~40 MB smaller than a universal one. Drop the
@@ -255,6 +327,45 @@ warning — which is the wrong key to hand a phone, for the reason above.
 The password is weak on purpose: it protects a key for a personal app that is
 never published, and it lives on the same machine as the keystore. Change both if
 this app ever goes anywhere near a store.
+
+### Signing in CI — the four secrets the release workflow needs
+
+Everything above is about building on the Windows machine, and none of it changes.
+`.github/workflows/release.yml` builds the same APK on a `v*` tag, which means the
+runner needs the same keystore — as **repository secrets**, under
+*Settings → Secrets and variables → Actions*:
+
+| Secret | What goes in it |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | the keystore FILE, base64-encoded |
+| `ANDROID_STORE_PASSWORD` | the store password (`WT_STORE_PASSWORD` above) |
+| `ANDROID_KEY_ALIAS` | the alias (`WT_KEY_ALIAS` above) |
+| `ANDROID_KEY_PASSWORD` | the key password (`WT_KEY_PASSWORD` above) |
+
+Encode the file on the machine that has it:
+
+```powershell
+[Convert]::ToBase64String(
+  [IO.File]::ReadAllBytes("$env:USERPROFILE\.workout-tracker-signing\workout-tracker-release.keystore")
+) | Set-Content keystore.b64
+```
+
+…then paste the contents of `keystore.b64` into `ANDROID_KEYSTORE_BASE64` and
+delete the file. The workflow decodes it to a path outside the workspace and hands
+Gradle the same four `WT_*` properties `plugins/withReleaseSigning.js` reads, so
+there is one signing path and not two.
+
+**Without the secrets the release job fails**, deliberately, at the point where it
+would otherwise fall back to the debug key. That fallback is right for a local
+build — a fresh clone still produces a runnable APK — and exactly wrong for a
+release: an APK that looks shippable and cannot update anybody's install is worse
+than no APK at all.
+
+Putting the keystore in a secret does mean GitHub holds a copy of it. That is a
+real trade against the alternative, which is that only one Windows machine can ever
+ship an update; the passwords above are already weak on purpose for the same
+reason, and the note about changing both if this ever goes near a store covers this
+too.
 
 ## Why `android/` is not in git
 

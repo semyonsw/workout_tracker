@@ -88,7 +88,11 @@
  *
  * The drop index is computed from the CARD MIDPOINTS captured on layout, not from
  * a row height: the expanded card is four times the height of a collapsed one, so
- * anything that divides a distance by a constant lands on the wrong exercise.
+ * anything that divides a distance by a constant lands on the wrong exercise. That
+ * arithmetic is `lib/reorder.ts` and not this file — it is the one genuinely
+ * tricky calculation in the reorder, it has four edge cases, and none of them can
+ * be reached from a test that has to render a screen. What stays here is the
+ * gesture.
  *
  * One honest limitation of doing it this way: the list does not scroll while a card
  * is in the air, so a single slide can only reach as far as the finger can. Moving
@@ -111,6 +115,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
 import type { DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
+import { dropIndex, liftIndex, type CardLayout } from '../lib/reorder';
 import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import { supersetPosition } from '../lib/superset';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
@@ -153,12 +158,6 @@ interface ActiveWorkoutScreenProps {
    * is what a caller with nowhere to navigate should get rather than a dead row.
    */
   onAddExercise?: () => void;
-}
-
-/** Where a card sits in the scroll, captured on layout. Drives the drop index. */
-interface CardLayout {
-  y: number;
-  height: number;
 }
 
 export function ActiveWorkoutScreen({
@@ -665,7 +664,7 @@ function useCardReorder(
   const lift = useCallback(
     (entryId: ID) => {
       commit();
-      const index = Math.max(0, idsRef.current.indexOf(entryId));
+      const index = liftIndex(idsRef.current, entryId);
       liftedRef.current = entryId;
       // The card starts where it already is, so its own index is the first target.
       targetRef.current = index;
@@ -687,29 +686,24 @@ function useCardReorder(
   }, [dragY]);
 
   /**
-   * Which gap the lifted card is over, counted in cards it has passed.
+   * Which gap the lifted card is over. The maths is `lib/reorder.ts`.
    *
-   * Midpoint comparison rather than distance ÷ row height, because the expanded
-   * card is several times taller than a collapsed one. A card whose layout hasn't
-   * been measured yet is skipped instead of being treated as being at y = 0, which
-   * would drag every drop target to the top of the list.
+   * All this does is hand it the four things only a component knows — the current
+   * ids, the layouts captured on layout, which card is in the air, and where it
+   * came from — and it reads them out of refs so the `PanResponder` built once at
+   * mount never sees a stale copy.
    */
   const targetFor = useCallback(
     (dy: number): number => {
       const entryId = liftedRef.current;
       if (!entryId) return 0;
-      const own = layouts.current[entryId];
-      if (!own) return targetRef.current;
-
-      const center = own.y + own.height / 2 + dy;
-      let index = 0;
-      for (const id of idsRef.current) {
-        if (id === entryId) continue;
-        const layout = layouts.current[id];
-        if (!layout) continue;
-        if (layout.y + layout.height / 2 < center) index += 1;
-      }
-      return index;
+      return dropIndex({
+        ids: idsRef.current,
+        liftedId: entryId,
+        layouts: layouts.current,
+        dy,
+        fallbackIndex: targetRef.current,
+      });
     },
     [layouts],
   );

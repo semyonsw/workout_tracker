@@ -57,6 +57,7 @@ import {
   type SetTimerSpec,
 } from '../lib/setTimer';
 import { MAX_PLAUSIBLE_REST_SECONDS } from '../lib/restHistory';
+import { moveToIndex } from '../lib/reorder';
 import { nextInSupersetRound } from '../lib/superset';
 import { currentSettings } from './settingsStore';
 import type { ID } from '../types/models';
@@ -266,20 +267,19 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
        * Reorder. `toIndex` is an index into the list WITHOUT the moved entry, which
        * is what a drop position on screen actually is — so no off-by-one correction
        * is needed and dropping a row back where it came from is a no-op.
+       *
+       * The splice itself is `lib/reorder.ts`, shared with the routine editor: the
+       * two screens choose a drop position in completely different ways (a drag here,
+       * a tap there) and then do exactly the same thing with it, and that was written
+       * out twice.
        */
       moveEntry: (entryId, toIndex) => {
         const { session } = get();
         if (!session) return;
-
-        const from = session.entries.findIndex((e) => e.localId === entryId);
-        if (from === -1) return;
-
-        const without = session.entries.filter((e) => e.localId !== entryId);
-        const target = Math.min(Math.max(0, Math.round(toIndex)), without.length);
         set({
           session: {
             ...session,
-            entries: [...without.slice(0, target), session.entries[from], ...without.slice(target)],
+            entries: moveToIndex(session.entries, (e) => e.localId === entryId, toIndex),
           },
         });
       },
