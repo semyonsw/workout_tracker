@@ -24,6 +24,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { DEFAULT_PLATES_KG } from '../lib/plates';
 import type { UnitSystem } from '../types/models';
 
 export interface Settings {
@@ -60,6 +61,15 @@ export interface Settings {
   /** Fire a local notification when a timer ends, for a phone in a pocket. */
   notifyOnTimerEnd: boolean;
   unitSystem: UnitSystem;
+  /**
+   * The plates this gym has, in kilograms.
+   *
+   * A fact about the gym rather than about any one lift, which is why it is here
+   * and `Exercise.barWeightKg` is not: the bar you are holding changes between
+   * exercises, the rack of plates behind you does not. Read only by
+   * `platesFor`, and only for an exercise that declares a bar weight.
+   */
+  availablePlatesKg: number[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -82,6 +92,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keepAwakeEnabled: true,
   notifyOnTimerEnd: true,
   unitSystem: 'metric',
+  availablePlatesKg: [...DEFAULT_PLATES_KG],
 };
 
 /**
@@ -159,6 +170,31 @@ export function clampSetting(key: NumericSetting, value: unknown): number {
 }
 
 /**
+ * A usable plate list: positive, finite, deduplicated, heaviest first.
+ *
+ * Sorted here rather than in `platesFor`, so the greedy walk gets a canonical list
+ * however the value reached disk — and deduplicated because two 20s in the list is
+ * not two 20 kg plates in the gym, it is one entry written twice. An empty or
+ * unusable list falls back to the default rather than to nothing: `[]` means every
+ * target is unreachable, so every plate label silently disappears, which looks
+ * exactly like the feature being broken.
+ *
+ * Capped at sixteen entries. A real gym has seven sizes; sixteen is room to be
+ * unusual, and a blob with four thousand of them is corrupt.
+ */
+export function clampPlates(value: unknown): number[] {
+  if (!Array.isArray(value)) return [...DEFAULT_PLATES_KG];
+  const usable = [
+    ...new Set(
+      value.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0),
+    ),
+  ]
+    .sort((a, b) => b - a)
+    .slice(0, 16);
+  return usable.length > 0 ? usable : [...DEFAULT_PLATES_KG];
+}
+
+/**
  * A complete, in-range `Settings` from anything at all — including `undefined`.
  *
  * Every field is named explicitly rather than spread through. This function is
@@ -190,6 +226,7 @@ export function sanitizeSettings(input: Partial<Settings> | undefined | null): S
     keepAwakeEnabled: raw.keepAwakeEnabled !== false,
     notifyOnTimerEnd: raw.notifyOnTimerEnd !== false,
     unitSystem: raw.unitSystem === 'imperial' ? 'imperial' : 'metric',
+    availablePlatesKg: clampPlates(raw.availablePlatesKg),
   };
 }
 
@@ -208,6 +245,12 @@ interface SettingsState extends Settings {
    * "I would rather the app said nothing than guessed".
    */
   setBodyweightKg: (kg: number | undefined) => void;
+  /**
+   * Add or remove one plate size. Removing the last one is a no-op: an empty list
+   * makes every target unreachable, so every plate label silently disappears —
+   * which looks exactly like the feature being broken.
+   */
+  togglePlate: (kg: number) => void;
   resetToDefaults: () => void;
   /**
    * Replace every setting from a restored backup.
@@ -234,6 +277,15 @@ export const useSettings = create<SettingsState>()(
       setUnitSystem: (unitSystem) => set({ unitSystem }),
 
       setBodyweightKg: (kg) => set({ bodyweightKg: clampBodyweightKg(kg) }),
+
+      togglePlate: (kg) => {
+        const current = get().availablePlatesKg;
+        const next = current.includes(kg) ? current.filter((p) => p !== kg) : [...current, kg];
+        // `clampPlates` falls back to the default on an empty list, which would
+        // read as "removing my last plate restored all of them". Refuse instead.
+        if (next.length === 0) return;
+        set({ availablePlatesKg: clampPlates(next) });
+      },
 
       resetToDefaults: () => set({ ...DEFAULT_SETTINGS }),
 

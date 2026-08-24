@@ -757,7 +757,13 @@ export function AppShell() {
           />
         ) : null}
 
-        {tab === 'History' ? <HistoryScreen workouts={workouts} onDelete={deleteWorkout} /> : null}
+        {tab === 'History' ? (
+          <HistoryScreen
+            workouts={workouts}
+            exercisesById={exercisesById}
+            onDelete={deleteWorkout}
+          />
+        ) : null}
 
         {tab === 'Routines' ? (
           <RoutineListScreen

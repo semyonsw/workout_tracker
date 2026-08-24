@@ -11,12 +11,19 @@
  *   │ │ Start rest automatically         [ ●━ ]  │ │
  *   │ │ Timer ± step              15 s ( − )( + )│ │
  *   │ └──────────────────────────────────────────┘ │
+ *   │ │ You rest 2:38 between sets.      Use it  │ │
  *   │ COUNTDOWN                                    │
  *   │ ┌──────────────────────────────────────────┐ │
  *   │ │ Beep the last            5 s   ( − )( + )│ │
  *   │ │ Sound                            [ ●━ ]  │ │
  *   │ │ Test the beep                        ▶   │ │
  *   │ └──────────────────────────────────────────┘ │
+ *   │ BODY                                         │
+ *   │ ┌──────────────────────────────────────────┐ │
+ *   │ │ Bodyweight              82 kg  ( − )( + )│ │
+ *   │ └──────────────────────────────────────────┘ │
+ *   │ PLATES                                       │
+ *   │ (25)(20)(15)(10)( 5 )(2.5)(1.25) 0.5         │
  *   └──────────────────────────────────────────────┘
  *
  * WHY ± CHIPS AND NOT A KEYPAD. This is the same decision `QuickAdjust` makes on
@@ -32,11 +39,27 @@
  * that out at 0:05 of a two-minute plank is finding it out too late. One tap here
  * proves the thing works before it matters.
  *
+ * THREE SECTIONS THAT ARE NOT DURATIONS, and what each is for. `Body` holds the
+ * one number that makes bodyweight and assisted work countable — without it a
+ * session of push-ups reports no volume at all, and the app will not guess.
+ * `Plates` holds what is on the rack, which is the other half of the
+ * `20 + 2×10 + 2×2.5` line under a barbell lift's weight cell (the bar itself is
+ * a fact about the movement, so it lives on the exercise). Both are read in
+ * exactly one place each, and both say so on screen.
+ *
+ * AND ONE ROW THAT MEASURES RATHER THAN ASKS. Under each rest stepper, once there
+ * is enough data: "You rest 2:38 between sets." with one tap to adopt it. The
+ * timer has always known when a rest began and when the next ✓ landed; this is
+ * that number, as a median so one interrupted workout does not move it. It
+ * appears only when it disagrees with the setting by more than one nudge, so a tap
+ * always does something, and it disappears when they agree — there is nothing to
+ * dismiss because it is not asking for anything.
+ *
  * Every number is clamped by `settingsStore`, so a row cannot hand a `NaN` to a
  * deadline; this screen only ever asks for a nudge.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
@@ -46,6 +69,7 @@ import {
   Kicker,
   ListCard,
   Segmented,
+  SelectChip,
   Separator,
   TextButton,
   Toggle,
@@ -60,6 +84,7 @@ import {
 } from '../lib/backup';
 import { describeError, pickJsonFile, readTextFile, saveJsonFile } from '../lib/backupFile';
 import { commit, countFinal, countTick, tap } from '../lib/feedback';
+import { restMedians } from '../lib/restHistory';
 import { formatClock, formatWeight, kgToLb, lbToKg, unitLabel, weightSteps } from '../lib/units';
 import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
 import { SETTING_LIMITS, useSettings, type NumericSetting } from '../state/settingsStore';
@@ -76,6 +101,17 @@ import type { UnitSystem } from '../types/models';
  * unset everywhere else in the app.
  */
 const BODYWEIGHT_START_KG = 70;
+
+/**
+ * The plate sizes this screen offers, heaviest first.
+ *
+ * A superset of the default list: 25 down to 1.25 is what a metric gym stocks, and
+ * 0.5 is the change plate some of them have. Fixed rather than free-form because a
+ * plate is a physical object with a stamped size — a keypad here would let somebody
+ * enter 7 kg and then wonder why nothing loads (see `platesFor` on why a
+ * non-canonical set fails).
+ */
+const PLATE_SIZES_KG = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5];
 
 const UNIT_OPTIONS: readonly { value: UnitSystem; label: string }[] = [
   { value: 'metric', label: 'Kilograms' },
@@ -124,7 +160,14 @@ function onThisPhone(): BackupCounts {
 export function SettingsScreen() {
   const settings = useSettings();
   const clearHistory = useWorkoutHistory((s) => s.clearHistory);
-  const workoutCount = useWorkoutHistory((s) => s.workouts.length);
+  const workouts = useWorkoutHistory((s) => s.workouts);
+  const workoutCount = workouts.length;
+  /*
+   * What the user ACTUALLY rests, from the timer's own measurements. Null until
+   * there are enough samples to mean anything — see `restHistory.ts` — and the
+   * rows below render nothing at all in that case rather than hedging.
+   */
+  const measured = useMemo(() => restMedians(workouts), [workouts]);
   const [confirming, setConfirming] = useState<'reset' | 'history' | null>(null);
 
   /** A parsed file waiting for a yes: importing replaces everything. */
@@ -260,12 +303,28 @@ export function SettingsScreen() {
               onDecrease={() => bump('restSecondsBetweenSets', -1)}
               onIncrease={() => bump('restSecondsBetweenSets', 1)}
             />
+            <MeasuredRestRow
+              measuredSeconds={measured.betweenSets}
+              settingSeconds={settings.restSecondsBetweenSets}
+              what="between sets"
+              onAdopt={() =>
+                settings.setNumber('restSecondsBetweenSets', measured.betweenSets ?? 0)
+              }
+            />
             <Separator />
             <StepperRow
               label="Between exercises"
               value={formatSeconds(settings.restSecondsBetweenExercises, 'No rest')}
               onDecrease={() => bump('restSecondsBetweenExercises', -1)}
               onIncrease={() => bump('restSecondsBetweenExercises', 1)}
+            />
+            <MeasuredRestRow
+              measuredSeconds={measured.betweenExercises}
+              settingSeconds={settings.restSecondsBetweenExercises}
+              what="between exercises"
+              onAdopt={() =>
+                settings.setNumber('restSecondsBetweenExercises', measured.betweenExercises ?? 0)
+              }
             />
             <Separator />
             <SwitchRow
@@ -384,6 +443,35 @@ export function SettingsScreen() {
               : 'Read only when working out session volume. It is not logged, charted or compared to anything.'}
           </Text>
 
+          {/* ----------------------------------------------------------
+              PLATES — what is on the rack behind you.
+
+              A fact about the GYM, not about any one lift, which is why the bar
+              weight lives on the exercise instead. Read in exactly one place: the
+              `20 + 2×10 + 2×2.5` line under the weight cell of an exercise that
+              declares a bar, so switching a size off here removes it from every
+              breakdown the app draws. It informs and never rounds — a target these
+              plates cannot make shows no line at all rather than the nearest
+              loadable weight. */}
+          <Kicker className="mx-lg mb-sm mt-xxl">Plates</Kicker>
+          <View className="mx-lg flex-row flex-wrap">
+            {PLATE_SIZES_KG.map((plate) => (
+              <SelectChip
+                key={plate}
+                label={String(plate)}
+                selected={settings.availablePlatesKg.includes(plate)}
+                onPress={() => {
+                  tap();
+                  settings.togglePlate(plate);
+                }}
+              />
+            ))}
+          </View>
+          <Text className="mx-lg text-label text-ink-faint">
+            Which plates this gym has, in kilograms. Only used to work out what goes on the bar; it
+            never changes a weight you have typed.
+          </Text>
+
           {/* ---------------------------------------------------------- */}
           <Kicker className="mx-lg mb-sm mt-xxl">Units</Kicker>
           <View className="mx-lg">
@@ -500,6 +588,65 @@ export function SettingsScreen() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * "You rest 2:38 between sets" — and one tap to make that the setting.
+ *
+ * Measured by the rest timer itself: the store has always known when a rest began
+ * and when the next ✓ landed, and `SetHistory.restTakenSeconds` has always had a
+ * field for it. `restMedians` is the median rather than the mean, so one workout
+ * interrupted by a phone call does not move it.
+ *
+ * FOUR THINGS IT DOES NOT DO, and each of them is why it can be trusted:
+ *
+ *  • It does not appear without the data. Below `MIN_REST_SAMPLES` recorded rests
+ *    the median swings on one interruption, and a suggestion that changes every
+ *    workout is one nobody trusts twice.
+ *  • It does not appear when it agrees with the setting, or agrees within one nudge
+ *    of the ± chips. A row whose tap would change nothing is a row that trains
+ *    people to ignore rows.
+ *  • It does not nag. One line, `ink-muted`, no icon, no dot, and it disappears the
+ *    moment the setting matches — there is no dismissing it because there is
+ *    nothing to dismiss.
+ *  • It does not judge. "You rest 2:38" is a measurement of what happened, not a
+ *    comparison with what should have. Resting longer than you planned is not a
+ *    failure, it is information about the plan.
+ */
+function MeasuredRestRow({
+  measuredSeconds,
+  settingSeconds,
+  what,
+  onAdopt,
+}: {
+  measuredSeconds: number | null;
+  settingSeconds: number;
+  /** "between sets" / "between exercises" — the tail of the sentence. */
+  what: string;
+  onAdopt: () => void;
+}) {
+  if (measuredSeconds == null) return null;
+  // Within one nudge of the chips is agreement. See the note above.
+  if (Math.abs(measuredSeconds - settingSeconds) < SETTING_LIMITS.restSecondsBetweenSets.step) {
+    return null;
+  }
+
+  return (
+    <Pressable
+      onPress={() => {
+        commit();
+        onAdopt();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`You rest ${formatClock(measuredSeconds)} ${what}. Use that as the setting.`}
+      className="min-h-[44px] flex-row items-center px-lg pb-md"
+    >
+      <Text className="flex-1 pr-md text-label tabular-nums text-ink-muted">
+        You rest {formatClock(measuredSeconds)} {what}.
+      </Text>
+      <Text className="text-label font-semibold text-green-bright">Use it</Text>
+    </Pressable>
+  );
+}
 
 /**
  * A number with a `−` and a `+`.

@@ -5,6 +5,7 @@ import {
   DEFAULT_SETTINGS,
   SETTING_LIMITS,
   clampBodyweightKg,
+  clampPlates,
   clampSetting,
   currentSettings,
   sanitizeSettings,
@@ -177,5 +178,51 @@ describe('the bodyweight', () => {
     // Clearing is a real choice: "I would rather the app said nothing than guessed".
     useSettings.getState().setBodyweightKg(undefined);
     expect(currentSettings().bodyweightKg).toBeUndefined();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The gym's plates.
+ *
+ * A fact about the gym rather than about any one lift — which is why the bar
+ * weight is on the exercise and this is here. Read only by `platesFor`, and only
+ * for an exercise that declares a bar.
+ */
+describe('the plate list', () => {
+  it('defaults to what most gyms have, heaviest first', () => {
+    expect(DEFAULT_SETTINGS.availablePlatesKg).toEqual([25, 20, 15, 10, 5, 2.5, 1.25]);
+  });
+
+  it('sorts and deduplicates whatever comes off disk', () => {
+    // Sorted here so the greedy walk in `platesFor` always gets a canonical list,
+    // and deduplicated because two 20s in the list is one entry written twice, not
+    // two plates in the gym.
+    expect(clampPlates([2.5, 25, 25, 10])).toEqual([25, 10, 2.5]);
+  });
+
+  it('drops entries that are not usable plates', () => {
+    expect(clampPlates([20, 0, -5, NaN, 'heavy', null, 10])).toEqual([20, 10]);
+  });
+
+  it('falls back to the default rather than to an empty list', () => {
+    // `[]` means every target is unreachable, so every plate label silently
+    // disappears — which looks exactly like the feature being broken.
+    for (const bad of [[], undefined, null, 'plates', [0, -1], {}]) {
+      expect(clampPlates(bad)).toEqual(DEFAULT_SETTINGS.availablePlatesKg);
+    }
+  });
+
+  it('caps a corrupt blob at a believable number of sizes', () => {
+    const absurd = Array.from({ length: 500 }, (_, i) => i + 1);
+    expect(clampPlates(absurd)).toHaveLength(16);
+  });
+
+  it('survives a round trip through sanitizeSettings', () => {
+    expect(sanitizeSettings({ availablePlatesKg: [10, 20] }).availablePlatesKg).toEqual([20, 10]);
+    expect(sanitizeSettings(undefined).availablePlatesKg).toEqual(
+      DEFAULT_SETTINGS.availablePlatesKg,
+    );
   });
 });

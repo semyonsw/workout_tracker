@@ -227,6 +227,11 @@ export function ActiveWorkoutScreen({
    * which is also what `completeSet` will use.
    */
   const restSeconds = useSettings((s) => s.restSecondsBetweenSets);
+  /*
+   * The gym's plates, for the `20 + 2×10` line under a barbell lift. A stable
+   * reference out of the store, which is what keeps `SetRow`'s memo working.
+   */
+  const availablePlatesKg = useSettings((s) => s.availablePlatesKg);
 
   const isStarted = session?.startedAt != null;
   const elapsedMinutes = useElapsedMinutes(session?.startedAt ?? null);
@@ -473,6 +478,7 @@ export function ActiveWorkoutScreen({
                     /* The bracket down a superset's left edge. Computed here
                        because only the screen can see the cards either side. */
                     superset={supersetPosition(session.entries, index)}
+                    availablePlatesKg={availablePlatesKg}
                     timingSetId={setTimer?.entryId === entry.localId ? setTimer.setId : null}
                     isLifted={isLifted}
                     dimmed={lifted != null && !isLifted}

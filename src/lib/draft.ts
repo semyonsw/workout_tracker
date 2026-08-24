@@ -35,6 +35,15 @@ export interface DraftSet {
   completedAt: string | null;
   /** True until the user edits it — drives the faint "ghost" styling. */
   isPrefilled: boolean;
+  /**
+   * Seconds of rest actually taken BEFORE this set, measured by `completeSet`.
+   *
+   * Absent, not zero, when no rest was running: "I did not use the timer" and "I
+   * rested zero seconds" are different facts, and the median in
+   * `lib/restHistory.ts` would be dragged to nothing by a log full of the second
+   * one standing in for the first.
+   */
+  restTakenSeconds?: number;
 }
 
 export interface DraftEntry {
@@ -520,6 +529,8 @@ export function draftToSetHistory(session: DraftSession): SetHistory[] {
         loadMode: entry.exercise.loadMode,
         isWarmup: set.isWarmup,
         isCompleted: true,
+        // Absent rather than zero — see `DraftSet.restTakenSeconds`.
+        ...(set.restTakenSeconds != null ? { restTakenSeconds: set.restTakenSeconds } : {}),
       });
     });
   }

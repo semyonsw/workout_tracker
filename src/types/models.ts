@@ -178,6 +178,22 @@ export interface Exercise {
   incrementKg?: number;
 
   /**
+   * The empty bar, in kilograms — and the switch that turns the plate label on.
+   *
+   * Present ⟹ this movement is loaded with plates on a bar, so the weight cell
+   * gets a micro-label reading `20 + 2×10 + 2×2.5`. Absent ⟹ nothing renders, which
+   * is what a machine, a dumbbell and a cable stack want: a "plate breakdown" for a
+   * pin position is a lie about the equipment.
+   *
+   * On the exercise rather than in Settings because it is a fact about the
+   * movement — an Olympic bar is 20, a women's bar is 15, a trap bar is whatever it
+   * says on it — and one number in Settings would put a 20 kg bar under a hex bar.
+   * Which PLATES exist is the opposite kind of fact, about the gym rather than the
+   * lift, so that one does live in Settings.
+   */
+  barWeightKg?: number;
+
+  /**
    * Where to START, the first time this exercise is ever performed.
    *
    * Prefills come from HISTORY as soon as there is any — that is the whole

@@ -4,6 +4,12 @@
  *   ┌──────────────────────────────────────────────┐
  *   │ HISTORY                                      │
  *   │ 12 workouts · 214 sets · 41 200 kg           │
+ *   │ SETS PER CLUSTER          [4w][12w][ All ]   │
+ *   │ pull    42  ██████████████████████           │
+ *   │ push    31  ████████████████                 │
+ *   │ core    18  █████████                        │
+ *   │ legs     8  ████                             │
+ *   │ cardio   0                                   │
  *   │ AUGUST                                       │
  *   │ ┌──────────────────────────────────────────┐ │
  *   │ │ Pull + swimming          17 Aug · 74 min │ │
@@ -40,6 +46,16 @@
  *    there was more than one set, because the total of one set is the set.
  *  • THE TOTALS LINE IS A FACT, NOT A GOAL. No streaks, no badges, no weekly
  *    target. Three numbers that say how much training is in here.
+ *  • SETS PER CLUSTER IS A COUNT, NOT A SCORE. `lib/muscles.ts` files every
+ *    exercise under exactly one cluster and every set row carries its
+ *    `exerciseId`; nothing had ever joined the two across history, so the one
+ *    thing a lifter could not see was the one thing the data answers for free.
+ *    It states counts and stops: no target, no ratio to hit, no cluster
+ *    coloured as neglected, no "you should train legs". A cluster with zero sets
+ *    shows zero, and that IS the feature — "legs 0" over twelve weeks is a fact,
+ *    and what to do about it belongs to the person who did the training.
+ *    The bar is `green-dim`, scaled to the largest cluster, and it is a
+ *    comparison between the user's own numbers rather than against a goal.
  *  • AND WHEN A NUMBER CANNOT BE STOOD BEHIND, IT IS NOT SHOWN. Session volume
  *    needs a bodyweight to weigh a push-up or a −20 kg assisted pull-up, and the
  *    app is only told one if the user types it in `Settings → Body`. A workout
@@ -55,13 +71,22 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { Kicker, ListCard, Separator } from '../components/primitives';
+import { Kicker, ListCard, Segmented, Separator } from '../components/primitives';
+import {
+  BALANCE_WINDOWS,
+  balanceWindowDays,
+  clusterBalance,
+  describeClusterTotals,
+  type BalanceWindow,
+  type ClusterCount,
+} from '../lib/balance';
 import { tap, undo } from '../lib/feedback';
 import { monthKey, type CompletedExercise, type CompletedWorkout } from '../lib/completedWorkout';
+import { clusterLabel } from '../lib/muscles';
 import { formatDuration, formatShortDate } from '../lib/units';
 import { historyTotals } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
-import type { ID } from '../types/models';
+import type { Exercise, ID } from '../types/models';
 
 const MONTHS = [
   'January',
@@ -80,16 +105,27 @@ const MONTHS = [
 
 interface HistoryScreenProps {
   workouts: CompletedWorkout[];
+  /** The library, for the muscles behind the cluster counts. */
+  exercisesById: Record<ID, Exercise>;
   onDelete: (id: ID) => void;
 }
 
-export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
+export function HistoryScreen({ workouts, exercisesById, onDelete }: HistoryScreenProps) {
   /** The open workout, and the one being deleted. Both are screen-local. */
   const [openId, setOpenId] = useState<ID | null>(null);
   const [deleting, setDeleting] = useState<CompletedWorkout | null>(null);
+  /**
+   * The balance window. Four weeks by default: long enough that one missed
+   * session does not swing it, short enough that it is about now.
+   */
+  const [window, setWindow] = useState<BalanceWindow>('4w');
 
   const totals = useMemo(() => historyTotals(workouts), [workouts]);
   const months = useMemo(() => groupByMonth(workouts), [workouts]);
+  const balance = useMemo(
+    () => clusterBalance({ workouts, exercisesById, windowDays: balanceWindowDays(window) }),
+    [workouts, exercisesById, window],
+  );
 
   return (
     <View className="flex-1 bg-bg">
@@ -117,6 +153,53 @@ export function HistoryScreen({ workouts, onDelete }: HistoryScreenProps) {
             showsVerticalScrollIndicator={false}
             scrollEnabled={!deleting}
           >
+            {/* ----------------------------------------------------------
+                SETS PER CLUSTER — above the months, because it is about the
+                shape of recent training rather than about one session. */}
+            {balance.totalSets > 0 ? (
+              <View className="mb-lg">
+                <View className="mx-lg mb-sm flex-row items-center">
+                  <Kicker className="flex-1">Sets per cluster</Kicker>
+                </View>
+                <View className="mx-lg mb-md">
+                  <Segmented
+                    options={BALANCE_WINDOWS.map((w) => ({ value: w.value, label: w.label }))}
+                    value={window}
+                    onChange={(next) => {
+                      tap();
+                      setWindow(next);
+                    }}
+                    accessibilityLabel="How far back the cluster counts reach"
+                  />
+                </View>
+                <ListCard className="mx-lg">
+                  {balance.clusters.map((row, index) => (
+                    <View key={row.cluster}>
+                      {index > 0 ? <Separator /> : null}
+                      <ClusterRow row={row} maxSets={balance.maxSets} />
+                    </View>
+                  ))}
+                  {/* Only when there is something to say. Sets whose exercise has
+                      been deleted still happened, and a total that quietly omitted
+                      them would be worse than one that admits it cannot place
+                      them. */}
+                  {balance.unfiled > 0 ? (
+                    <>
+                      <Separator />
+                      <View className="min-h-[44px] flex-row items-center px-lg py-sm">
+                        <Text className="flex-1 text-label text-ink-faint">
+                          Exercise since deleted
+                        </Text>
+                        <Text className="text-label font-semibold tabular-nums text-ink-faint">
+                          {balance.unfiled}
+                        </Text>
+                      </View>
+                    </>
+                  ) : null}
+                </ListCard>
+              </View>
+            ) : null}
+
             {months.map((month) => (
               <View key={month.key}>
                 <Kicker className="mx-lg mb-sm mt-xl">{month.label}</Kicker>
@@ -243,6 +326,46 @@ function WorkoutRow({
           </Pressable>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * One cluster: name, count, bar.
+ *
+ * The bar is `green-dim` and scaled to the LARGEST cluster, not to a target — it
+ * compares the user's own numbers to each other, which is the only comparison
+ * this screen is willing to draw. A cluster with no sets gets no bar and a plain
+ * `0`, because a zero-width bar reads as a rendering failure and the zero is the
+ * information.
+ *
+ * The count is `ink` even at zero: it is a fact, not a warning, and dimming it
+ * would be the screen having an opinion.
+ */
+function ClusterRow({ row, maxSets }: { row: ClusterCount; maxSets: number }) {
+  const fraction = maxSets > 0 ? row.sets / maxSets : 0;
+  const totals = describeClusterTotals(row.totals, formatDuration);
+
+  return (
+    <View
+      className="min-h-[44px] flex-row items-center px-lg py-sm"
+      accessibilityLabel={`${clusterLabel(row.cluster)}, ${row.sets} ${
+        row.sets === 1 ? 'set' : 'sets'
+      }${totals ? `, ${totals}` : ''}`}
+    >
+      <Text className="w-[64px] text-label font-medium text-ink">{clusterLabel(row.cluster)}</Text>
+      <Text className="w-[36px] text-body font-semibold tabular-nums text-ink">{row.sets}</Text>
+
+      {/* The bar, and what those sets added up to, on one line. */}
+      <View className="ml-sm flex-1">
+        <View className="h-[6px] flex-row overflow-hidden rounded-pill">
+          <View className="bg-green-dim" style={{ flex: fraction }} />
+          <View style={{ flex: Math.max(0, 1 - fraction) }} />
+        </View>
+        {totals ? (
+          <Text className="mt-[3px] text-micro tabular-nums text-ink-faint">{totals}</Text>
+        ) : null}
+      </View>
     </View>
   );
 }

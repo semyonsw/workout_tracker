@@ -13,7 +13,7 @@ import {
   useSessionProgress,
 } from './activeWorkoutStore';
 import { useSettings } from './settingsStore';
-import { buildDraftEntry, type DraftEntry } from '../lib/draft';
+import { buildDraftEntry, draftToSetHistory, type DraftEntry } from '../lib/draft';
 import { DEFAULT_OVERLOAD_POLICY } from '../lib/progressiveOverload';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
@@ -1155,5 +1155,119 @@ describe('supersets', () => {
 
     useActiveWorkout.getState().completeSet(plank.localId, plank.sets[0].localId);
     expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Recording the rest that was actually taken.
+ *
+ * `SetHistory.restTakenSeconds` sat in the model with nothing writing it while
+ * this store knew both instants the whole time. These are the cases the pure
+ * median function cannot see: what happens with the timer paused, and what happens
+ * when there was no timer at all.
+ */
+describe('rest actually taken', () => {
+  /** The set that was just logged, so its recorded rest can be read back. */
+  function setById(entryId: ID, setId: ID) {
+    const entry = useActiveWorkout.getState().session?.entries.find((e) => e.localId === entryId);
+    return entry?.sets.find((s) => s.localId === setId);
+  }
+
+  it('records nothing when no rest was running', () => {
+    // "I did not use the timer" and "I rested zero seconds" are different facts,
+    // and a log where the first is written as the second has a median of nothing.
+    const session = startRoutine();
+    const entry = session.entries[0];
+    useActiveWorkout.getState().skipRest();
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBeUndefined();
+  });
+
+  it('records the elapsed rest against the set that ends it', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    // A rest that began 95 seconds ago, whatever it was set to.
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 95_000 },
+    }));
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    // The field means "rest taken BEFORE this set", so it lands on the set that
+    // was just completed.
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBe(95);
+  });
+
+  it('counts pause time — the user was still resting', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 200_000 },
+    }));
+    // Freeze the clock. The deadline stops; the wall clock does not, and the
+    // measurement follows the wall clock.
+    useActiveWorkout.getState().pauseRest();
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBe(200);
+  });
+
+  it('records the overrun rather than the number that was set', () => {
+    // Coming back at 3:10 to a 2:00 rest is a 3:10 rest. Clamping it would make
+    // the log agree with the setting instead of with the gym.
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 190_000 },
+    }));
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBe(190);
+  });
+
+  it('records nothing for a gap too long to be a rest anybody took', () => {
+    // Force-quit mid-rest, relaunched the next morning. The elapsed wall time is
+    // real and it is not a rest, and writing nothing beats writing either the true
+    // eight hours or a clamped thirty minutes.
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 8 * 3600 * 1000 },
+    }));
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBeUndefined();
+  });
+
+  it('rides through to the stored set rows', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 100_000 },
+    }));
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    const finished = useActiveWorkout.getState().session;
+    if (!finished) throw new Error('no session');
+    const rows = draftToSetHistory(finished);
+
+    expect(rows[0].restTakenSeconds).toBe(100);
   });
 });

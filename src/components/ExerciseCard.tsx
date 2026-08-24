@@ -73,6 +73,12 @@ interface ExerciseCardProps {
   superset?: 'none' | 'start' | 'continue';
   /** The set in this card whose clock is running, if any. */
   timingSetId?: ID | null;
+  /**
+   * The gym's plates, from Settings — for the `20 + 2×10` line under a barbell
+   * lift's weight cell. Passed straight through; only `SetRow` reads it, and only
+   * for an exercise that declares a bar weight.
+   */
+  availablePlatesKg?: readonly number[];
   /** This card is being dragged: it follows the finger and marks itself. */
   isLifted?: boolean;
   /** Another card is being dragged, so this one is not the subject right now. */
@@ -109,6 +115,7 @@ function ExerciseCardComponent({
   isActive,
   unitSystem,
   superset = 'none',
+  availablePlatesKg,
   timingSetId = null,
   isLifted = false,
   dimmed = false,
@@ -279,6 +286,7 @@ function ExerciseCardComponent({
               focusedField={focus?.setId === set.localId ? focus.field : null}
               isTimed={isTimed}
               isTiming={timingSetId === set.localId}
+              availablePlatesKg={availablePlatesKg}
               onPressTimer={() => {
                 setFocus(null); // the clock and the editor never share the row
                 onPressTimer(set.localId);

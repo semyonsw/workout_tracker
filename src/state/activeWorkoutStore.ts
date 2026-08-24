@@ -56,6 +56,7 @@ import {
   withWorkAdjusted,
   type SetTimerSpec,
 } from '../lib/setTimer';
+import { MAX_PLAUSIBLE_REST_SECONDS } from '../lib/restHistory';
 import { nextInSupersetRound } from '../lib/superset';
 import { currentSettings } from './settingsStore';
 import type { ID } from '../types/models';
@@ -63,6 +64,16 @@ import type { ID } from '../types/models';
 export type RestSource = 'set' | 'transition' | 'manual';
 
 export interface RestState {
+  /**
+   * Epoch ms when this rest BEGAN. Null when idle.
+   *
+   * Stored so `completeSet` can measure the rest actually taken, and stored as
+   * wall time rather than derived from `endsAt` minus `totalSeconds` for two
+   * reasons: `+15` moves the deadline, and a PAUSE stops it entirely. Pause time
+   * is rest taken — the user was resting — so the honest measurement is "how long
+   * since rest started", which is what this is. See `restTakenSeconds`.
+   */
+  startedAt: number | null;
   /** Epoch ms when rest ends. null = idle, or paused (see `pausedRemainingMs`). */
   endsAt: number | null;
   /** What the timer was started with, for the drain line. */
@@ -165,6 +176,7 @@ interface ActiveWorkoutState {
 }
 
 export const NO_REST: RestState = {
+  startedAt: null,
   endsAt: null,
   totalSeconds: 0,
   source: null,
@@ -342,9 +354,16 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         // a rest the user is currently watching.
         if (!target.sets.some((s) => s.localId === setId)) return;
 
+        const restTaken = measureRestTaken(rest, Date.now());
         const sets = target.sets.map((s) =>
           s.localId === setId
-            ? { ...s, isCompleted: true, completedAt: new Date().toISOString(), isPrefilled: false }
+            ? {
+                ...s,
+                isCompleted: true,
+                completedAt: new Date().toISOString(),
+                isPrefilled: false,
+                ...(restTaken != null ? { restTakenSeconds: restTaken } : {}),
+              }
             : s,
         );
         const entries = [...session.entries];
@@ -414,6 +433,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
           activeEntryId: advanceTo ?? get().activeEntryId,
           rest: startsRest
             ? {
+                startedAt: Date.now(),
                 endsAt: Date.now() + restSeconds * 1000,
                 totalSeconds: restSeconds,
                 // The source is what the pill labels itself with, so it has to
@@ -562,6 +582,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         }
         set({
           rest: {
+            startedAt: Date.now(),
             endsAt: Date.now() + total * 1000,
             totalSeconds: total,
             source,
@@ -847,6 +868,14 @@ function sanitizeRest(value: unknown): RestState {
   if (endsAt == null && paused == null) return NO_REST;
 
   return {
+    /*
+     * A rest from an older build has no `startedAt`. Repaired to null rather than
+     * to "now", because a fabricated start instant would be recorded as a rest
+     * somebody took: `measureRestTaken` reads null as "cannot say" and writes
+     * nothing, which is the same answer it gives for no rest at all.
+     */
+    startedAt:
+      typeof rest.startedAt === 'number' && Number.isFinite(rest.startedAt) ? rest.startedAt : null,
     // A paused rest owns the state exclusively; a blob claiming both is repaired
     // in favour of the pause, which is the one the user chose.
     endsAt: paused != null ? null : endsAt,
@@ -877,6 +906,37 @@ function sanitizeTimer(value: unknown, entryIds: Set<string>): SetTimerState | n
     prepareSeconds: Math.max(0, Math.round(finiteOr(timer.prepareSeconds, 0))),
     workSeconds: Math.max(0, Math.round(finiteOr(timer.workSeconds, 0))),
   };
+}
+
+/**
+ * How long the rest on screen has actually lasted, in whole seconds — or null
+ * when there is nothing to measure.
+ *
+ * Wall time from `startedAt`, deliberately, rather than `totalSeconds` minus
+ * what is left on the clock. Three things make those different numbers and the
+ * wall clock is right about all three:
+ *
+ *  • PAUSE. A paused rest's deadline stops moving while the user carries on
+ *    resting. Pause time is rest taken — they were resting — so the measurement
+ *    has to keep running.
+ *  • `+15`. Adjusting the timer moves the deadline without changing how long the
+ *    user has been standing there.
+ *  • OVERRUN. Coming back at 3:10 to a 2:00 rest is a 3:10 rest, and clamping it
+ *    to the timer would make the log agree with the setting instead of with the
+ *    gym.
+ *
+ * Null in two cases, both of which mean "record nothing": no rest was on screen,
+ * and a gap too long to be a rest anybody took (see
+ * `MAX_PLAUSIBLE_REST_SECONDS`). The second is the app being force-quit mid-rest
+ * and relaunched the next morning: the elapsed wall time is real and it is not a
+ * rest, and writing nothing is more honest than writing either the true eight
+ * hours or a clamped thirty minutes.
+ */
+export function measureRestTaken(rest: RestState, now: number): number | null {
+  if (!isResting(rest) || rest.startedAt == null) return null;
+  const seconds = Math.round((now - rest.startedAt) / 1000);
+  if (seconds <= 0 || seconds > MAX_PLAUSIBLE_REST_SECONDS) return null;
+  return seconds;
 }
 
 /* ------------------------------------------------------------------ */

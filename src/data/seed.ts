@@ -10,6 +10,11 @@
  * The library carries movements no routine uses — squats, shrugs, a hollow hold —
  * because every movement cluster needs something in it for its filter chip and
  * its library section to be a real state rather than an empty one.
+ *
+ * The four `equipment: 'barbell'` rows carry `barWeightKg: 20`, which is what
+ * turns on the `20 + 2×10 + 2×2.5` line under their weight cell. Only those four:
+ * the flag is a fact about how a movement is loaded, and a machine or a dumbbell
+ * showing a plate breakdown would be a lie about the equipment.
  */
 
 import type { Exercise, Routine, User } from '../types/models';
@@ -234,6 +239,7 @@ export const seedExercises: Exercise[] = [
     incrementKg: 5,
     defaultRestSeconds: 180,
     equipment: 'barbell',
+    barWeightKg: 20,
   },
   {
     ...base,
@@ -248,6 +254,7 @@ export const seedExercises: Exercise[] = [
     incrementKg: 2.5,
     defaultRestSeconds: 120,
     equipment: 'barbell',
+    barWeightKg: 20,
   },
   {
     ...base,
@@ -302,6 +309,7 @@ export const seedExercises: Exercise[] = [
     incrementKg: 2.5,
     defaultRestSeconds: 150,
     equipment: 'barbell',
+    barWeightKg: 20,
   },
   {
     ...base,
@@ -315,6 +323,7 @@ export const seedExercises: Exercise[] = [
     incrementKg: 5,
     defaultRestSeconds: 180,
     equipment: 'barbell',
+    barWeightKg: 20,
   },
   {
     ...base,

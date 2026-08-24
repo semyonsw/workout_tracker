@@ -5,6 +5,8 @@
  *   │  W     +20 KG      ×    8 REPS           ( ✓ )│  ← a warm-up
  *   │  1     +40 KG      ×    4 REPS           ( ✓ )│
  *   │  2       2:00 MIN                    ( ▶ )( ✓ )│  ← a timed set
+ *   │  3       65 KG     ×    5 REPS           ( ✓ )│
+ *   │        20 + 2×10 + 2×2.5                      │  ← a barbell lift
  *   └──────────────────────────────────────────────┘
  *
  * Interaction contract:
@@ -31,6 +33,14 @@
  *     it did, and "set 2 of 5" must mean the second of five sets that counted.
  *     Same `ink-faint` as the numbers, because it is the same kind of landmark
  *     and not a warning; the toggle lives in `QuickAdjust`, beside `Remove set`.
+ *   • A BARBELL LIFT gets what goes on the bar, under the weight cell:
+ *     `20 + 2×10 + 2×2.5`. Only when the exercise declares a `barWeightKg`, so a
+ *     machine, a dumbbell and a cable stack never show one — a plate breakdown for
+ *     a pin position is a lie about the equipment. It INFORMS AND NEVER ROUNDS: an
+ *     unreachable target renders no line at all rather than the nearest loadable
+ *     weight, because `QuickAdjust`'s header is explicit that nothing here is
+ *     snapped to a grid by a machine the app has never seen, and this is the most
+ *     tempting place in the codebase to break that.
  */
 
 import { memo } from 'react';
@@ -39,6 +49,7 @@ import { Pressable, Text, View } from 'react-native';
 import { commit, tap, undo } from '../lib/feedback';
 import type { DraftSet } from '../lib/draft';
 import type { Exercise, UnitSystem } from '../types/models';
+import { describePlates, platesFor } from '../lib/plates';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import { palette } from '../theme/tokens';
 import { Icon } from './Icon';
@@ -65,6 +76,12 @@ interface SetRowProps {
   isTimed?: boolean;
   /** The clock is running for THIS set. */
   isTiming?: boolean;
+  /**
+   * The plates this gym has, from Settings. Only read for an exercise that
+   * declares a bar weight, and a stable reference from the store — this component
+   * is memoized.
+   */
+  availablePlatesKg?: readonly number[];
   onFocusField: (field: SetField) => void;
   onToggleComplete: () => void;
   /** Start the clock, or — while it runs — stop it and log what it read. */
@@ -80,6 +97,7 @@ function SetRowComponent({
   focusedField,
   isTimed = false,
   isTiming = false,
+  availablePlatesKg,
   onFocusField,
   onToggleComplete,
   onPressTimer,
@@ -88,6 +106,20 @@ function SetRowComponent({
   // Ghost = a value carried over from last session that the user hasn't touched.
   const ghost = set.isPrefilled && !done;
   const valueTone = ghost ? 'text-ink-faint' : 'text-ink';
+
+  /*
+   * What goes on the bar. Null — and therefore no line — for a machine (no
+   * `barWeightKg`), for an empty weight cell, and for a target this plate set
+   * cannot make. See the file header on why the third case is a missing line
+   * rather than a rounded weight.
+   */
+  const plateLabel =
+    exercise.barWeightKg != null && set.weightKg != null
+      ? describePlates(
+          exercise.barWeightKg,
+          platesFor(set.weightKg, exercise.barWeightKg, availablePlatesKg),
+        )
+      : null;
 
   const handleComplete = () => {
     // Medium impact on completion, light on undo — the hand can tell them apart.
@@ -106,7 +138,11 @@ function SetRowComponent({
   return (
     <View
       className={[
-        'h-row flex-row items-center px-lg',
+        // `min-h` rather than a fixed `h-row`: the plate line adds 14 dp and only
+        // on the rows that have one, so a barbell card grows and a machine card is
+        // exactly the height it has always been.
+        plateLabel ? 'min-h-row py-sm' : 'h-row',
+        'flex-row items-center px-lg',
         // The primed row is the only one that lifts. Logged and later rows sit
         // flush on the card so "next" is unambiguous at a glance.
         isNext && !done ? 'bg-surface-alt' : 'bg-transparent',
@@ -120,15 +156,28 @@ function SetRowComponent({
 
       {exercise.requiresWeight ? (
         <>
-          <ValueCell
-            width="min-w-[96px]"
-            value={formatWeight(set.weightKg, unitSystem, exercise.loadMode)}
-            unit={unitLabel(unitSystem)}
-            tone={valueTone}
-            focused={focusedField === 'weight'}
-            onPress={() => onFocusField('weight')}
-            accessibilityLabel={`Weight ${formatWeight(set.weightKg, unitSystem, exercise.loadMode)} ${unitLabel(unitSystem)}`}
-          />
+          <View className="min-w-[96px]">
+            <ValueCell
+              width="w-full"
+              value={formatWeight(set.weightKg, unitSystem, exercise.loadMode)}
+              unit={unitLabel(unitSystem)}
+              tone={valueTone}
+              focused={focusedField === 'weight'}
+              onPress={() => onFocusField('weight')}
+              accessibilityLabel={`Weight ${formatWeight(set.weightKg, unitSystem, exercise.loadMode)} ${unitLabel(unitSystem)}`}
+            />
+            {/* Micro, ink-faint, under the number it describes: it is reference,
+                not a control, and nothing about it is tappable. */}
+            {plateLabel ? (
+              <Text
+                numberOfLines={1}
+                className="mt-[1px] text-micro tabular-nums text-ink-faint"
+                accessibilityLabel={`On the bar: ${plateLabel} kilograms`}
+              >
+                {plateLabel}
+              </Text>
+            ) : null}
+          </View>
           <Text className="mx-sm text-label text-ink-faint">×</Text>
         </>
       ) : null}
