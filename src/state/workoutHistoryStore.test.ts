@@ -8,6 +8,8 @@ import {
   useWorkoutHistory,
 } from './workoutHistoryStore';
 import { buildDraftSession, type DraftSession } from '../lib/draft';
+import { historyByExerciseId } from '../lib/completedWorkout';
+import { evaluateOverload } from '../lib/progressiveOverload';
 import { seedExercises, seedRoutine, seedUser } from '../data/seed';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
 import type { Exercise, ID } from '../types/models';
@@ -381,5 +383,138 @@ describe('derived', () => {
       volumeIsPartial: false,
     });
     expect(recentSummaries([])).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Correcting one logged set — the ONE exception to "nothing in here is rewritten".
+ *
+ * 40 kg typed where 4 was meant used to cost the whole session: deleting the
+ * workout and re-entering it was the only route, and it also took those sets out of
+ * what the prefills and the suggestions read. The app still never rewrites a row on
+ * its own; the user can correct one.
+ */
+describe('correcting a logged set', () => {
+  /** A saved workout whose first exercise has `count` sets at `weightKg`. */
+  function saved(count = 3, weightKg = 40) {
+    useWorkoutHistory.getState().clearHistory();
+    const stored = useWorkoutHistory
+      .getState()
+      .saveSession(loggedDraft('2026-08-17T17:00:00.000Z', count, weightKg));
+    if (!stored) throw new Error('nothing was saved');
+    return stored;
+  }
+
+  const current = (id: string) => useWorkoutHistory.getState().workouts.find((w) => w.id === id);
+
+  it('rewrites the row and recomputes the summary and the volume', () => {
+    const before = saved(3, 40);
+    const [first] = before.sets;
+
+    expect(
+      useWorkoutHistory.getState().updateWorkoutSet(before.id, first.id, { weightKg: 4 }),
+    ).toBe(true);
+
+    const after = current(before.id);
+    expect(after?.sets.find((r) => r.id === first.id)?.weightKg).toBe(4);
+    // Regenerated through the shared shorthand, not patched.
+    expect(after?.exercises[0].summary).toContain('+4 kg');
+    expect(after?.exercises[0].summary).not.toBe(before.exercises[0].summary);
+  });
+
+  it('recomputes the exercise total from a corrected count', () => {
+    const before = saved(3, 40);
+    const [first] = before.sets;
+
+    useWorkoutHistory.getState().updateWorkoutSet(before.id, first.id, { count: first.count + 4 });
+
+    expect(current(before.id)?.exercises[0].totalCount).toBe(before.exercises[0].totalCount + 4);
+  });
+
+  it('changes what a later overload verdict sees', () => {
+    /*
+     * The reason a correction has to reach the ROWS and not just the rendered
+     * summary: those rows are what every future suggestion reads. A 4 kg typo left
+     * in the log is a plateau the engine can see and the user cannot explain.
+     */
+    const before = saved(3, 40);
+    const exerciseId = before.sets[0].exerciseId;
+    const exercise = { id: exerciseId, requiresWeight: true, countUnit: 'reps' as const };
+
+    const topBefore = evaluateOverload({
+      exercise,
+      history: historyByExerciseId(useWorkoutHistory.getState().workouts)[exerciseId] ?? [],
+      now: new Date('2026-08-18T12:00:00.000Z'),
+    }).currentWeightKg;
+    expect(topBefore).toBe(40);
+
+    // Every set of that session was typed a decimal place out.
+    for (const row of before.sets) {
+      useWorkoutHistory.getState().updateWorkoutSet(before.id, row.id, { weightKg: 4 });
+    }
+
+    const topAfter = evaluateOverload({
+      exercise,
+      history: historyByExerciseId(useWorkoutHistory.getState().workouts)[exerciseId] ?? [],
+      now: new Date('2026-08-18T12:00:00.000Z'),
+    }).currentWeightKg;
+    expect(topAfter).toBe(4);
+  });
+
+  it('removes a single set and recomputes around it', () => {
+    const before = saved(3, 40);
+    const [first] = before.sets;
+
+    expect(useWorkoutHistory.getState().deleteWorkoutSet(before.id, first.id)).toBe(true);
+
+    const after = current(before.id);
+    expect(after?.sets.some((r) => r.id === first.id)).toBe(false);
+    expect(after?.setCount).toBe(before.setCount - 1);
+    expect(after?.exercises[0].setCount).toBe(before.exercises[0].setCount - 1);
+  });
+
+  it('refuses to delete the LAST set — that is deleting the workout', () => {
+    const before = saved(1, 40);
+    expect(before.sets).toHaveLength(1);
+
+    expect(useWorkoutHistory.getState().deleteWorkoutSet(before.id, before.sets[0].id)).toBe(false);
+    // The workout is untouched, and `deleteWorkout` — which asks first — still
+    // exists for somebody who means it.
+    expect(current(before.id)?.sets).toHaveLength(1);
+  });
+
+  it('is a no-op for a workout or a set that is not there', () => {
+    const before = saved(2, 40);
+
+    expect(
+      useWorkoutHistory.getState().updateWorkoutSet('w_nope', before.sets[0].id, { count: 1 }),
+    ).toBe(false);
+    expect(useWorkoutHistory.getState().updateWorkoutSet(before.id, 'sh_nope', { count: 1 })).toBe(
+      false,
+    );
+    expect(useWorkoutHistory.getState().deleteWorkoutSet(before.id, 'sh_nope')).toBe(false);
+    expect(current(before.id)?.sets).toHaveLength(before.sets.length);
+  });
+
+  it('can null a weight out, which is a real value and not "no change"', () => {
+    const before = saved(2, 40);
+    useWorkoutHistory.getState().updateWorkoutSet(before.id, before.sets[0].id, {
+      weightKg: null,
+    });
+
+    expect(current(before.id)?.sets[0].weightKg).toBeNull();
+  });
+
+  it('leaves the workout’s identity and dates alone', () => {
+    const before = saved(2, 40);
+    useWorkoutHistory.getState().updateWorkoutSet(before.id, before.sets[0].id, { count: 1 });
+    const after = current(before.id);
+
+    expect(after?.title).toBe(before.title);
+    expect(after?.startedAt).toBe(before.startedAt);
+    expect(after?.endedAt).toBe(before.endedAt);
+    expect(after?.durationMinutes).toBe(before.durationMinutes);
   });
 });

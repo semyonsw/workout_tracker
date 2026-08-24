@@ -30,6 +30,7 @@
 
 import type { CountUnit, ID, ISODateTime, LoadMode, SetHistory } from '../types/models';
 import { draftToSetHistory, sessionPerformedAt, sessionVolume, type DraftSession } from './draft';
+import { effectiveLoadKg } from './units';
 import { summarizeSessionSets } from './history';
 
 /** One exercise inside a finished workout. */
@@ -167,6 +168,97 @@ export function buildCompletedWorkout(
     exercises,
     sets,
   };
+}
+
+/**
+ * A workout with its derived numbers RECOMPUTED from its own set rows.
+ *
+ * The one function that exists so a correction cannot be a lie. A workout record
+ * carries a rendered summary, a set count, a per-exercise total and a volume
+ * figure, and every one of them is derived from `sets` — so editing a row and
+ * patching the strings around it would produce a record whose parts disagree.
+ * This runs the SAME functions `buildCompletedWorkout` ran (`summarizeSessionSets`
+ * for the shorthand, `effectiveLoadKg` for the load), over the rows as they now
+ * are.
+ *
+ * WHAT IT DOES NOT TOUCH: the id, the title, the dates, the duration, or the
+ * order and identity of the exercises. A correction is a correction of a number,
+ * not a re-derivation of what the workout was — and the exercise SNAPSHOTS are
+ * the whole reason a renamed or deleted exercise does not rewrite history, so
+ * they are carried through rather than looked up again.
+ *
+ * `exercises` is rebuilt from the surviving rows in the order the record already
+ * had them, using each entry's own snapshot of name / unit / load mode. An
+ * exercise whose last row was deleted drops out; nothing is added.
+ */
+export function recomputeWorkout(
+  workout: CompletedWorkout,
+  bodyweightKg: number | null = null,
+): CompletedWorkout {
+  const working = workout.sets.filter((row) => !row.isWarmup);
+
+  const exercises: CompletedExercise[] = [];
+  for (const snapshot of workout.exercises) {
+    const rows = working
+      .filter((row) => row.exerciseId === snapshot.exerciseId)
+      .sort((a, b) => a.setIndex - b.setIndex);
+    if (rows.length === 0) continue;
+
+    /*
+     * The snapshot IS enough: `summarizeSessionSets` reads `countUnit` and
+     * `loadMode` and nothing else, and those are two of the three fields the
+     * record copies out of the library. Not a coincidence — they were copied in so
+     * the shorthand could be regenerated after a rename or a delete.
+     */
+    const { lead, drops, topWeightKg } = summarizeSessionSets(rows, snapshot);
+
+    exercises.push({
+      ...snapshot,
+      setCount: rows.length,
+      summary: drops ? `${lead}${drops}` : lead,
+      totalCount: rows.reduce((sum, row) => sum + (Number.isFinite(row.count) ? row.count : 0), 0),
+      topWeightKg,
+    });
+  }
+
+  const volume = rowsVolume(working, bodyweightKg);
+
+  return {
+    ...workout,
+    setCount: working.length,
+    totalVolumeKg: volume.kg,
+    volumeIsPartial: volume.unweighable > 0,
+    exercises,
+  };
+}
+
+/**
+ * Volume straight from stored rows, rather than from a live draft.
+ *
+ * `sessionVolume` reads a `DraftSession`; this reads `SetHistory`. They are the
+ * same rule — rep-counted work only, `effectiveLoadKg` for the load, a set whose
+ * load will not resolve counted as unweighable rather than as zero — and they
+ * have to stay the same rule, which is why both go through `effectiveLoadKg` and
+ * neither does the arithmetic itself.
+ */
+function rowsVolume(
+  rows: readonly SetHistory[],
+  bodyweightKg: number | null,
+): { kg: number; unweighable: number } {
+  let kg = 0;
+  let unweighable = 0;
+
+  for (const row of rows) {
+    if (row.countUnit !== 'reps') continue;
+    const load = effectiveLoadKg(row.weightKg, row.loadMode, bodyweightKg);
+    if (load == null) {
+      unweighable += 1;
+      continue;
+    }
+    kg += load * row.count;
+  }
+
+  return { kg: Math.round(kg), unweighable };
 }
 
 /**

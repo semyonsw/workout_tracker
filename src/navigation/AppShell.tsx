@@ -100,6 +100,18 @@ type Route =
 
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
+  /**
+   * A workout somebody tapped somewhere else, waiting for the History tab to open
+   * it and scroll to it.
+   *
+   * Both `RECENT` on Home and the session rows on the exercise-history screen hand
+   * over a workout id, and both used to have it dropped on the floor —
+   * `onOpenSession` was `() => setTab('History')`, so you landed at the top of
+   * History and hunted for the row you had just tapped. History clears this once it
+   * has acted, so the row does not spring open again the next time the tab is
+   * visited.
+   */
+  const [focusWorkoutId, setFocusWorkoutId] = useState<ID | null>(null);
   const [stack, setStack] = useState<Route[]>([]);
   const [query, setQuery] = useState('');
   /*
@@ -144,6 +156,8 @@ export function AppShell() {
   const workouts = useWorkoutHistory((s) => s.workouts);
   const saveSession = useWorkoutHistory((s) => s.saveSession);
   const deleteWorkout = useWorkoutHistory((s) => s.deleteWorkout);
+  const updateWorkoutSet = useWorkoutHistory((s) => s.updateWorkoutSet);
+  const deleteWorkoutSet = useWorkoutHistory((s) => s.deleteWorkoutSet);
 
   const exercisesById = useMemo<Record<ID, Exercise>>(
     () => Object.fromEntries(exercises.map((e) => [e.id, e])),
@@ -213,6 +227,24 @@ export function AppShell() {
       }),
     [],
   );
+  /** Every pushed screen dismissed at once, back to the tab bar. */
+  const popToRoot = useCallback(() => setStack([]), []);
+
+  /**
+   * Open one finished workout, wherever the tap came from: switch to the History
+   * tab and hand it the id to expand and scroll to.
+   *
+   * The id is state rather than an argument threaded into the tab, because the tab
+   * root is rendered from `tab` and mounts after this runs. `clearFocusWorkout` is
+   * how History says it has acted, so the row opens once rather than every time
+   * somebody comes back to the tab.
+   */
+  const openWorkout = useCallback((sessionId: ID) => {
+    setFocusWorkoutId(sessionId);
+    setTab('History');
+  }, []);
+  const clearFocusWorkout = useCallback(() => setFocusWorkoutId(null), []);
+
   /** Filled in below, once the editor's exit rule exists. See `leaveTop`. */
   const leaveRoutineEditor = useRef<(route: { routineId: ID; isNew?: boolean }) => void>(pop);
 
@@ -713,6 +745,17 @@ export function AppShell() {
         history={historyById[exercise.id] ?? []}
         verdict={verdicts[exercise.id]}
         onBack={pop}
+        /*
+         * Tapping a session row here goes to that workout in History, which means
+         * leaving the stack: this screen is pushed over the tabs, and opening a
+         * row underneath it would be invisible. `popToRoot` rather than `pop`
+         * because the exercise-history screen can itself be reached from the
+         * routine editor, and History is not "back" from either of them.
+         */
+        onOpenSession={(sessionId) => {
+          popToRoot();
+          openWorkout(sessionId);
+        }}
         onEdit={() => push({ name: 'editExercise', exerciseId: exercise.id })}
       />
     );
@@ -753,7 +796,7 @@ export function AppShell() {
             onOpenSequence={() => push({ name: 'sequence' })}
             // A past session opens where past sessions live. The History row is
             // the detail view — it expands in place — so there is nothing to push.
-            onOpenSession={() => setTab('History')}
+            onOpenSession={openWorkout}
           />
         ) : null}
 
@@ -761,7 +804,12 @@ export function AppShell() {
           <HistoryScreen
             workouts={workouts}
             exercisesById={exercisesById}
+            focusWorkoutId={focusWorkoutId}
+            onFocusHandled={clearFocusWorkout}
+            unitSystem={unitSystem}
             onDelete={deleteWorkout}
+            onEditSet={updateWorkoutSet}
+            onDeleteSet={deleteWorkoutSet}
           />
         ) : null}
 

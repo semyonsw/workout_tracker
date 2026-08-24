@@ -27,6 +27,9 @@ export interface SessionRow {
   drops: string | null;
 }
 
+/** All the shorthand needs to know about an exercise. See `summarizeSessionSets`. */
+export type ShorthandSubject = Pick<Exercise, 'countUnit' | 'loadMode'>;
+
 /** One group of consecutive sets at the same weight, in set order. */
 interface WeightGroup {
   weightKg: number | null;
@@ -80,7 +83,14 @@ export function sessionRows(history: SetHistory[], exercise: Exercise): SessionR
  */
 export function summarizeSessionSets(
   rawSets: SetHistory[],
-  exercise: Exercise,
+  /*
+   * Narrowed to the two fields it actually reads, so a caller holding a SNAPSHOT
+   * rather than a library row can use it — which is the whole point of the record
+   * keeping `countUnit` and `loadMode`: the shorthand can be regenerated after the
+   * exercise has been renamed or deleted. Widening this back to `Exercise` would
+   * force `recomputeWorkout` to fabricate a library row it does not have.
+   */
+  exercise: ShorthandSubject,
 ): { lead: string; drops: string | null; topWeightKg: number | null } {
   const sets = rawSets.filter((s) => !s.isWarmup);
   if (sets.length === 0) return { lead: '', drops: null, topWeightKg: null };
@@ -150,7 +160,7 @@ function groupByWeight(ordered: SetHistory[]): WeightGroup[] {
  * ("12 rounds · 3 min") because twelve identical clock values in a row is not a
  * record of anything.
  */
-function formatGroup(group: WeightGroup, exercise: Exercise, totalSets: number): string {
+function formatGroup(group: WeightGroup, exercise: ShorthandSubject, totalSets: number): string {
   if (exercise.countUnit === 'rounds') {
     return `${totalSets} rounds · ${formatDuration(group.counts[0])}`;
   }

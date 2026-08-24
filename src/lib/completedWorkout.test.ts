@@ -5,6 +5,7 @@ import {
   historyByExerciseId,
   monthKey,
   recentlyUsedExerciseIds,
+  recomputeWorkout,
 } from './completedWorkout';
 import { buildDraftSession, type DraftSession } from './draft';
 import { seedExercises, seedRoutine, seedUser } from '../data/seed';
@@ -336,5 +337,114 @@ describe('warm-ups in a finished workout', () => {
     // Warming up and going home is not a workout, and a history row claiming one
     // is worse than no row — the same argument as a session with nothing logged.
     expect(buildCompletedWorkout(withWarmups(2, 2))).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Correcting one logged set.
+ *
+ * The point of `recomputeWorkout` is that a correction cannot leave a record whose
+ * parts disagree. Every derived number goes back through the same functions that
+ * built it — `summarizeSessionSets` for the shorthand, `effectiveLoadKg` for the
+ * load — rather than being patched.
+ */
+describe('recomputeWorkout', () => {
+  /** A finished workout of `count` sets at `weightKg`, with a bodyweight applied. */
+  function finished(count = 3, weightKg = 40) {
+    const workout = buildCompletedWorkout(logFirstEntry(draft(), count, weightKg), undefined, 82);
+    if (!workout) throw new Error('nothing was recorded');
+    return workout;
+  }
+
+  it('regenerates the summary, the total and the volume from the rows', () => {
+    const before = finished(3, 40);
+    const [first] = before.sets;
+
+    // 40 kg becomes 4 — the typo this whole feature exists for.
+    const after = recomputeWorkout(
+      { ...before, sets: before.sets.map((r) => (r.id === first.id ? { ...r, weightKg: 4 } : r)) },
+      82,
+    );
+
+    // The shorthand now leads with the 40 kg sets and shows the 4 as a group.
+    expect(after.exercises[0].summary).not.toBe(before.exercises[0].summary);
+    expect(after.exercises[0].summary).toContain('+4 kg');
+    expect(after.exercises[0].topWeightKg).toBe(40);
+    // ...and the volume follows, because it is recomputed rather than patched.
+    expect(after.totalVolumeKg).toBe(before.totalVolumeKg - (82 + 40 - (82 + 4)) * first.count);
+  });
+
+  it('follows a corrected count into the exercise total', () => {
+    const before = finished(3, 40);
+    const [first] = before.sets;
+    const after = recomputeWorkout(
+      {
+        ...before,
+        sets: before.sets.map((r) => (r.id === first.id ? { ...r, count: first.count + 5 } : r)),
+      },
+      82,
+    );
+
+    expect(after.exercises[0].totalCount).toBe(before.exercises[0].totalCount + 5);
+  });
+
+  it('drops the set count and the summary group when a row is removed', () => {
+    const before = finished(3, 40);
+    const after = recomputeWorkout({ ...before, sets: before.sets.slice(1) }, 82);
+
+    expect(after.setCount).toBe(before.setCount - 1);
+    expect(after.exercises[0].setCount).toBe(before.exercises[0].setCount - 1);
+  });
+
+  it('keeps the identity of the workout and the exercise snapshots', () => {
+    // A correction corrects a number. It does not re-derive what the workout was,
+    // and it must not re-read the library — the snapshot is what stops a renamed or
+    // deleted exercise rewriting history.
+    const before = finished(2, 40);
+    const after = recomputeWorkout({ ...before, sets: before.sets.slice(0, 1) }, 82);
+
+    expect(after.id).toBe(before.id);
+    expect(after.title).toBe(before.title);
+    expect(after.startedAt).toBe(before.startedAt);
+    expect(after.endedAt).toBe(before.endedAt);
+    expect(after.durationMinutes).toBe(before.durationMinutes);
+    expect(after.exercises[0].name).toBe(before.exercises[0].name);
+    expect(after.exercises[0].exerciseId).toBe(before.exercises[0].exerciseId);
+  });
+
+  it('drops an exercise whose last row went, and adds nothing', () => {
+    const before = finished(2, 40);
+    const after = recomputeWorkout({ ...before, sets: [] }, 82);
+
+    expect(after.exercises).toEqual([]);
+    expect(after.setCount).toBe(0);
+  });
+
+  it('marks the volume partial again when it cannot weigh a corrected row', () => {
+    // Recomputed with no bodyweight: the same rows, and the app now cannot say.
+    const before = finished(2, 40);
+    expect(before.volumeIsPartial).toBe(false);
+
+    const after = recomputeWorkout(before, null);
+    expect(after.volumeIsPartial).toBe(true);
+    expect(after.totalVolumeKg).toBe(0);
+  });
+
+  it('leaves a warm-up out of everything derived, and keeps its row', () => {
+    const before = finished(3, 40);
+    const [first] = before.sets;
+    const after = recomputeWorkout(
+      {
+        ...before,
+        sets: before.sets.map((r) => (r.id === first.id ? { ...r, isWarmup: true } : r)),
+      },
+      82,
+    );
+
+    expect(after.sets).toHaveLength(3);
+    expect(after.setCount).toBe(2);
+    expect(after.exercises[0].setCount).toBe(2);
   });
 });
