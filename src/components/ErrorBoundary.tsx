@@ -100,7 +100,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (!error) {
       // The key is what makes `Try again` a genuine remount: same element type,
       // new identity, so every child rebuilds its state from scratch.
-      return <View key={generation} className="flex-1">{this.props.children}</View>;
+      return (
+        <View key={generation} className="flex-1">
+          {this.props.children}
+        </View>
+      );
     }
 
     const stack = (componentStack ?? error.stack ?? '')

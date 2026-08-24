@@ -87,9 +87,7 @@ export interface SetTimerReading {
  * mistake would otherwise produce. Guarding here means the rest of the app can
  * trust `isTimed()` on its own.
  */
-export function resolveTimerMode(
-  exercise: Pick<Exercise, 'timerMode' | 'countUnit'>,
-): TimerMode {
+export function resolveTimerMode(exercise: Pick<Exercise, 'timerMode' | 'countUnit'>): TimerMode {
   const timeCounted = exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds';
   if (!timeCounted) return 'manual';
   return exercise.timerMode ?? 'manual';

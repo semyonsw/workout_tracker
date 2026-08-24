@@ -59,8 +59,8 @@ export function FinishSheet({
       >
         <Text className="text-title font-medium text-ink">Finish workout?</Text>
         <Text className="mt-sm text-body tabular-nums text-ink-muted">
-          {unloggedCount} {unloggedCount === 1 ? 'set is' : 'sets are'} still unlogged. They won't be
-          saved.
+          {unloggedCount} {unloggedCount === 1 ? 'set is' : 'sets are'} still unlogged. They won't
+          be saved.
         </Text>
 
         <View className="mt-xl">

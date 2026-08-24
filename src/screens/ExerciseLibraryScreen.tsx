@@ -359,7 +359,9 @@ function DisclosureRow({
           'flex-1 uppercase',
           // Cluster at Label, muscle at Micro: one step of type size is enough to
           // read as a level, and the app has no third uppercase size to spend.
-          isCluster ? 'text-label font-semibold text-ink' : 'text-micro font-semibold text-ink-muted',
+          isCluster
+            ? 'text-label font-semibold text-ink'
+            : 'text-micro font-semibold text-ink-muted',
         ].join(' ')}
       >
         {label}

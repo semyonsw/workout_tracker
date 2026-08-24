@@ -97,7 +97,10 @@ export function RoutineListScreen({
                       <Text numberOfLines={1} className="text-body font-medium text-ink">
                         {routine.name}
                       </Text>
-                      <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
+                      <Text
+                        numberOfLines={1}
+                        className="mt-[2px] text-label tabular-nums text-ink-faint"
+                      >
                         {summarize(routine, exercisesById)}
                       </Text>
                     </View>

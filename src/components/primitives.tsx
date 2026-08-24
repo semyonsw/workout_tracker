@@ -46,7 +46,11 @@ export function Kicker({
   const toneClass =
     tone === 'green' ? 'text-green-bright' : tone === 'dim' ? 'text-green-dim' : 'text-ink-faint';
   return (
-    <Text className={['text-micro font-semibold uppercase tabular-nums', toneClass, className].join(' ')}>
+    <Text
+      className={['text-micro font-semibold uppercase tabular-nums', toneClass, className].join(
+        ' ',
+      )}
+    >
       {children}
     </Text>
   );
@@ -204,8 +208,7 @@ export function FieldWell({
     'h-row flex-row items-center border border-hairline bg-surface-alt',
     shape === 'pill' ? 'rounded-pill px-[20px]' : 'rounded-surface px-lg',
   ].join(' ');
-  const textClass =
-    size === 'title' ? 'text-title font-medium text-ink' : 'text-body text-ink';
+  const textClass = size === 'title' ? 'text-title font-medium text-ink' : 'text-body text-ink';
 
   if (onChangeText) {
     return (

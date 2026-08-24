@@ -340,7 +340,8 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
          * list" — people skip an exercise and come back to it, and in that case
          * there is still work to walk to.
          */
-        const workoutDone = exerciseDone && entries.every((e) => e.sets.every((s) => s.isCompleted));
+        const workoutDone =
+          exerciseDone && entries.every((e) => e.sets.every((s) => s.isCompleted));
 
         const settings = currentSettings();
         const restSeconds = exerciseDone
@@ -700,10 +701,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
 /* Rehydration guards                                                  */
 /* ------------------------------------------------------------------ */
 
-type PersistedSlice = Pick<
-  ActiveWorkoutState,
-  'session' | 'activeEntryId' | 'rest' | 'setTimer'
->;
+type PersistedSlice = Pick<ActiveWorkoutState, 'session' | 'activeEntryId' | 'rest' | 'setTimer'>;
 
 function finiteOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -731,7 +729,8 @@ function isRenderableSession(value: unknown): value is DraftSession {
     const e = entry as Partial<DraftEntry>;
     if (typeof e.localId !== 'string' || !Array.isArray(e.sets)) return false;
     if (typeof e.exercise !== 'object' || e.exercise === null) return false;
-    if (typeof e.exercise.countUnit !== 'string' || typeof e.exercise.name !== 'string') return false;
+    if (typeof e.exercise.countUnit !== 'string' || typeof e.exercise.name !== 'string')
+      return false;
     if (!Array.isArray(e.exercise.muscleGroups)) return false;
     if (typeof e.overload !== 'object' || e.overload === null) return false;
     if (!Number.isFinite(e.restSeconds) || !Number.isFinite(e.transitionRestSeconds)) return false;
@@ -764,7 +763,12 @@ function sanitizeState(persisted: unknown): PersistedSlice {
       ? raw.activeEntryId
       : (session.entries[0]?.localId ?? null);
 
-  return { session, activeEntryId, rest: sanitizeRest(raw.rest), setTimer: sanitizeTimer(raw.setTimer, entryIds) };
+  return {
+    session,
+    activeEntryId,
+    rest: sanitizeRest(raw.rest),
+    setTimer: sanitizeTimer(raw.setTimer, entryIds),
+  };
 }
 
 function sanitizeRest(value: unknown): RestState {

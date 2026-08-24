@@ -139,7 +139,8 @@ interface SettingsState extends Settings {
   /** Relative nudge, for the ± controls on the settings rows. */
   bumpNumber: (key: NumericSetting, delta: number) => void;
   setFlag: (
-    key: 'autoStartRest' | 'soundEnabled' | 'hapticsEnabled' | 'keepAwakeEnabled' | 'notifyOnTimerEnd',
+    key:
+      'autoStartRest' | 'soundEnabled' | 'hapticsEnabled' | 'keepAwakeEnabled' | 'notifyOnTimerEnd',
     value: boolean,
   ) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;

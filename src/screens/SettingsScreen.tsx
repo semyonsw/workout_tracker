@@ -62,11 +62,7 @@ import { describeError, pickJsonFile, readTextFile, saveJsonFile } from '../lib/
 import { commit, countFinal, countTick, tap } from '../lib/feedback';
 import { formatClock } from '../lib/units';
 import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
-import {
-  SETTING_LIMITS,
-  useSettings,
-  type NumericSetting,
-} from '../state/settingsStore';
+import { SETTING_LIMITS, useSettings, type NumericSetting } from '../state/settingsStore';
 import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import type { UnitSystem } from '../types/models';

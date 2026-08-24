@@ -163,10 +163,7 @@ export function historyByExerciseId(
  *
  * Workouts arrive newest-first, so first sighting wins and no sorting is needed.
  */
-export function recentlyUsedExerciseIds(
-  workouts: readonly CompletedWorkout[],
-  limit = 6,
-): ID[] {
+export function recentlyUsedExerciseIds(workouts: readonly CompletedWorkout[], limit = 6): ID[] {
   const seen: ID[] = [];
   for (const workout of workouts) {
     for (const exercise of workout.exercises) {

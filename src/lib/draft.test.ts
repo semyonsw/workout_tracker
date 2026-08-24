@@ -183,7 +183,7 @@ describe('an exercise added mid-workout', () => {
     expect(entry.lastSessionSummary).toBeTruthy();
   });
 
-  it('falls back to the exercise\'s own starting numbers with no history', () => {
+  it("falls back to the exercise's own starting numbers with no history", () => {
     const entry = entryFor();
 
     expect(entry.sets[0].weightKg).toBe(30);

@@ -31,7 +31,11 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { buildCompletedWorkout, type CompletedExercise, type CompletedWorkout } from '../lib/completedWorkout';
+import {
+  buildCompletedWorkout,
+  type CompletedExercise,
+  type CompletedWorkout,
+} from '../lib/completedWorkout';
 import type { DraftSession } from '../lib/draft';
 import type { ID, RecentSessionSummary, SetHistory } from '../types/models';
 

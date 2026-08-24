@@ -63,8 +63,7 @@ export function ExerciseHistoryScreen({
    * willing to nudge. On a lift that is still climbing there is no run to report
    * and the clause drops out entirely.
    */
-  const plateauDays =
-    verdict && verdict.sessionsAtWeight >= 2 ? verdict.plateauDays : null;
+  const plateauDays = verdict && verdict.sessionsAtWeight >= 2 ? verdict.plateauDays : null;
   const loadPrefix = exercise.loadMode === 'added_bodyweight' ? '+' : '';
 
   return (
@@ -130,9 +129,7 @@ export function ExerciseHistoryScreen({
             </ListCard>
           </>
         ) : (
-          <Text className="mx-lg mt-xl text-body text-ink-muted">
-            No completed sets yet.
-          </Text>
+          <Text className="mx-lg mt-xl text-body text-ink-muted">No completed sets yet.</Text>
         )}
       </ScrollView>
     </View>

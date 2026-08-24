@@ -111,7 +111,9 @@ describe('rehydration', () => {
   }
 
   it('restores well-formed workouts', async () => {
-    const stored = useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    const stored = useWorkoutHistory
+      .getState()
+      .saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
     const workouts = await rehydrateWith({ workouts: [stored] });
 
     expect(workouts).toHaveLength(1);

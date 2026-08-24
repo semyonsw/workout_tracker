@@ -169,7 +169,9 @@ export function AppShell() {
       title: session.title,
       done,
       total,
-      minutes: Number.isFinite(startedMs) ? Math.max(0, Math.floor((Date.now() - startedMs) / 60_000)) : 0,
+      minutes: Number.isFinite(startedMs)
+        ? Math.max(0, Math.floor((Date.now() - startedMs) / 60_000))
+        : 0,
     };
   }, [session]);
 
@@ -722,9 +724,7 @@ export function AppShell() {
           />
         ) : null}
 
-        {tab === 'History' ? (
-          <HistoryScreen workouts={workouts} onDelete={deleteWorkout} />
-        ) : null}
+        {tab === 'History' ? <HistoryScreen workouts={workouts} onDelete={deleteWorkout} /> : null}
 
         {tab === 'Routines' ? (
           <RoutineListScreen

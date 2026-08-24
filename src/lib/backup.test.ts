@@ -15,7 +15,10 @@ const payload = (over: Partial<BackupPayload> = {}): BackupPayload => ({
   settings: { restSecondsBetweenSets: 90 },
   exercises: [{ id: 'ex_1' }, { id: 'ex_2' }],
   routines: [{ id: 'r_1' }],
-  workouts: [{ id: 'w_1', sets: [{}, {}, {}] }, { id: 'w_2', sets: [{}] }],
+  workouts: [
+    { id: 'w_1', sets: [{}, {}, {}] },
+    { id: 'w_2', sets: [{}] },
+  ],
   ...over,
 });
 

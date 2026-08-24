@@ -393,11 +393,7 @@ function sanitizeLibrary(
  * thing switched OFF if nothing is left. An active sequence with no steps would
  * be a home screen promising a next workout it cannot name.
  */
-function withSteps(
-  sequence: TrainingSequence,
-  routineIds: ID[],
-  cursor: number,
-): TrainingSequence {
+function withSteps(sequence: TrainingSequence, routineIds: ID[], cursor: number): TrainingSequence {
   return {
     isActive: sequence.isActive && routineIds.length > 0,
     routineIds,

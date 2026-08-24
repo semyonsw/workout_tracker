@@ -89,14 +89,7 @@ describe('one cue per second', () => {
       readings.push(second, second, second, second);
     }
 
-    expect(spoken(run(readings))).toEqual([
-      'tick',
-      'tick',
-      'tick',
-      'tick',
-      'tick',
-      'final',
-    ]);
+    expect(spoken(run(readings))).toEqual(['tick', 'tick', 'tick', 'tick', 'tick', 'final']);
   });
 
   it('never repeats the final tone, however long the clock sits at zero', () => {

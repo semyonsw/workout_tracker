@@ -81,7 +81,7 @@ describe('sanitizeSettings', () => {
 });
 
 describe('the store', () => {
-  it('bumps by the setting\'s own step and stops at the ceiling', () => {
+  it("bumps by the setting's own step and stops at the ceiling", () => {
     const { bumpNumber } = useSettings.getState();
     const step = SETTING_LIMITS.restSecondsBetweenSets.step;
     const start = useSettings.getState().restSecondsBetweenSets;

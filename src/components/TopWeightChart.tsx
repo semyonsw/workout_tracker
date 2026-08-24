@@ -61,8 +61,7 @@ export function TopWeightChart({ points }: TopWeightChartProps) {
 
   const x = (index: number) =>
     GUTTER + 18 + (index * (WIDTH - GUTTER - 40)) / Math.max(1, points.length - 1);
-  const y = (weight: number) =>
-    PLOT_BOTTOM - ((weight - floor) / span) * (PLOT_BOTTOM - PLOT_TOP);
+  const y = (weight: number) => PLOT_BOTTOM - ((weight - floor) / span) * (PLOT_BOTTOM - PLOT_TOP);
 
   /* Three gridlines: the top weight, the bottom, and the midpoint. */
   const gridlines = [max, floor + span / 2, floor];

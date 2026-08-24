@@ -126,7 +126,7 @@ describe('importing is validated, not trusted', () => {
       ],
       routines: [{ id: 'r_bad' }],
       workouts: [{ id: 'w_bad' }],
-      });
+    });
 
     expect(applied.exercises).toBe(1);
     expect(applied.routines).toBe(0);

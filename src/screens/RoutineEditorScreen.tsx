@@ -173,110 +173,110 @@ export function RoutineEditorScreen({
   return (
     <View className="flex-1 bg-bg">
       <View className="flex-1" style={dimmed ? { opacity: 0.28 } : undefined}>
-      <ScreenHeader
-        kicker={
-          moving && movingExercise
-            ? `Moving · ${movingExercise.name}`
-            : isNew
-              ? 'New routine'
-              : 'Edit routine'
-        }
-        kickerTone={moving ? 'green' : 'faint'}
-        onBack={moving ? undefined : onBack}
-        action={{
-          label: 'Save',
-          // Demoted mid-move: saving is not the thing to do with a row in the air.
-          tone: moving ? 'muted' : 'primary',
-          onPress: moving ? drop : () => onSave(draft()),
-        }}
-      />
+        <ScreenHeader
+          kicker={
+            moving && movingExercise
+              ? `Moving · ${movingExercise.name}`
+              : isNew
+                ? 'New routine'
+                : 'Edit routine'
+          }
+          kickerTone={moving ? 'green' : 'faint'}
+          onBack={moving ? undefined : onBack}
+          action={{
+            label: 'Save',
+            // Demoted mid-move: saving is not the thing to do with a row in the air.
+            tone: moving ? 'muted' : 'primary',
+            onPress: moving ? drop : () => onSave(draft()),
+          }}
+        />
 
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingTop: 24, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={!moving && !dimmed}
-      >
-        {/* The name field hides while reordering: one thing at a time. */}
-        {moving ? null : (
-          <>
-            <Kicker className="mx-lg mb-sm">Routine name</Kicker>
-            <View className="mx-lg">
-              <FieldWell
-                value={name}
-                placeholder="Routine name"
-                onChangeText={setName}
-                selectAllOnFocus={isNew}
-                autoFocus={isNew}
-                accessibilityLabel="Routine name"
-              />
-            </View>
-          </>
-        )}
-
-        <Kicker className={`mx-lg mb-sm ${moving ? '' : 'mt-xl'}`}>
-          Exercises · {items.length}
-        </Kicker>
-
-        <ListCard className="mx-lg">
-          {rest.map((item, index) => {
-            const exercise = exercisesById[item.exerciseId];
-            if (!exercise) return null;
-            const showGapBefore = moving?.targetIndex === index;
-
-            return (
-              <View key={item.id}>
-                {showGapBefore ? <DropGap /> : null}
-                {/* Hairlines inset 40 — past the handle, so the rule starts
-                    where the text does. */}
-                {index > 0 && !showGapBefore ? <Separator inset={40} /> : null}
-                <RoutineRow
-                  item={item}
-                  exercise={exercise}
-                  dimmed={moving != null}
-                  onPress={() =>
-                    moving
-                      ? setMoving({ ...moving, targetIndex: index })
-                      : onOpenItem(item, draft())
-                  }
-                  onLongPress={() => (moving ? undefined : lift(item, index))}
-                  onRemove={
-                    moving
-                      ? undefined
-                      : () => {
-                          tap();
-                          setRemoving(item);
-                        }
-                  }
-                />
-              </View>
-            );
-          })}
-
-          {/* The gap can also be the very end of the list. */}
-          {moving?.targetIndex === rest.length ? <DropGap /> : null}
-
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ paddingTop: 24, paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={!moving && !dimmed}
+        >
+          {/* The name field hides while reordering: one thing at a time. */}
           {moving ? null : (
             <>
-              <Separator inset={0} />
-              <AddRow label="Add exercise" onPress={() => onAddExercise(draft())} />
+              <Kicker className="mx-lg mb-sm">Routine name</Kicker>
+              <View className="mx-lg">
+                <FieldWell
+                  value={name}
+                  placeholder="Routine name"
+                  onChangeText={setName}
+                  selectAllOnFocus={isNew}
+                  autoFocus={isNew}
+                  accessibilityLabel="Routine name"
+                />
+              </View>
             </>
           )}
-        </ListCard>
 
-        {moving && movingItem && movingExercise ? (
-          <LiftedRow
-            exercise={movingExercise}
-            position={moving.targetIndex + 1}
-            total={items.length}
-            onPress={drop}
-          />
-        ) : (
-          <View className="mx-lg mt-xl">
-            <TextButton label="Delete routine" onPress={onDelete} />
-          </View>
-        )}
-      </ScrollView>
+          <Kicker className={`mx-lg mb-sm ${moving ? '' : 'mt-xl'}`}>
+            Exercises · {items.length}
+          </Kicker>
+
+          <ListCard className="mx-lg">
+            {rest.map((item, index) => {
+              const exercise = exercisesById[item.exerciseId];
+              if (!exercise) return null;
+              const showGapBefore = moving?.targetIndex === index;
+
+              return (
+                <View key={item.id}>
+                  {showGapBefore ? <DropGap /> : null}
+                  {/* Hairlines inset 40 — past the handle, so the rule starts
+                    where the text does. */}
+                  {index > 0 && !showGapBefore ? <Separator inset={40} /> : null}
+                  <RoutineRow
+                    item={item}
+                    exercise={exercise}
+                    dimmed={moving != null}
+                    onPress={() =>
+                      moving
+                        ? setMoving({ ...moving, targetIndex: index })
+                        : onOpenItem(item, draft())
+                    }
+                    onLongPress={() => (moving ? undefined : lift(item, index))}
+                    onRemove={
+                      moving
+                        ? undefined
+                        : () => {
+                            tap();
+                            setRemoving(item);
+                          }
+                    }
+                  />
+                </View>
+              );
+            })}
+
+            {/* The gap can also be the very end of the list. */}
+            {moving?.targetIndex === rest.length ? <DropGap /> : null}
+
+            {moving ? null : (
+              <>
+                <Separator inset={0} />
+                <AddRow label="Add exercise" onPress={() => onAddExercise(draft())} />
+              </>
+            )}
+          </ListCard>
+
+          {moving && movingItem && movingExercise ? (
+            <LiftedRow
+              exercise={movingExercise}
+              position={moving.targetIndex + 1}
+              total={items.length}
+              onPress={drop}
+            />
+          ) : (
+            <View className="mx-lg mt-xl">
+              <TextButton label="Delete routine" onPress={onDelete} />
+            </View>
+          )}
+        </ScrollView>
       </View>
 
       {removing ? (

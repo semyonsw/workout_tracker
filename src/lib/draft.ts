@@ -117,9 +117,7 @@ export function lastSessionSets(history: SetHistory[], exerciseId: ID): SetHisto
     relevant[0].performedAt,
   );
 
-  return relevant
-    .filter((s) => s.performedAt === latestAt)
-    .sort((a, b) => a.setIndex - b.setIndex);
+  return relevant.filter((s) => s.performedAt === latestAt).sort((a, b) => a.setIndex - b.setIndex);
 }
 
 /**

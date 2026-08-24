@@ -7,7 +7,10 @@
     "start": "expo start",
     "android": "expo run:android",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -30,8 +33,13 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^9.1.2",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "prettier": "^3.9.6",
     "tailwindcss": "^3.4.0",
     "typescript": "~5.9.0",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^3.2.0"
   }
 }

@@ -58,9 +58,7 @@ export function sessionRows(history: SetHistory[], exercise: Exercise): SessionR
     rows.push({ sessionId, performedAt: ordered[0].performedAt, topWeightKg, lead, drops });
   }
 
-  return rows.sort(
-    (a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime(),
-  );
+  return rows.sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime());
 }
 
 /**

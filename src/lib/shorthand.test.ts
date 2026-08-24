@@ -18,10 +18,15 @@ import { sessionRows, summarizeSessionSets, topWeightSeries } from './history';
 import { formatCount, formatDuration, formatShortDate } from './units';
 import { seedExercisesById } from '../data/seed';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
-import type { Exercise, SetHistory } from '../types/models';
+import type { SetHistory } from '../types/models';
 
 /** One session's sets for an exercise, in set order. */
-function sets(exerciseId: string, weightKg: number | null, counts: number[], startIndex = 0): SetHistory[] {
+function sets(
+  exerciseId: string,
+  weightKg: number | null,
+  counts: number[],
+  startIndex = 0,
+): SetHistory[] {
   const exercise = seedExercisesById[exerciseId];
   return counts.map((count, i) => ({
     id: `t_${exerciseId}_${weightKg}_${startIndex + i}`,
@@ -66,7 +71,11 @@ describe('summarizeLastSession', () => {
   });
 
   it('collapses rounds to a count and a length', () => {
-    const twelve = sets('ex_boxing_bag', null, Array.from({ length: 12 }, () => 180));
+    const twelve = sets(
+      'ex_boxing_bag',
+      null,
+      Array.from({ length: 12 }, () => 180),
+    );
     expect(summarizeLastSession(twelve, boxing)).toBe('12 rounds · 3 min');
   });
 
@@ -108,12 +117,12 @@ describe('exercise shape', () => {
   });
 
   it('names the set inputs for the create screen kicker', () => {
-    expect(describeSetInputs({ requiresWeight: true, countUnit: 'reps', loadMode: 'added_bodyweight' })).toBe(
-      'weight + reps',
-    );
-    expect(describeSetInputs({ requiresWeight: false, countUnit: 'rounds', loadMode: 'none' })).toBe(
-      'rounds only',
-    );
+    expect(
+      describeSetInputs({ requiresWeight: true, countUnit: 'reps', loadMode: 'added_bodyweight' }),
+    ).toBe('weight + reps');
+    expect(
+      describeSetInputs({ requiresWeight: false, countUnit: 'rounds', loadMode: 'none' }),
+    ).toBe('rounds only');
   });
 
   it('removes the weight well when weight is off, rather than disabling it', () => {

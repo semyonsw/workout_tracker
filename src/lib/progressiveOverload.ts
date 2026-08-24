@@ -189,12 +189,14 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
   /* --- guard 1: regression --------------------------------------------- */
   // Look past the run for a heavier top weight in the recent past. If the user
   // was heavier lately, they're rebuilding — never nudge into a deload.
-  const heavierRecently = sessions.slice(run).some(
-    (s) =>
-      s.topWeightKg != null &&
-      s.topWeightKg > currentWeight &&
-      daysBetween(s.performedAt, now) <= policy.regressionLookbackDays,
-  );
+  const heavierRecently = sessions
+    .slice(run)
+    .some(
+      (s) =>
+        s.topWeightKg != null &&
+        s.topWeightKg > currentWeight &&
+        daysBetween(s.performedAt, now) <= policy.regressionLookbackDays,
+    );
   if (heavierRecently) {
     return {
       ...empty,

@@ -99,14 +99,8 @@ import {
 import { type ExerciseDraft } from '../lib/exerciseDraft';
 import { describeSetInputs, wellsFor, type WellSpec } from '../lib/exerciseShape';
 import { tap } from '../lib/feedback';
-import {
-  CLUSTERS,
-  CLUSTER_MUSCLES,
-  clusterLabel,
-  clusterOf,
-  MUSCLE_CLUSTER,
-} from '../lib/muscles';
-import { formatClock, formatDuration, weightSteps } from '../lib/units';
+import { CLUSTERS, CLUSTER_MUSCLES, clusterLabel, clusterOf, MUSCLE_CLUSTER } from '../lib/muscles';
+import { formatClock, weightSteps } from '../lib/units';
 import type { CountUnit, LoadMode, MuscleCluster, MuscleGroup, TimerMode } from '../types/models';
 
 const LOAD_MODES: readonly { value: LoadMode; label: string }[] = [
@@ -229,7 +223,10 @@ export function CreateExerciseScreen({
         {/* Muscles, through the hierarchy: cluster first, then what's inside it.
             The kicker states the filing decision this makes — cluster, then the
             picks in the order they were tapped. */}
-        <Kicker tone={draft.muscleGroups.length > 0 ? 'green' : 'faint'} className="mx-lg mb-sm mt-xl">
+        <Kicker
+          tone={draft.muscleGroups.length > 0 ? 'green' : 'faint'}
+          className="mx-lg mb-sm mt-xl"
+        >
           Muscles{describeMuscles(draft.muscleGroups)}
         </Kicker>
 

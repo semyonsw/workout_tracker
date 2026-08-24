@@ -63,7 +63,9 @@ export function folderLabel(folderUri: string): string {
   const decoded = safeDecode(folderUri);
   const afterTree = decoded.split('tree/').pop() ?? decoded;
   // `primary:Download` — the volume prefix is noise to everyone but Android.
-  const withoutVolume = afterTree.includes(':') ? afterTree.split(':').slice(1).join(':') : afterTree;
+  const withoutVolume = afterTree.includes(':')
+    ? afterTree.split(':').slice(1).join(':')
+    : afterTree;
   const cleaned = withoutVolume.replace(/^\/+|\/+$/g, '').replace(/\//g, ' / ');
   return cleaned === '' ? 'the folder you picked' : cleaned;
 }
@@ -123,8 +125,7 @@ export async function writeToAppFolder(baseName: string, contents: string): Prom
 
 /** What `saveJsonFile` did. `cancelled` is a user decision, not a failure. */
 export type SaveOutcome =
-  | { saved: true; name: string; where: string }
-  | { saved: false; cancelled: true };
+  { saved: true; name: string; where: string } | { saved: false; cancelled: true };
 
 /**
  * Write the file somewhere the user picked and can find again.

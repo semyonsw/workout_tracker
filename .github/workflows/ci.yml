@@ -1,0 +1,39 @@
+# The suite, on every push and every pull request.
+#
+# `npm test` and `npm run typecheck` are the two commands the house rules require
+# to be green before a phase lands, and a rule that only runs when somebody
+# remembers to run it is a rule that is already broken. Lint joins them because a
+# formatter nobody enforces is a formatter that drifts.
+#
+# Deliberately minimal: no matrix, no Android build. The app is Android-only and
+# built from one machine with one keystore (see BUILD_ANDROID.md), so a second
+# Node version would test nothing this project ships, and a gradle job in CI
+# would need the signing material that must never reach the repo. This workflow
+# guards the pure layer — `src/lib/`, the stores, the types — which is where every
+# decision in the app actually lives.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          # `npm ci` re-downloads the whole locked tree otherwise, which is most
+          # of this job's wall clock.
+          cache: npm
+
+      # `ci`, not `install`: BUILD_ANDROID.md is explicit that the locked tree is
+      # the tree, and a lockfile CI is allowed to update is not a lockfile.
+      - run: npm ci
+
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint

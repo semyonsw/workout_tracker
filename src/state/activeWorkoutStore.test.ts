@@ -132,7 +132,7 @@ function sourceFiles(dir: string): string[] {
 /* ------------------------------------------------------------------ */
 
 describe('rest: pause, resume, skip', () => {
-  it('completing a set starts rest of the entry\'s own length', () => {
+  it("completing a set starts rest of the entry's own length", () => {
     const session = startRoutine();
     const entry = session.entries[0];
     const before = Date.now();
@@ -388,7 +388,7 @@ describe('rest lengths come from settings, live', () => {
     }
   });
 
-  it('startRestNow runs the user\'s between-sets length', () => {
+  it("startRestNow runs the user's between-sets length", () => {
     withSettings({ sets: 75 }, () => {
       startRoutine();
       useActiveWorkout.getState().startRestNow();
@@ -714,7 +714,7 @@ describe('editing the session while it runs', () => {
     expect(after?.sets.map((s) => s.localId)).toEqual(before.slice(0, -1));
   });
 
-  it("removing the last remaining set removes the exercise", () => {
+  it('removing the last remaining set removes the exercise', () => {
     const session = startRoutine();
     const entry = session.entries[0];
 

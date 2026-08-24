@@ -261,10 +261,7 @@ interface MonthGroup {
  * The input is already newest-first (the store keeps it that way), so insertion
  * order is the right order and nothing is re-sorted here.
  */
-function groupByMonth(
-  workouts: readonly CompletedWorkout[],
-  now: Date = new Date(),
-): MonthGroup[] {
+function groupByMonth(workouts: readonly CompletedWorkout[], now: Date = new Date()): MonthGroup[] {
   const groups = new Map<string, MonthGroup>();
 
   for (const workout of workouts) {

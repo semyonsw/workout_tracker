@@ -212,15 +212,7 @@ export function QuickAdjust({
 }
 
 /** 44 high, 46 wide minimum — a thumb target, not a decoration. */
-function Chip({
-  label,
-  first,
-  onPress,
-}: {
-  label: string;
-  first: boolean;
-  onPress: () => void;
-}) {
+function Chip({ label, first, onPress }: { label: string; first: boolean; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
@@ -243,7 +235,8 @@ function Chip({
  */
 function formatDelta(delta: number, exercise: Exercise, isWeight: boolean): string {
   const rounded = Number(delta.toFixed(2));
-  const timeBased = !isWeight && (exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds');
+  const timeBased =
+    !isWeight && (exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds');
   const body = `${Math.abs(rounded)}${timeBased ? 's' : ''}`;
   return rounded < 0 ? `−${body}` : `+${body}`;
 }

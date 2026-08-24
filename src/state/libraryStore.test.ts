@@ -79,7 +79,12 @@ describe('creating a routine', () => {
   it('falls back to a sane target per count unit when the exercise has none', () => {
     const created = useLibrary.getState().createRoutine();
     useLibrary.getState().addExercise(
-      newExercise({ id: 'ex_round', countUnit: 'rounds', requiresWeight: false, loadMode: 'none' }),
+      newExercise({
+        id: 'ex_round',
+        countUnit: 'rounds',
+        requiresWeight: false,
+        loadMode: 'none',
+      }),
     );
     useLibrary.getState().appendToRoutine(created.id, 'ex_round');
 

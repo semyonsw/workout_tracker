@@ -216,13 +216,7 @@ export function HomeScreen({
  * it opens the screen that edits it — a chip is a label, not a start button, and
  * the thing you want after looking at your order is usually to change it.
  */
-function SequenceStrip({
-  sequence,
-  onPress,
-}: {
-  sequence: SequenceView;
-  onPress: () => void;
-}) {
+function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress: () => void }) {
   return (
     <View>
       <Kicker className="mx-lg">Sequence</Kicker>
@@ -300,13 +294,7 @@ function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => 
   );
 }
 
-function RecentRow({
-  session,
-  onPress,
-}: {
-  session: RecentSessionSummary;
-  onPress: () => void;
-}) {
+function RecentRow({ session, onPress }: { session: RecentSessionSummary; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
@@ -330,8 +318,8 @@ function Empty() {
     <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
       <Kicker>Nothing to open</Kicker>
       <Text className="mt-sm text-body text-ink-muted">
-        Put some exercises in a routine — Routines, in the tab bar — and it shows up here, ready
-        to open.
+        Put some exercises in a routine — Routines, in the tab bar — and it shows up here, ready to
+        open.
       </Text>
     </View>
   );
