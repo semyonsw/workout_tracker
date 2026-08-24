@@ -38,7 +38,7 @@ import { memo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import type { DraftEntry, DraftSet } from '../lib/draft';
-import { formatTarget } from '../lib/draft';
+import { formatTarget, workingSetLabels } from '../lib/draft';
 import { tap, undo } from '../lib/feedback';
 import { isTimed as isTimedExercise } from '../lib/setTimer';
 import { formatClock } from '../lib/units';
@@ -113,6 +113,13 @@ function ExerciseCardComponent({
   const total = entry.sets.length;
   const allDone = completed === total && total > 0;
   const nextSetId = entry.sets.find((s) => !s.isCompleted)?.localId ?? null;
+  /*
+   * W, 1, 2, 3 — warm-ups are not numbered as working sets, and the working sets
+   * number around them. Derived in `lib/draft.ts`: it is arithmetic over the list,
+   * and a component subtracting a running count from an index is a component with
+   * a state machine in it.
+   */
+  const setLabels = workingSetLabels(entry.sets);
   const nudgeWaiting = entry.overload.shouldNudge && !entry.overloadAccepted;
   const isRounds = entry.exercise.countUnit === 'rounds';
   const isTimed = isTimedExercise(entry.exercise);
@@ -218,6 +225,7 @@ function ExerciseCardComponent({
         verdict={entry.overload}
         unitSystem={unitSystem}
         loadMode={entry.exercise.loadMode}
+        countUnit={entry.exercise.countUnit}
         resolved={entry.overloadAccepted}
         onAccept={onAcceptOverload}
         onDismiss={onDismissOverload}
@@ -237,7 +245,7 @@ function ExerciseCardComponent({
 
             <SetRow
               set={set}
-              index={index}
+              workingNumber={setLabels[index]}
               exercise={entry.exercise}
               unitSystem={unitSystem}
               isNext={set.localId === nextSetId}

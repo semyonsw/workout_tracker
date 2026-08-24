@@ -119,7 +119,16 @@ function finiteOrNull(value: number | undefined): number | null {
 /* History lookup                                                      */
 /* ------------------------------------------------------------------ */
 
-/** Working sets of the most recent session for an exercise, in set order. */
+/**
+ * WORKING sets of the most recent session for an exercise, in set order.
+ *
+ * `!s.isWarmup` in the filter is what makes prefills correct now that warm-ups
+ * are reachable: without it, a light warm-up single would be copied into the
+ * first row of the next session as though it were the working weight, and the
+ * one-tap promise would hand the user a set they never meant to do. It was
+ * already there — this note is here so a future edit knows it is load-bearing
+ * rather than defensive.
+ */
 export function lastSessionSets(history: SetHistory[], exerciseId: ID): SetHistory[] {
   const relevant = history.filter(
     (s) => s.exerciseId === exerciseId && s.isCompleted && !s.isWarmup,
@@ -435,6 +444,29 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
     startedAt,
     entries,
   };
+}
+
+/**
+ * What each row's index column reads: the WORKING-set number, or null for a
+ * warm-up.
+ *
+ * A warm-up is a set that does not count — it is out of the volume, out of the
+ * set count, out of the shorthand and out of every overload verdict — so
+ * numbering it as one would make every number below it wrong. Three working sets
+ * with a warm-up on top read W, 1, 2, 3, and "set 2 of 3" means what it says.
+ *
+ * Here rather than in the card because it is arithmetic over a list, which is
+ * exactly the kind of thing a screen should not be doing: a component that
+ * subtracts a running count from an index is a component with a state machine in
+ * it.
+ */
+export function workingSetLabels(sets: readonly Pick<DraftSet, 'isWarmup'>[]): (number | null)[] {
+  let working = 0;
+  return sets.map((set) => {
+    if (set.isWarmup) return null;
+    working += 1;
+    return working;
+  });
 }
 
 /* ------------------------------------------------------------------ */

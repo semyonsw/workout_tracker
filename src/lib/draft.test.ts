@@ -6,6 +6,7 @@ import {
   defaultTargetCount,
   defaultTargetSets,
   sessionVolume,
+  workingSetLabels,
   type DraftSession,
 } from './draft';
 import { DEFAULT_OVERLOAD_POLICY } from './progressiveOverload';
@@ -388,5 +389,34 @@ describe('defaultTargetSets', () => {
     expect(defaultTargetSets({ countUnit: 'rounds' })).toBe(12);
     expect(defaultTargetSets({ countUnit: 'seconds' })).toBe(3);
     expect(defaultTargetSets({ countUnit: 'meters' })).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * W, 1, 2, 3.
+ *
+ * A warm-up is a set that does not count, so it must not be numbered as one:
+ * "set 2 of 3" has to mean the second of three sets that counted.
+ */
+describe('workingSetLabels', () => {
+  const w = { isWarmup: true };
+  const s = { isWarmup: false };
+
+  it('numbers only the working sets', () => {
+    expect(workingSetLabels([w, s, s, s])).toEqual([null, 1, 2, 3]);
+  });
+
+  it('numbers straight through when nothing is a warm-up', () => {
+    expect(workingSetLabels([s, s, s])).toEqual([1, 2, 3]);
+  });
+
+  it('handles a warm-up in the middle, which is unusual but legal', () => {
+    expect(workingSetLabels([s, w, s])).toEqual([1, null, 2]);
+  });
+
+  it('is empty for an empty list', () => {
+    expect(workingSetLabels([])).toEqual([]);
   });
 });

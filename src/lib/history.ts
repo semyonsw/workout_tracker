@@ -69,11 +69,22 @@ export function sessionRows(history: SetHistory[], exercise: Exercise): SessionR
  * means the same thing in all three places.
  *
  * `sets` must already be in set order.
+ *
+ * WARM-UPS ARE DROPPED HERE, not only by the callers. All three of them filter
+ * already — `sessionRows` above, `lastSessionSets` for the prefills,
+ * `buildCompletedWorkout` for the stored summary — so this is belt and braces,
+ * and it is the right place for the belt: the alternative is three callers that
+ * each have to remember, and the failure mode of forgetting is a light warm-up
+ * rendering as a drop-set group and a heavy one leading the line as though it
+ * were the working weight.
  */
 export function summarizeSessionSets(
-  sets: SetHistory[],
+  rawSets: SetHistory[],
   exercise: Exercise,
 ): { lead: string; drops: string | null; topWeightKg: number | null } {
+  const sets = rawSets.filter((s) => !s.isWarmup);
+  if (sets.length === 0) return { lead: '', drops: null, topWeightKg: null };
+
   const groups = groupByWeight(sets);
   const weights = sets.map((s) => s.weightKg).filter((w): w is number => w != null);
   const topWeightKg = weights.length > 0 ? Math.max(...weights) : null;

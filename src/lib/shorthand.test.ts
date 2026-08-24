@@ -192,3 +192,51 @@ describe('formatting primitives', () => {
     expect(formatShortDate('2026-08-08T18:00:00.000Z')).toBe('8 Aug');
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Warm-ups, now that they are reachable.
+ *
+ * `isWarmup` was on both `DraftSet` and `SetHistory` from the first release with
+ * two consumers filtering on it and nothing able to set it. The 0.11.0 toggle in
+ * `QuickAdjust` makes these cases real rather than theoretical.
+ */
+describe('the shorthand ignores warm-ups', () => {
+  const exercise = seedExercisesById['ex_pullup_90'];
+
+  it('leaves a light warm-up out instead of rendering it as a drop set', () => {
+    // "+15 kg · 8" reads as a drop from +40, which is a session that did not
+    // happen: it was the set before the working sets, not after them.
+    const rows = [
+      { ...sets(exercise.id, 15, [8])[0], isWarmup: true, setIndex: 0 },
+      ...sets(exercise.id, 40, [4, 4, 4]).map((r, i) => ({ ...r, setIndex: i + 1 })),
+    ];
+
+    const { lead, drops, topWeightKg } = summarizeSessionSets(rows, exercise);
+    expect(lead).toBe('+40 kg · 4 4 4');
+    expect(drops).toBeNull();
+    expect(topWeightKg).toBe(40);
+  });
+
+  it('never lets a heavy warm-up single lead the line', () => {
+    // The bug this fixes twice over: the same row also drove the overload verdict.
+    const rows = [
+      { ...sets(exercise.id, 60, [1])[0], isWarmup: true, setIndex: 0 },
+      ...sets(exercise.id, 40, [4, 4]).map((r, i) => ({ ...r, setIndex: i + 1 })),
+    ];
+
+    const { lead, topWeightKg } = summarizeSessionSets(rows, exercise);
+    expect(lead).toBe('+40 kg · 4 4');
+    expect(topWeightKg).toBe(40);
+  });
+
+  it('says nothing at all about a session of only warm-ups', () => {
+    const rows = sets(exercise.id, 15, [8, 8]).map((r) => ({ ...r, isWarmup: true }));
+    expect(summarizeSessionSets(rows, exercise)).toEqual({
+      lead: '',
+      drops: null,
+      topWeightKg: null,
+    });
+  });
+});

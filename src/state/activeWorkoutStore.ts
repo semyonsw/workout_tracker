@@ -481,14 +481,24 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
 
         set({
           session: mapEntry(session, entryId, (entry) => {
-            const { suggestedWeightKg, suggestedReps } = entry.overload;
+            /*
+             * One suggestion, two axes, and the same rule for both: a suggested
+             * number replaces the current one on every set that has NOT been
+             * logged, and a set already ticked is history.
+             *
+             * `suggestedCount` covers reps-before-weight on a weighted lift AND
+             * the whole of `due_count` — one more push-up, fifteen more seconds of
+             * plank, twenty-five more metres. It is one field because it is one
+             * thing: the number that goes into `count`.
+             */
+            const { suggestedWeightKg, suggestedCount } = entry.overload;
             const sets = entry.sets.map((s) =>
               s.isCompleted
                 ? s
                 : {
                     ...s,
                     weightKg: suggestedWeightKg ?? s.weightKg,
-                    count: suggestedReps ?? s.count,
+                    count: suggestedCount ?? s.count,
                     isPrefilled: false,
                   },
             );

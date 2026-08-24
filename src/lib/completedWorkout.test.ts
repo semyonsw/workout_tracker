@@ -276,3 +276,65 @@ describe('monthKey', () => {
     expect(monthKey('2025-12-31T23:00:00.000Z')).toBe('2025-12');
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * What a warm-up costs the record, which is nothing, and what it costs the
+ * numbers derived from it, which is itself.
+ *
+ * `isWarmup` became reachable in 0.11.0 (`QuickAdjust`). Before that these cases
+ * could only be produced by a hand-edited backup; now every one of them is a
+ * thumb away.
+ */
+describe('warm-ups in a finished workout', () => {
+  /** A session with `warmups` leading rows marked as warm-ups. */
+  function withWarmups(logged: number, warmups: number): DraftSession {
+    const session = logFirstEntry(draft(), logged, 40);
+    const [first, ...rest] = session.entries;
+    return {
+      ...session,
+      entries: [
+        { ...first, sets: first.sets.map((s, i) => (i < warmups ? { ...s, isWarmup: true } : s)) },
+        ...rest,
+      ],
+    };
+  }
+
+  it('keeps the row but leaves it out of every count', () => {
+    const workout = buildCompletedWorkout(withWarmups(3, 1), undefined, 82);
+
+    // The row is history: it happened, and `isWarmup` is what everything
+    // downstream filters on.
+    expect(workout?.sets).toHaveLength(3);
+    expect(workout?.sets.filter((s) => s.isWarmup)).toHaveLength(1);
+    // The derived numbers count the two working sets.
+    expect(workout?.setCount).toBe(2);
+    expect(workout?.exercises[0].setCount).toBe(2);
+  });
+
+  it('leaves it out of the volume', () => {
+    const withOne = buildCompletedWorkout(withWarmups(3, 1), undefined, 82);
+    const withNone = buildCompletedWorkout(withWarmups(3, 0), undefined, 82);
+    const [a, b, c] = withWarmups(3, 0).entries[0].sets;
+
+    // Exactly the first set's worth of volume, and no more.
+    const perSet = (reps: number) => (82 + 40) * reps;
+    expect(withNone?.totalVolumeKg).toBe(perSet(a.count) + perSet(b.count) + perSet(c.count));
+    expect(withOne?.totalVolumeKg).toBe(perSet(b.count) + perSet(c.count));
+  });
+
+  it('leaves it out of the exercise total and the shorthand', () => {
+    const workout = buildCompletedWorkout(withWarmups(3, 1), undefined, 82);
+    const [, b, c] = withWarmups(3, 0).entries[0].sets;
+
+    expect(workout?.exercises[0].totalCount).toBe(b.count + c.count);
+    expect(workout?.exercises[0].summary).not.toContain('undefined');
+  });
+
+  it('records nothing at all when only warm-ups were logged', () => {
+    // Warming up and going home is not a workout, and a history row claiming one
+    // is worse than no row — the same argument as a session with nothing logged.
+    expect(buildCompletedWorkout(withWarmups(2, 2))).toBeNull();
+  });
+});

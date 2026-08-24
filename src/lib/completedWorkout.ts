@@ -85,9 +85,22 @@ export interface CompletedWorkout {
 /**
  * Build the record for a finished session, or null if there is nothing to record.
  *
- * A session with no completed sets returns null: the user started something and
- * logged nothing, and an empty row in the history list is worse than no row —
- * it claims a workout happened.
+ * A session with no completed WORKING sets returns null: the user started
+ * something and logged nothing that counts, and an empty row in the history list
+ * is worse than no row — it claims a workout happened. Warming up and going home
+ * is one of those cases, now that a warm-up is a thing the user can actually
+ * mark.
+ *
+ * ── WHAT A WARM-UP DOES AND DOES NOT COUNT TOWARDS ─────────────────────────
+ *
+ * Its ROW is kept: `sets` carries every completed set, warm-ups included, because
+ * that is the record of what happened and because `isWarmup` is what every
+ * consumer downstream filters on. Everything DERIVED counts working sets only —
+ * `setCount`, the shorthand `summary`, `totalCount`, `topWeightKg` and the volume.
+ * That is not a new rule; it is the rule `progressiveOverload` and `sessionRows`
+ * have always followed, applied at the one place that was still summing raw rows.
+ * A heavy warm-up single used to become the session's top weight in the history
+ * line, which is the same bug that drove a wrong nudge.
  */
 export function buildCompletedWorkout(
   session: DraftSession,
@@ -101,6 +114,9 @@ export function buildCompletedWorkout(
 ): CompletedWorkout | null {
   const sets = draftToSetHistory(session);
   if (sets.length === 0) return null;
+
+  const working = sets.filter((row) => !row.isWarmup);
+  if (working.length === 0) return null;
 
   const startedAt = sessionPerformedAt(session);
   const startedMs = new Date(startedAt).getTime();
@@ -118,7 +134,10 @@ export function buildCompletedWorkout(
     const done = entry.sets.filter((s) => s.isCompleted);
     if (done.length === 0) continue;
 
-    const rows = sets.filter((row) => row.exerciseId === entry.exercise.id);
+    const rows = working.filter((row) => row.exerciseId === entry.exercise.id);
+    // An exercise where only the warm-ups were ticked gets no line: there is
+    // nothing to summarize, and "0 sets" under a name is not a record of anything.
+    if (rows.length === 0) continue;
     const { lead, drops, topWeightKg } = summarizeSessionSets(rows, entry.exercise);
 
     exercises.push({
@@ -142,7 +161,7 @@ export function buildCompletedWorkout(
     startedAt,
     endedAt: endedAt.toISOString(),
     durationMinutes,
-    setCount: sets.length,
+    setCount: working.length,
     totalVolumeKg: volume.kg,
     volumeIsPartial: volume.unweighable > 0,
     exercises,

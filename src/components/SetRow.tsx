@@ -2,6 +2,7 @@
  * SetRow — the most important 56 dp in the app.
  *
  *   ┌──────────────────────────────────────────────┐
+ *   │  W     +20 KG      ×    8 REPS           ( ✓ )│  ← a warm-up
  *   │  1     +40 KG      ×    4 REPS           ( ✓ )│
  *   │  2       2:00 MIN                    ( ▶ )( ✓ )│  ← a timed set
  *   └──────────────────────────────────────────────┘
@@ -23,6 +24,13 @@
  *     never changes meaning anywhere in the app, so it does not get replaced —
  *     and a set held away from the phone can still be logged in one tap.
  *     While the clock is running the ▶ fills green and becomes stop-and-log.
+ *   • A WARM-UP reads `W` where a working set reads its number, and the working
+ *     sets number around it: W, 1, 2, 3. A warm-up is a set that does not
+ *     count — it is out of the volume, out of the set count, out of the
+ *     shorthand and out of every verdict — so it must not be numbered as though
+ *     it did, and "set 2 of 5" must mean the second of five sets that counted.
+ *     Same `ink-faint` as the numbers, because it is the same kind of landmark
+ *     and not a warning; the toggle lives in `QuickAdjust`, beside `Remove set`.
  */
 
 import { memo } from 'react';
@@ -39,7 +47,14 @@ export type SetField = 'weight' | 'count';
 
 interface SetRowProps {
   set: DraftSet;
-  index: number;
+  /**
+   * What the leftmost column reads: the WORKING-set number (1-based), or null for
+   * a warm-up, which reads `W` instead.
+   *
+   * Computed by the card rather than here, because it depends on the sets above
+   * this one — `workingSetLabels` is the pure function that does it.
+   */
+  workingNumber: number | null;
   exercise: Exercise;
   unitSystem: UnitSystem;
   /** The next uncompleted set — lifted onto `surface-alt` so the eye lands on it. */
@@ -58,7 +73,7 @@ interface SetRowProps {
 
 function SetRowComponent({
   set,
-  index,
+  workingNumber,
   exercise,
   unitSystem,
   isNext,
@@ -97,9 +112,10 @@ function SetRowComponent({
         isNext && !done ? 'bg-surface-alt' : 'bg-transparent',
       ].join(' ')}
     >
-      {/* Set index — never a tap target, purely a landmark. */}
+      {/* Set index — never a tap target, purely a landmark. `W` for a warm-up:
+          see the file header. */}
       <Text className="w-[24px] text-micro font-semibold uppercase tabular-nums text-ink-faint">
-        {index + 1}
+        {workingNumber == null ? 'W' : workingNumber}
       </Text>
 
       {exercise.requiresWeight ? (

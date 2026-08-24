@@ -238,7 +238,10 @@ function sanitizeCompletedExercise(
       finiteOr(
         raw.totalCount,
         rows
-          .filter((row) => row.exerciseId === raw.exerciseId)
+          // Working sets only, matching what `buildCompletedWorkout` writes: a
+          // warm-up is a set that does not count, so it must not appear in a
+          // total recovered from the rows either.
+          .filter((row) => row.exerciseId === raw.exerciseId && !row.isWarmup)
           .reduce((sum, row) => sum + row.count, 0),
       ),
     ),
