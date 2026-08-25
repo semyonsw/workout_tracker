@@ -10,7 +10,8 @@
  *     "exercises": [ ... ],
  *     "routines":  [ ... ],
  *     "workouts":  [ ... ],
- *     "sequence":  { "isActive": false, "routineIds": [], "cursor": 0 }
+ *     "sequence":  { "isActive": false, "routineIds": [], "cursor": 0 },
+ *     "numbering": { "workoutId": "d_session_x", "number": 91 }
  *   }
  *
  * WHY THIS EXISTS. Everything the user owns lives in three AsyncStorage keys on one
@@ -79,6 +80,12 @@ export interface BackupPayload {
    * which restores as "off and empty" — the same thing a fresh install has.
    */
   sequence?: unknown;
+  /**
+   * The pinned workout number ("this session was number 91"), if one is set. Also
+   * optional, for the same reason — and worth carrying, because it is the one
+   * fact in the app that cannot be recomputed from the sessions themselves.
+   */
+  numbering?: unknown;
 }
 
 export interface BackupEnvelope extends BackupPayload {
@@ -209,9 +216,10 @@ export function parseBackup(text: string): ParseResult {
     exercises: asArray(source.exercises),
     routines: asArray(source.routines),
     workouts: asArray(source.workouts),
-    // Passed through untouched — `libraryStore` owns what a sequence may be, and a
-    // file from before sequences existed simply has none.
+    // Passed through untouched — the stores own what these may be, and a file
+    // from before either existed simply has neither.
     sequence: source.sequence ?? null,
+    numbering: source.numbering ?? null,
   };
   const counts = countPayload(payload);
 

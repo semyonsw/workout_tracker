@@ -411,6 +411,19 @@ export interface MigrationOutcome {
   /** Workouts written, when the status is 'migrated'. */
   workouts: number;
   sets: number;
+  /**
+   * Whatever the legacy blob held under `numbering`, RAW and unvalidated.
+   *
+   * Handed back rather than stored, for the same reason `sanitize` is passed in:
+   * this module knows nothing about the shape of what it is moving, and the store
+   * keeps its single validator. Undefined whenever there was no blob to read.
+   *
+   * It exists because the pinned workout number shipped in a build that persisted
+   * the whole store through AsyncStorage. Migrating the workouts and silently
+   * dropping the pin would renumber that user's entire log on first launch — and
+   * the pin is the one fact in the app that cannot be recomputed from the sessions.
+   */
+  legacyNumbering?: unknown;
 }
 
 /**
@@ -456,9 +469,11 @@ export async function migrateFromAsyncStorage(
   }
 
   let workouts: CompletedWorkout[] = [];
+  let legacyNumbering: unknown;
   try {
-    const parsed = JSON.parse(blob) as { state?: { workouts?: unknown } };
+    const parsed = JSON.parse(blob) as { state?: { workouts?: unknown; numbering?: unknown } };
     workouts = sanitize(parsed?.state?.workouts);
+    legacyNumbering = parsed?.state?.numbering;
   } catch {
     // A corrupt blob. Recorded as done: there is nothing in it to lose, and the
     // key stays on disk for anybody who wants to look at it.
@@ -491,5 +506,5 @@ export async function migrateFromAsyncStorage(
   }
 
   writeMeta(MIGRATED_FLAG, new Date().toISOString());
-  return { status: 'migrated', workouts: workouts.length, sets: expectedSets };
+  return { status: 'migrated', workouts: workouts.length, sets: expectedSets, legacyNumbering };
 }

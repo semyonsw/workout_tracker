@@ -11,6 +11,11 @@ this time because it is used. The finished-workout log moved out of AsyncStorage
 and into a real database (`src/state/historyDb.ts`), so the set of native modules
 in the APK is different from the previous release's.
 
+**0.11.0 is folded into this release.** The graphs and the workout numbering
+below were built on a branch that was never merged, so no `versionCode` 11 was
+ever published; if you sideloaded that build while it existed, this one is a
+normal upgrade over it.
+
 **Your log is migrated on the first launch, once, and the old copy is not
 deleted.** The migration writes everything into the database in one transaction,
 reads it back and counts it before recording itself as done, and leaves the
@@ -54,6 +59,24 @@ line at the end of this section.
   never rounds — an unreachable weight shows no line rather than the nearest one.
 - **Settings tells you what you actually rest**, once there is enough measured,
   with one tap to adopt it.
+- **Every workout is numbered.** History rows lead with `Workout 92`. Open any
+  workout and tap **`Set the workout number`**: everything before it counts down
+  and everything after it counts up, so telling the app once that your last
+  session was 91 puts the whole log — including the ninety sessions that happened
+  before this app existed — on the right ordinal. The pin travels in your export
+  file, and deleting the session it is pinned to moves the pin instead of losing it.
+- **`History → Graphs`.** A switch at the top of History. `All workouts` draws
+  reps per workout and kilograms per workout over time; picking one exercise draws
+  its reps per session and its top working weight per session. Each graph states
+  its own direction in words — `up 34 reps since 11 Jun`, or `level` — because a
+  plateau is the finding this app exists to surface.
+
+## 0.10.0 — what changed on the phone
+
+
+`versionCode` 10. **It needed a prebuild**: `expo-sqlite` (and the Drizzle
+packages behind it) were unused and are gone, so the set of native modules in the
+APK is different from 0.9.0's.
 
 - **Opening a workout no longer starts it.** A routine opens on its exercise list
   with nothing timed and nothing dated; the session begins on **`Start the

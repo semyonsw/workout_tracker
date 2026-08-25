@@ -6,6 +6,7 @@ import {
   monthKey,
   recentlyUsedExerciseIds,
   recomputeWorkout,
+  workoutNumbers,
 } from './completedWorkout';
 import { buildDraftSession, type DraftSession } from './draft';
 import { seedExercises, seedRoutine, seedUser } from '../data/seed';
@@ -446,5 +447,67 @@ describe('recomputeWorkout', () => {
     expect(after.sets).toHaveLength(3);
     expect(after.setCount).toBe(2);
     expect(after.exercises[0].setCount).toBe(2);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+describe('workoutNumbers', () => {
+  /** Newest-first, like the store keeps them. */
+  const log = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `w${count - i}`,
+      title: 'Session',
+      startedAt: new Date(Date.UTC(2026, 7, count - i)).toISOString(),
+      endedAt: new Date(Date.UTC(2026, 7, count - i)).toISOString(),
+      durationMinutes: 40,
+      setCount: 1,
+      totalVolumeKg: 0,
+      volumeIsPartial: false,
+      exercises: [],
+      sets: [],
+    }));
+
+  it('numbers from 1 at the oldest workout when nothing is pinned', () => {
+    // w1 is the oldest, w3 the newest.
+    expect(workoutNumbers(log(3))).toEqual({ w1: 1, w2: 2, w3: 3 });
+  });
+
+  it('counts backwards and forwards from a pinned workout', () => {
+    // "My last one was workout 91" — said once, on the newest session.
+    const workouts = log(3);
+    expect(workoutNumbers(workouts, { workoutId: 'w3', number: 91 })).toEqual({
+      w1: 89,
+      w2: 90,
+      w3: 91,
+    });
+  });
+
+  it('pins just as well from the middle of the log', () => {
+    const workouts = log(4);
+    expect(workoutNumbers(workouts, { workoutId: 'w2', number: 50 })).toEqual({
+      w1: 49,
+      w2: 50,
+      w3: 51,
+      w4: 52,
+    });
+  });
+
+  it('falls back to 1 when the pinned workout is gone', () => {
+    expect(workoutNumbers(log(2), { workoutId: 'deleted', number: 91 })).toEqual({ w1: 1, w2: 2 });
+  });
+
+  it('lets a number fall below 1 rather than inventing one', () => {
+    // Pinning "1" to the newest of three leaves the two before it nowhere to go;
+    // the UI hides those rather than showing a repaired number that lies.
+    expect(workoutNumbers(log(3), { workoutId: 'w3', number: 1 })).toEqual({
+      w1: -1,
+      w2: 0,
+      w3: 1,
+    });
+  });
+
+  it('has nothing to say about an empty log', () => {
+    expect(workoutNumbers([], { workoutId: 'w1', number: 5 })).toEqual({});
   });
 });

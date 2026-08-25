@@ -20,10 +20,16 @@ node_modules/
 # (.github/workflows/release.yml). Same download, same URL shape, same "open it
 # in Files and tap install" — and the repo stays the size of its source.
 #
-# The 0.10.0 APK is still in git history and still in the working tree. Removing
-# it from history is a rewrite, which is the repo owner's call and not a
-# side effect of a release change.
+# The CURRENT release APK is committed anyway, as an exception below, because the
+# repo owner asked for one they can copy straight onto the phone without waiting
+# on CI or opening a browser. One file, replaced in place each release rather than
+# accumulating: the Releases page is still where old versions live.
+#
+# Earlier APKs (0.10.0, 0.11.0) are still in git history. Removing them from
+# history is a rewrite, which is the repo owner's call and not a side effect of a
+# release change.
 *.apk
+!workout-tracker-0.12.0.apk
 *.aab
 dist/
 web-build/

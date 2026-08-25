@@ -147,7 +147,7 @@ describe('sessionRows', () => {
 
   it('orders newest first and plots oldest first', () => {
     expect(rows[0].performedAt.startsWith('2026-08-08')).toBe(true);
-    expect(topWeightSeries(rows).map((p) => p.topWeightKg)).toEqual([60, 70, 75, 80, 80, 80]);
+    expect(topWeightSeries(rows).map((p) => p.value)).toEqual([60, 70, 75, 80, 80, 80]);
   });
 
   it('drops warm-ups and incomplete sets, exactly as the overload engine does', () => {

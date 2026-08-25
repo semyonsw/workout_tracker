@@ -310,3 +310,25 @@ describe('merging workouts in', () => {
     expect(useWorkoutHistory.getState().workouts[0].sets.length).toBeGreaterThan(0);
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+describe('the pinned workout number rides along', () => {
+  it('is exported and restored', () => {
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    const workout = useWorkoutHistory.getState().workouts[0];
+    useWorkoutHistory.getState().setWorkoutNumber(workout.id, 91);
+
+    const text = exportBackupText(new Date('2026-08-19T09:00:00.000Z'));
+    useWorkoutHistory.getState().clearHistory();
+    expect(useWorkoutHistory.getState().numbering).toBeNull();
+
+    const parsed = parseBackup(text);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    applyBackup(parsed.envelope);
+
+    // The one fact in the app that cannot be recomputed from the sessions.
+    expect(useWorkoutHistory.getState().numbering).toEqual({ workoutId: workout.id, number: 91 });
+  });
+});

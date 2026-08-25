@@ -13,7 +13,7 @@ set that repeats last session costs one tap.**
 ```bash
 npm ci                   # exactly the locked tree — see BUILD_ANDROID.md
 npx expo start           # dev server
-npm test                 # 530+ tests: timers, overload, stores, backups, migration
+npm test                 # 560+ tests: timers, overload, trends, stores, backups, migration
 npm run typecheck
 npm run lint             # also what CI runs, on every push
 ```
@@ -38,11 +38,13 @@ npm run lint             # also what CI runs, on every push
 | Overload nudges | derived from your own set history: a weight, a hold or a rep count that has been the same for N days over M sessions, with the suggestion applied to every unlogged set in one tap. Planks and push-ups get the same treatment as the barbell — `3× at 2:00 — try 2:15` |
 | Plate maths | `20 + 2×10 + 2×2.5` under the weight cell of a barbell lift. It informs and never rounds: a weight your plates cannot make shows no line rather than the nearest one |
 | History | every finished workout, newest first, by month: date, duration, sets, volume, each exercise in the app's shorthand **and its total** — `+40 kg · 4 4 4` with `12 reps total` under it. Tapping a workout anywhere in the app opens that workout |
+| Workout numbers | every workout carries an ordinal — `Workout 92`. Pin the number on any one session (`Set the workout number` inside it) and every other workout counts from there, backwards and forwards, so a log that starts at 91 because ninety happened before this app says so |
+| Graphs | `History → Graphs`: reps per workout and kilograms per workout over time, or pick one exercise for its reps per session and top weight per session. Each line states its own direction — `up 34 reps since 11 Jun` — because the shape is visible but the arithmetic isn't |
 | Sets per cluster | pull 42 · push 31 · legs 8, over 4 weeks, 12 weeks or all of it. Counts and bars, and a zero is the point |
 | Numbers it will not fake | volume needs a bodyweight to weigh a push-up or an assisted pull-up. Without one the clause is dropped rather than printed short, and no bodyweight is ever guessed |
 | Correct a typo | inside an open workout, one logged set at a time, on the same ± chips. Everything derived from it is recomputed rather than patched |
 | Settings | every duration the app counts, plus sound, vibration, screen-on and notification switches. Your bodyweight, which is what makes push-ups and assisted work countable. Which plates the gym has. And what you actually rest, measured, with one tap to adopt it |
-| Export / Import | everything you own — exercises, routines, the sequence, every workout with its set rows, your settings — as one readable JSON file, and back again through the phone's file browser. `Add workouts from a file` merges a second phone's log instead of replacing yours; a CSV of every set row is there too, for a spreadsheet |
+| Export / Import | everything you own — exercises, routines, the sequence, every workout with its set rows, your settings — as one readable JSON file, and back again through the phone's file browser. The pinned workout number travels with it, because it is the one fact that cannot be recomputed. `Add workouts from a file` merges a second phone's log instead of replacing yours; a CSV of every set row is there too, for a spreadsheet |
 
 ## Android APK
 
@@ -70,10 +72,10 @@ src/hooks/                  the two timers and the count-in
 src/lib/                    the decisions: overload, set timer, count-in cue,
                             muscles, draft, routine plan, superset, balance,
                             rest history, plates, reorder, completed workout,
-                            history, shape, units, backup, csv — all pure, all
-                            tested. Plus beeper/notify/feedback, the three
-                            wrappers around native side effects that must never
-                            throw mid-set
+                            history, trends, shape, units, backup, csv — all
+                            pure, all tested. Plus beeper/notify/feedback, the
+                            three wrappers around native side effects that must
+                            never throw mid-set
 src/state/                  the live session, the finished workouts, the library
                             (+ the sequence), the settings — zustand, every one
                             validated on the way in. historyDb.ts is the SQLite
