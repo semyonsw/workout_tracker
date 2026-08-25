@@ -124,7 +124,7 @@ describe('saving a finished session', () => {
  * WHAT COMES OFF DISK IS VALIDATED, NOT TRUSTED — rule 4, still.
  *
  * These were `persist.rehydrate()` tests against an AsyncStorage blob. The log
- * moved into SQLite in 0.11.0 and the GUARD did not change, because a column can
+ * moved into SQLite in 0.12.0 and the GUARD did not change, because a column can
  * hold nonsense exactly as a JSON blob can — so they are the same tests pointed at
  * the seam that survived.
  *
@@ -232,7 +232,7 @@ describe('what comes off disk is validated, not trusted', () => {
   });
 
   /*
-   * 0.11.0 deleted five fields from `SetHistory`: `estimated1RM`, `rpe`, `notes`,
+   * 0.12.0 deleted five fields from `SetHistory`: `estimated1RM`, `rpe`, `notes`,
    * `side` and `partials`. Every blob already on a phone, and every backup file
    * already exported, still carries them.
    *
@@ -294,7 +294,7 @@ describe('what comes off disk is validated, not trusted', () => {
   });
 
   /*
-   * `volumeIsPartial` arrived in 0.11.0 as well, and unlike the five deletions it
+   * `volumeIsPartial` arrived in 0.12.0 as well, and unlike the five deletions it
    * has to be RECOVERED rather than dropped: a pre-0.11 workout's volume figure
    * skipped every bodyweight and assisted set, which is exactly what the flag now
    * means. Derived from the rows rather than defaulted, so an old all-barbell
@@ -813,7 +813,7 @@ describe('the log survives a round trip through SQLite', () => {
 /* ------------------------------------------------------------------ */
 
 /**
- * THE MIGRATION — the single most dangerous change in 0.11.0.
+ * THE MIGRATION — the single most dangerous change in 0.12.0.
  *
  * It is somebody's training log, so the tests come before the confidence. The rules
  * being checked here are the ones in `historyDb.ts`'s header: one transaction, read
@@ -854,7 +854,7 @@ describe('migrating the log out of AsyncStorage', () => {
   it('brings a real log across, row for row', async () => {
     const expected = twoWorkouts();
     await legacyBlob(expected);
-    // Start from a genuinely empty database, as a fresh install of 0.11.0 would.
+    // Start from a genuinely empty database, as a fresh install of 0.12.0 would.
     useWorkoutHistory.getState().clearHistory();
 
     const outcome = await migrateFromAsyncStorage(guard);

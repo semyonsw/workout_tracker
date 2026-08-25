@@ -283,7 +283,7 @@ describe('rest: pause, resume, skip', () => {
  * exercise. Setting "Between sets" to 1:30 and watching a 3:00 countdown is a
  * setting that does nothing. The fix was to ignore the routine entirely.
  *
- * THAT WENT TOO FAR, and 0.11.0 walks it back one level. The routine editor can
+ * THAT WENT TOO FAR, and 0.12.0 walks it back one level. The routine editor can
  * now SET a per-item rest, show which of the two is in force on the row, and
  * clear it again — so an override is a choice the user made and can see, which
  * was the only thing missing. The rule is therefore:

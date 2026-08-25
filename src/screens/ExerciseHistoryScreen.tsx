@@ -21,7 +21,7 @@
  * The 1RM refusal outlived a field: `SetHistory.estimated1RM` was computed and
  * stored on every rep set for two releases and rendered nowhere, because this is
  * the screen it would have been rendered on and this is the screen that says no.
- * It is deleted as of 0.11.0 — the argument here was the whole case against it.
+ * It is deleted as of 0.12.0 — the argument here was the whole case against it.
  */
 
 import { Pressable, ScrollView, Text, View } from 'react-native';

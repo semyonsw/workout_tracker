@@ -199,7 +199,7 @@ describe('formatting primitives', () => {
  * Warm-ups, now that they are reachable.
  *
  * `isWarmup` was on both `DraftSet` and `SetHistory` from the first release with
- * two consumers filtering on it and nothing able to set it. The 0.11.0 toggle in
+ * two consumers filtering on it and nothing able to set it. The 0.12.0 toggle in
  * `QuickAdjust` makes these cases real rather than theoretical.
  */
 describe('the shorthand ignores warm-ups', () => {

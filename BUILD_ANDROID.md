@@ -4,12 +4,12 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
-## 0.11.0 — what changed on the phone
+## 0.12.0 — what changed on the phone
 
-`versionCode` 11. **It needs a prebuild**: `expo-sqlite` is a dependency again —
+`versionCode` 12. **It needs a prebuild**: `expo-sqlite` is a dependency again —
 this time because it is used. The finished-workout log moved out of AsyncStorage
 and into a real database (`src/state/historyDb.ts`), so the set of native modules
-in the APK is different from 0.10.0's.
+in the APK is different from the previous release's.
 
 **Your log is migrated on the first launch, once, and the old copy is not
 deleted.** The migration writes everything into the database in one transaction,
@@ -172,7 +172,7 @@ Push a tag and the same APK is built, signed and attached to a draft GitHub
 Release:
 
 ```bash
-git tag v0.11.0 && git push origin v0.11.0
+git tag v0.12.0 && git push origin v0.12.0
 ```
 
 `.github/workflows/release.yml` runs the suite first, prebuilds from `app.json`,

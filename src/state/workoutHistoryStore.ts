@@ -430,7 +430,7 @@ function sanitizeWorkout(value: unknown): CompletedWorkout | null {
     setCount: Math.max(0, Math.round(finiteOr(raw.setCount, sets.length))),
     totalVolumeKg: Math.max(0, Math.round(finiteOr(raw.totalVolumeKg, 0))),
     /*
-     * `volumeIsPartial` arrived in 0.11.0, so every workout logged before it has a
+     * `volumeIsPartial` arrived in 0.12.0, so every workout logged before it has a
      * volume figure and no flag. Deriving it is exact rather than a guess: volume
      * used to skip every exercise with `requiresWeight === false` and read
      * assistance as load, so a pre-0.11 workout containing ANY rep-counted set
@@ -495,7 +495,7 @@ function sanitizeCompletedExercise(
  * rather than break a screen — which is harder to notice and worse. A row missing
  * anything the overload engine or the shorthand indexes into is dropped whole.
  *
- * NAMED KEYS, NOT A SPREAD, and that is the change 0.11.0 made here. This used to
+ * NAMED KEYS, NOT A SPREAD, and that is the change 0.12.0 made here. This used to
  * be a predicate feeding `{ ...row, isCompleted: true }`, which validated the
  * fields it knew about and copied everything else straight through — so
  * `estimated1RM`, `rpe`, `side`, `partials` and `notes`, all deleted from

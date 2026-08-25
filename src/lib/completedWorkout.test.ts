@@ -284,7 +284,7 @@ describe('monthKey', () => {
  * What a warm-up costs the record, which is nothing, and what it costs the
  * numbers derived from it, which is itself.
  *
- * `isWarmup` became reachable in 0.11.0 (`QuickAdjust`). Before that these cases
+ * `isWarmup` became reachable in 0.12.0 (`QuickAdjust`). Before that these cases
  * could only be produced by a hand-edited backup; now every one of them is a
  * thumb away.
  */

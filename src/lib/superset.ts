@@ -3,7 +3,7 @@
  *
  * `RoutineItem.supersetGroup` has been in the model since the first release with
  * its behaviour written down beside it — "Same string = same superset; rest only
- * fires after the last member" — and until 0.11.0 the identifier appeared in
+ * fires after the last member" — and until 0.12.0 the identifier appeared in
  * exactly one file in the repo: the model that declared it. `completeSet` never
  * consulted it. This module is the decision it needed.
  *

@@ -169,7 +169,7 @@ describe('evaluateOverload', () => {
    * This test used to assert `insufficient_data` here and call it correct: the
    * engine returned an empty verdict the moment `requiresWeight` was false, on the
    * grounds that rep- and time-based progression was handled by the routine's
-   * target. It was not — that target was not editable at all until 0.11.0, and it
+   * target. It was not — that target was not editable at all until 0.12.0, and it
    * is still a number the user has to think of while every weighted lift gets one
    * derived from its own history.
    *
@@ -404,7 +404,7 @@ describe('evaluateOverload on the count axis', () => {
 /**
  * The wrong-verdict case, now that a warm-up can actually be marked.
  *
- * `summarizeSessions` has always dropped `isWarmup` rows, and until 0.11.0
+ * `summarizeSessions` has always dropped `isWarmup` rows, and until 0.12.0
  * nothing in the UI could set the flag — so a heavy warm-up single WAS the
  * session's top working weight as far as this engine could tell, and the nudge
  * fired off a set the user never worked at. The filter was correct and

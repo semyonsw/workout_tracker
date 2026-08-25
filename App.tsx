@@ -6,7 +6,7 @@
  * (the library and routines, the settings, the finished workouts).
  *
  * That paragraph used to end "swap those for SQLite queries and neither this file
- * nor any screen below it changes". As of 0.11.0 the finished workouts DID move to
+ * nor any screen below it changes". As of 0.12.0 the finished workouts DID move to
  * SQLite (`src/state/historyDb.ts`) and the claim held: no screen changed, and the
  * only line this file gained is the one below that brings the old AsyncStorage log
  * across. The other two stores are a few dozen rows and stay where they are.

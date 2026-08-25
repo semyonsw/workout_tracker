@@ -31,7 +31,7 @@
  * get a single line — `if (!exercise.requiresWeight) return empty` — on the
  * grounds that rep- and time-based progression was "handled by the routine's
  * target". Two things were wrong with that. The routine's target was not
- * editable at all until 0.11.0; and even now it is a number the user has to think
+ * editable at all until 0.12.0; and even now it is a number the user has to think
  * of themselves, while every weighted lift gets a nudge derived from its own
  * history. Push-ups, planks, dead hangs, hollow holds and boxing rounds are most
  * of the shipped library, and none of them ever progressed.
@@ -240,7 +240,7 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
    *
    * This used to be a single early return, and the comment on it said rep- and
    * time-based progression was "handled by the routine's target". It was not:
-   * that target was not editable until 0.11.0, and even now it is a number the
+   * that target was not editable until 0.12.0, and even now it is a number the
    * user has to think of, while every weighted lift gets one derived from its own
    * history. See the file header for the whole argument, and for the one case that
    * still returns nothing.
