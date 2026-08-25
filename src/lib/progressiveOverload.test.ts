@@ -36,7 +36,6 @@ function sets(
     loadMode: 'added_bodyweight' as const,
     isWarmup: opts.isWarmup ?? false,
     isCompleted: true,
-    estimated1RM: null,
   }));
 }
 
@@ -64,7 +63,7 @@ describe('evaluateOverload', () => {
     expect(verdict.shouldNudge).toBe(true);
     expect(verdict.currentWeightKg).toBe(25);
     expect(verdict.suggestedWeightKg).toBe(27.5);
-    expect(verdict.sessionsAtWeight).toBe(5);
+    expect(verdict.sessionsInRun).toBe(5);
     expect(verdict.plateauDays).toBe(23);
     expect(verdict.since).toBe('2026-07-21T18:00:00.000Z');
   });
@@ -121,7 +120,7 @@ describe('evaluateOverload', () => {
 
     expect(verdict.status).toBe('due_reps');
     expect(verdict.shouldNudge).toBe(true);
-    expect(verdict.suggestedReps).toBe(5);
+    expect(verdict.suggestedCount).toBe(5);
     expect(verdict.suggestedWeightKg).toBeNull();
   });
 
@@ -138,7 +137,7 @@ describe('evaluateOverload', () => {
 
     expect(verdict.status).toBe('building');
     expect(verdict.plateauDays).toBe(14);
-    expect(verdict.sessionsAtWeight).toBe(2);
+    expect(verdict.sessionsInRun).toBe(2);
     expect(verdict.shouldNudge).toBe(false);
   });
 
@@ -166,7 +165,19 @@ describe('evaluateOverload', () => {
     expect(verdict.currentWeightKg).toBe(25);
   });
 
-  it('returns insufficient_data for bodyweight / cardio work', () => {
+  /*
+   * This test used to assert `insufficient_data` here and call it correct: the
+   * engine returned an empty verdict the moment `requiresWeight` was false, on the
+   * grounds that rep- and time-based progression was handled by the routine's
+   * target. It was not — that target was not editable at all until 0.12.0, and it
+   * is still a number the user has to think of while every weighted lift gets one
+   * derived from its own history.
+   *
+   * Push-ups climbing 14 → 16 across two weeks is the app's own definition of
+   * progressing, and it says so now. The count axis has its own describe block
+   * below.
+   */
+  it('reads bodyweight work on the COUNT axis instead of ignoring it', () => {
     const pushups = {
       id: 'ex_pushups',
       requiresWeight: false,
@@ -180,7 +191,9 @@ describe('evaluateOverload', () => {
 
     const verdict = evaluateOverload({ exercise: pushups, history, now: NOW });
 
-    expect(verdict.status).toBe('insufficient_data');
+    expect(verdict.status).toBe('progressing');
+    expect(verdict.currentCount).toBe(16);
+    // Climbing is not a nudge. Silence is still the default state.
     expect(verdict.shouldNudge).toBe(false);
   });
 
@@ -201,5 +214,234 @@ describe('evaluateOverload', () => {
     // 25 kg ≈ 55.1 lb → next loadable rung is 60 lb ≈ 27.22 kg.
     expect(verdict.status).toBe('due_weight');
     expect(verdict.suggestedWeightKg).toBeCloseTo(27.22, 1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The count axis.
+ *
+ * Most of the shipped library has no weight on it — push-ups, planks, dead
+ * hangs, hollow holds, boxing rounds — and none of it ever progressed. The same
+ * plateau run, staleness test and regression guard now read the top COUNT per
+ * session where there is no weight to read.
+ */
+describe('evaluateOverload on the count axis', () => {
+  /** One timed session: `seconds` sets, held for `held` seconds each. */
+  function holds(sessionId: string, date: string, held: number[]): SetHistory[] {
+    return held.map((count, i) => ({
+      id: `${sessionId}-plank-${i}`,
+      sessionId,
+      exerciseId: 'ex_plank',
+      performedAt: `${date}T18:00:00.000Z`,
+      setIndex: i,
+      weightKg: null,
+      count,
+      countUnit: 'seconds' as const,
+      loadMode: 'none' as const,
+      isWarmup: false,
+      isCompleted: true,
+    }));
+  }
+
+  /** A plank: time-counted, and the phone runs the clock, so it is measured. */
+  const plank = {
+    id: 'ex_plank',
+    requiresWeight: false,
+    incrementKg: undefined,
+    countUnit: 'seconds' as const,
+    timerMode: 'countdown' as const,
+  };
+
+  it('fires on a plank stuck at 2:00 for three sessions across three weeks', () => {
+    const history = [
+      ...holds('s80', '2026-07-21', [120, 120, 91]),
+      ...holds('s83', '2026-07-30', [120, 120, 105]),
+      ...holds('s87', '2026-08-11', [120, 118, 100]),
+    ];
+
+    const verdict = evaluateOverload({ exercise: plank, history, now: NOW });
+
+    expect(verdict.status).toBe('due_count');
+    expect(verdict.shouldNudge).toBe(true);
+    expect(verdict.currentCount).toBe(120);
+    expect(verdict.sessionsInRun).toBe(3);
+    expect(verdict.plateauDays).toBe(23);
+    // The step is `countStep('seconds')` — the same 15 the row's chips offer.
+    expect(verdict.suggestedCount).toBe(135);
+    // ...and no weight axis is invented for it.
+    expect(verdict.currentWeightKg).toBeNull();
+    expect(verdict.suggestedWeightKg).toBeNull();
+  });
+
+  it('reads as a clock, never as a number of seconds', () => {
+    const history = [
+      ...holds('s80', '2026-07-21', [120]),
+      ...holds('s83', '2026-07-30', [120]),
+      ...holds('s87', '2026-08-11', [120]),
+    ];
+
+    const { message } = evaluateOverload({ exercise: plank, history, now: NOW });
+
+    expect(message).toBe('3× at 2:00 — try 2:15');
+    // "try 135 seconds" is the storage unit leaking into copy somebody reads
+    // between sets.
+    expect(message).not.toContain('135');
+    expect(message).not.toContain('120');
+  });
+
+  it('stays quiet on a plank that is climbing', () => {
+    const history = [
+      ...holds('s80', '2026-07-21', [90]),
+      ...holds('s83', '2026-07-30', [105]),
+      ...holds('s87', '2026-08-11', [120]),
+    ];
+
+    const verdict = evaluateOverload({ exercise: plank, history, now: NOW });
+
+    expect(verdict.status).toBe('progressing');
+    expect(verdict.shouldNudge).toBe(false);
+  });
+
+  it('stays quiet while working back up from a longer hold', () => {
+    // 2:30 in July, 2:00 since. They are rebuilding, and "try 2:15" is both noise
+    // and wrong — the same guard the weight axis has.
+    const history = [
+      ...holds('s79', '2026-07-14', [150]),
+      ...holds('s80', '2026-07-21', [120]),
+      ...holds('s83', '2026-07-30', [120]),
+      ...holds('s87', '2026-08-11', [120]),
+    ];
+
+    const verdict = evaluateOverload({ exercise: plank, history, now: NOW });
+
+    expect(verdict.status).toBe('regressing');
+    expect(verdict.shouldNudge).toBe(false);
+  });
+
+  it('watches rather than nudges while the run is still short', () => {
+    const history = [...holds('s83', '2026-07-30', [120]), ...holds('s87', '2026-08-11', [120])];
+
+    const verdict = evaluateOverload({ exercise: plank, history, now: NOW });
+
+    expect(verdict.status).toBe('building');
+    expect(verdict.sessionsInRun).toBe(2);
+    expect(verdict.shouldNudge).toBe(false);
+    expect(verdict.message).toBe('2× at 2:00');
+  });
+
+  it('says nothing about time the phone did not measure', () => {
+    // A 50-minute swim is typed from memory in a changing room. "3 sessions at
+    // 50:00 — try 50:15" is the app pretending to read a stopwatch that was never
+    // running.
+    const swim = { ...plank, id: 'ex_plank', timerMode: 'manual' as const };
+    const history = [
+      ...holds('s80', '2026-07-21', [3000]),
+      ...holds('s83', '2026-07-30', [3000]),
+      ...holds('s87', '2026-08-11', [3000]),
+    ];
+
+    const verdict = evaluateOverload({ exercise: swim, history, now: NOW });
+
+    expect(verdict.status).toBe('insufficient_data');
+    expect(verdict.shouldNudge).toBe(false);
+  });
+
+  it('progresses reps by one and metres by twenty-five', () => {
+    const at = (exerciseId: string, countUnit: 'reps' | 'meters', count: number) =>
+      ['s80', 's83', 's87'].map((sessionId, i) => ({
+        id: `${sessionId}-${exerciseId}`,
+        sessionId,
+        exerciseId,
+        performedAt: ['2026-07-21', '2026-07-30', '2026-08-11'][i] + 'T18:00:00.000Z',
+        setIndex: 0,
+        weightKg: null,
+        count,
+        countUnit,
+        loadMode: 'none' as const,
+        isWarmup: false,
+        isCompleted: true,
+      }));
+
+    const pushups = evaluateOverload({
+      exercise: { id: 'ex_pu', requiresWeight: false, countUnit: 'reps' },
+      history: at('ex_pu', 'reps', 20),
+      now: NOW,
+    });
+    expect(pushups.suggestedCount).toBe(21);
+    expect(pushups.message).toBe('3× at 20 — try 21');
+
+    const swim = evaluateOverload({
+      exercise: { id: 'ex_sw', requiresWeight: false, countUnit: 'meters' },
+      history: at('ex_sw', 'meters', 1500),
+      now: NOW,
+    });
+    // A distance IS measured — by the pool, not by the phone.
+    expect(swim.suggestedCount).toBe(1525);
+    expect(swim.message).toBe('3× at 1500 m — try 1525 m');
+  });
+
+  it('ignores warm-ups and incomplete sets, exactly as the weight axis does', () => {
+    const history = [
+      ...holds('s80', '2026-07-21', [120]),
+      ...holds('s83', '2026-07-30', [120]),
+      ...holds('s87', '2026-08-11', [120]),
+      // A 3:00 "warm-up" hold would otherwise read as the session's top count and
+      // break the run.
+      ...holds('s87', '2026-08-11', [180]).map((row) => ({ ...row, isWarmup: true })),
+    ];
+
+    const verdict = evaluateOverload({ exercise: plank, history, now: NOW });
+
+    expect(verdict.currentCount).toBe(120);
+    expect(verdict.status).toBe('due_count');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The wrong-verdict case, now that a warm-up can actually be marked.
+ *
+ * `summarizeSessions` has always dropped `isWarmup` rows, and until 0.12.0
+ * nothing in the UI could set the flag — so a heavy warm-up single WAS the
+ * session's top working weight as far as this engine could tell, and the nudge
+ * fired off a set the user never worked at. The filter was correct and
+ * unreachable; the toggle is what makes it matter.
+ */
+describe('a heavy warm-up single does not become the top working weight', () => {
+  const history = [
+    ...sets('ex_situps', 's80', '2026-07-21', 25, [12, 12, 12]),
+    ...sets('ex_situps', 's81', '2026-07-23', 25, [12, 12, 12]),
+    ...sets('ex_situps', 's82', '2026-07-28', 25, [12, 12, 12]),
+    ...sets('ex_situps', 's84', '2026-08-04', 25, [12, 12, 12]),
+    ...sets('ex_situps', 's86', '2026-08-08', 25, [12, 12, 12]),
+  ];
+
+  it('reads the working weight, not the warm-up above it', () => {
+    // One 35 kg single to feel the weight, logged as a warm-up. Unfiltered it
+    // would read as a 35 kg top set, break the plateau run at one session, and
+    // report `progressing` on an exercise that has not moved in three weeks.
+    const withWarmup = [
+      ...history,
+      ...sets('ex_situps', 's86', '2026-08-08', 35, [1], { isWarmup: true }),
+    ];
+
+    const verdict = evaluateOverload({ exercise: weightedExercise, history: withWarmup, now: NOW });
+
+    expect(verdict.currentWeightKg).toBe(25);
+    expect(verdict.status).toBe('due_weight');
+    expect(verdict.sessionsInRun).toBe(5);
+    expect(verdict.suggestedWeightKg).toBe(27.5);
+  });
+
+  it('and the same row unmarked DOES change the verdict — which is the bug', () => {
+    const asWorking = [...history, ...sets('ex_situps', 's86', '2026-08-08', 35, [1])];
+
+    const verdict = evaluateOverload({ exercise: weightedExercise, history: asWorking, now: NOW });
+
+    expect(verdict.currentWeightKg).toBe(35);
+    expect(verdict.status).not.toBe('due_weight');
   });
 });

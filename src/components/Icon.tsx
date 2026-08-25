@@ -106,12 +106,7 @@ export function Icon({ name, size, color }: IconProps) {
 export function DragHandle({ color, size = 16 }: { color: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <Path
-        d="M2 4.5h12M2 8h12M2 11.5h12"
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-      />
+      <Path d="M2 4.5h12M2 8h12M2 11.5h12" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
     </Svg>
   );
 }

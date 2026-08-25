@@ -42,7 +42,9 @@ describe('the map', () => {
       expect(cluster).toBeDefined();
       expect(CLUSTER_MUSCLES[cluster]).toContain(muscle);
       // ...and under no other cluster.
-      const homes = CLUSTERS.filter((c) => (CLUSTER_MUSCLES[c] as readonly MuscleGroup[]).includes(muscle));
+      const homes = CLUSTERS.filter((c) =>
+        (CLUSTER_MUSCLES[c] as readonly MuscleGroup[]).includes(muscle),
+      );
       expect(homes).toEqual([cluster]);
     }
   });
@@ -112,7 +114,9 @@ describe('what day is this', () => {
 
   it('says nothing rather than guessing when nothing is filed', () => {
     expect(routineFocus([])).toBeNull();
-    expect(describeRoutineFocus([{ ...byId('ex_pushups'), muscleGroups: [] } as Exercise])).toBeNull();
+    expect(
+      describeRoutineFocus([{ ...byId('ex_pushups'), muscleGroups: [] } as Exercise]),
+    ).toBeNull();
   });
 });
 

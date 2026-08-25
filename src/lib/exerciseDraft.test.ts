@@ -121,7 +121,11 @@ describe('editing preserves what identifies the exercise', () => {
 
 describe('the shape axes stay consistent', () => {
   it('drops the weight fields when weight is switched off', () => {
-    const draft = { ...exerciseToDraft(machine), requiresWeight: false, countUnit: 'reps' as const };
+    const draft = {
+      ...exerciseToDraft(machine),
+      requiresWeight: false,
+      countUnit: 'reps' as const,
+    };
     const edited = applyDraftToExercise(draft, machine);
 
     // No weight cell means no load mode, no increment and no starting weight —

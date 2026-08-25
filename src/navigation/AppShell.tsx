@@ -28,12 +28,14 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { PrimaryButton } from '../components/primitives';
+import { Segmented } from '../components/primitives';
 import { TabBar, type TabName } from '../components/TabBar';
 import { ActiveWorkoutScreen } from '../screens/ActiveWorkoutScreen';
 import { CreateExerciseScreen } from '../screens/CreateExerciseScreen';
 import { ExerciseHistoryScreen } from '../screens/ExerciseHistoryScreen';
 import { ExerciseLibraryScreen, clusterKey, muscleKey } from '../screens/ExerciseLibraryScreen';
-import { HistoryScreen } from '../screens/HistoryScreen';
+import { HistoryScreen, type HistoryScreenProps } from '../screens/HistoryScreen';
+import { ProgressScreen } from '../screens/ProgressScreen';
 import {
   HomeScreen,
   type RoutineChoice,
@@ -44,8 +46,13 @@ import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SequenceScreen } from '../screens/SequenceScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { historyByExerciseId, recentlyUsedExerciseIds } from '../lib/completedWorkout';
+import {
+  historyByExerciseId,
+  recentlyUsedExerciseIds,
+  workoutNumbers,
+} from '../lib/completedWorkout';
 import { buildDraftEntry, defaultTargetCount } from '../lib/draft';
+import { applyPlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import {
   applyDraftToExercise,
   draftToExercise,
@@ -61,7 +68,8 @@ import { routineUsageCount, useLibrary } from '../state/libraryStore';
 import { useSettings } from '../state/settingsStore';
 import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore';
 import { seedUser } from '../data/seed';
-import type { Exercise, ID, MuscleGroup } from '../types/models';
+import type { CompletedWorkout } from '../lib/completedWorkout';
+import type { Exercise, ID, MuscleGroup, SetHistory, UnitSystem } from '../types/models';
 
 /** Screens pushed on top of a tab. `session` is pushed and owns the screen. */
 type Route =
@@ -99,6 +107,18 @@ type Route =
 
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
+  /**
+   * A workout somebody tapped somewhere else, waiting for the History tab to open
+   * it and scroll to it.
+   *
+   * Both `RECENT` on Home and the session rows on the exercise-history screen hand
+   * over a workout id, and both used to have it dropped on the floor —
+   * `onOpenSession` was `() => setTab('History')`, so you landed at the top of
+   * History and hunted for the row you had just tapped. History clears this once it
+   * has acted, so the row does not spring open again the next time the tab is
+   * visited.
+   */
+  const [focusWorkoutId, setFocusWorkoutId] = useState<ID | null>(null);
   const [stack, setStack] = useState<Route[]>([]);
   const [query, setQuery] = useState('');
   /*
@@ -129,6 +149,12 @@ export function AppShell() {
   const advanceSequence = useLibrary((s) => s.advanceSequence);
 
   const unitSystem = useSettings((s) => s.unitSystem);
+  /*
+   * Subscribed, not read once: the routine editor states which rows are FOLLOWING
+   * this number, and a row saying "rest · setting 2:00" has to change when the
+   * setting does. A primitive selector, so it is a stable snapshot.
+   */
+  const restSecondsBetweenSets = useSettings((s) => s.restSecondsBetweenSets);
 
   const session = useActiveWorkout((s) => s.session);
   const startSession = useActiveWorkout((s) => s.startSession);
@@ -137,6 +163,10 @@ export function AppShell() {
   const workouts = useWorkoutHistory((s) => s.workouts);
   const saveSession = useWorkoutHistory((s) => s.saveSession);
   const deleteWorkout = useWorkoutHistory((s) => s.deleteWorkout);
+  const updateWorkoutSet = useWorkoutHistory((s) => s.updateWorkoutSet);
+  const deleteWorkoutSet = useWorkoutHistory((s) => s.deleteWorkoutSet);
+  const numbering = useWorkoutHistory((s) => s.numbering);
+  const setWorkoutNumber = useWorkoutHistory((s) => s.setWorkoutNumber);
 
   const exercisesById = useMemo<Record<ID, Exercise>>(
     () => Object.fromEntries(exercises.map((e) => [e.id, e])),
@@ -169,7 +199,9 @@ export function AppShell() {
       title: session.title,
       done,
       total,
-      minutes: Number.isFinite(startedMs) ? Math.max(0, Math.floor((Date.now() - startedMs) / 60_000)) : 0,
+      minutes: Number.isFinite(startedMs)
+        ? Math.max(0, Math.floor((Date.now() - startedMs) / 60_000))
+        : 0,
     };
   }, [session]);
 
@@ -204,6 +236,24 @@ export function AppShell() {
       }),
     [],
   );
+  /** Every pushed screen dismissed at once, back to the tab bar. */
+  const popToRoot = useCallback(() => setStack([]), []);
+
+  /**
+   * Open one finished workout, wherever the tap came from: switch to the History
+   * tab and hand it the id to expand and scroll to.
+   *
+   * The id is state rather than an argument threaded into the tab, because the tab
+   * root is rendered from `tab` and mounts after this runs. `clearFocusWorkout` is
+   * how History says it has acted, so the row opens once rather than every time
+   * somebody comes back to the tab.
+   */
+  const openWorkout = useCallback((sessionId: ID) => {
+    setFocusWorkoutId(sessionId);
+    setTab('History');
+  }, []);
+  const clearFocusWorkout = useCallback(() => setFocusWorkoutId(null), []);
+
   /** Filled in below, once the editor's exit rule exists. See `leaveTop`. */
   const leaveRoutineEditor = useRef<(route: { routineId: ID; isNew?: boolean }) => void>(pop);
 
@@ -294,6 +344,14 @@ export function AppShell() {
   const historyById = useMemo(() => historyByExerciseId(workouts), [workouts]);
 
   const recent = useMemo(() => recentSummaries(workouts), [workouts]);
+
+  /**
+   * Every workout's ordinal — "workout 92" — from the one pinned pair.
+   *
+   * Derived here rather than stored per workout, so a session deleted or a number
+   * re-pinned renumbers the whole log in one place. See `workoutNumbers`.
+   */
+  const numbers = useMemo(() => workoutNumbers(workouts, numbering), [numbering, workouts]);
 
   const verdicts = useMemo(
     () =>
@@ -528,8 +586,14 @@ export function AppShell() {
         {/* No TabBar. See the file header. */}
         <ActiveWorkoutScreen
           unitSystem={unitSystem}
+          /*
+           * The plan this session was built from, so the Finish sheet can offer to
+           * update it. Absent for a session with no routine behind it, which is
+           * also the answer to "is there a plan to update".
+           */
+          routineItems={session?.routineId ? routinesById[session.routineId]?.items : undefined}
           onAddExercise={() => push({ name: 'addExercise', routineId: null, target: 'session' })}
-          onFinish={(finished) => {
+          onFinish={(finished, updatePlan) => {
             /*
              * The one write to permanent history. Everything downstream —
              * the History tab, the prefills, the overload verdicts — reads what
@@ -544,6 +608,25 @@ export function AppShell() {
             // gets recorded. A session with nothing logged saves nothing, and a
             // workout from some other routine is not this step being done.
             if (saved) advanceSequence(saved.routineId);
+
+            /*
+             * ...and only if the user asked, the plan learns what actually
+             * happened. Recomputed here rather than passed down as a list, so the
+             * write is against the routine as the STORE has it: the sheet's copy
+             * was rendered from a snapshot, and between rendering it and this line
+             * the routine could have been edited on another screen. The diff is the
+             * same pure function either way.
+             */
+            const routine = finished.routineId ? routinesById[finished.routineId] : undefined;
+            if (updatePlan && routine) {
+              const changes = plannedSetDiff(routine.items, performedSetCounts(finished.entries));
+              if (changes.length > 0) {
+                updateRoutine(routine.id, {
+                  name: routine.name,
+                  items: applyPlannedSetDiff(routine.items, changes),
+                });
+              }
+            }
           }}
           onExit={leaveSession}
         />
@@ -559,6 +642,7 @@ export function AppShell() {
       <RoutineEditorScreen
         routine={routine}
         exercisesById={exercisesById}
+        defaultRestSeconds={restSecondsBetweenSets}
         isNew={route.isNew}
         onBack={() => handleLeaveEditor(route)}
         onSave={(draft) => {
@@ -678,6 +762,17 @@ export function AppShell() {
         history={historyById[exercise.id] ?? []}
         verdict={verdicts[exercise.id]}
         onBack={pop}
+        /*
+         * Tapping a session row here goes to that workout in History, which means
+         * leaving the stack: this screen is pushed over the tabs, and opening a
+         * row underneath it would be invisible. `popToRoot` rather than `pop`
+         * because the exercise-history screen can itself be reached from the
+         * routine editor, and History is not "back" from either of them.
+         */
+        onOpenSession={(sessionId) => {
+          popToRoot();
+          openWorkout(sessionId);
+        }}
         onEdit={() => push({ name: 'editExercise', exerciseId: exercise.id })}
       />
     );
@@ -714,16 +809,29 @@ export function AppShell() {
             sequence={sequenceView}
             choices={choices}
             recent={recent}
+            numbers={numbers}
             onOpen={handleOpenWorkout}
             onOpenSequence={() => push({ name: 'sequence' })}
             // A past session opens where past sessions live. The History row is
             // the detail view — it expands in place — so there is nothing to push.
-            onOpenSession={() => setTab('History')}
+            onOpenSession={openWorkout}
           />
         ) : null}
 
         {tab === 'History' ? (
-          <HistoryScreen workouts={workouts} onDelete={deleteWorkout} />
+          <HistoryTab
+            workouts={workouts}
+            numbers={numbers}
+            historyByExerciseId={historyById}
+            exercisesById={exercisesById}
+            focusWorkoutId={focusWorkoutId}
+            onFocusHandled={clearFocusWorkout}
+            unitSystem={unitSystem}
+            onDelete={deleteWorkout}
+            onSetNumber={setWorkoutNumber}
+            onEditSet={updateWorkoutSet}
+            onDeleteSet={deleteWorkoutSet}
+          />
         ) : null}
 
         {tab === 'Routines' ? (
@@ -766,6 +874,101 @@ export function AppShell() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * The `History` tab: the log, or the graphs of it.
+ *
+ * One tab rather than a sixth root, because both answer the same question — what
+ * have I actually trained — and the tab bar's five labels are already the width of
+ * the screen. The switch is a `Segmented` under the shared header, which is where
+ * the two screens' own `toolbar` slot puts it, so the control stays in exactly the
+ * same place as the view changes under it.
+ *
+ * Which view is showing is held HERE rather than in either screen: it has to
+ * survive switching between them, and neither screen should know the other exists.
+ */
+function HistoryTab({
+  workouts,
+  numbers,
+  historyByExerciseId: history,
+  exercisesById,
+  focusWorkoutId,
+  onFocusHandled,
+  unitSystem,
+  onDelete,
+  onSetNumber,
+  onEditSet,
+  onDeleteSet,
+}: {
+  workouts: CompletedWorkout[];
+  numbers: Record<ID, number>;
+  historyByExerciseId: Record<ID, SetHistory[]>;
+  exercisesById: Record<ID, Exercise>;
+  focusWorkoutId: ID | null;
+  onFocusHandled: () => void;
+  unitSystem: UnitSystem;
+  onDelete: (id: ID) => void;
+  onSetNumber: (id: ID, number: number) => void;
+  onEditSet: HistoryScreenProps['onEditSet'];
+  onDeleteSet: HistoryScreenProps['onDeleteSet'];
+}) {
+  const [view, setView] = useState<'log' | 'graphs'>('log');
+
+  /*
+   * A workout tapped ANYWHERE ELSE in the app lands on this tab expecting the log
+   * — see `openWorkout`. The graphs view has no row to open, so without this the
+   * tap looks like it did nothing, and `focusWorkoutId` is never handled: it sits
+   * there and springs the row open the next time somebody switches to the log.
+   * Switching the view here is what makes the two features compose; neither
+   * branch could have caught it alone, because neither had both.
+   */
+  useEffect(() => {
+    if (focusWorkoutId) setView('log');
+  }, [focusWorkoutId]);
+
+  const toolbar = (
+    <View className="mt-md">
+      <Segmented
+        options={VIEWS}
+        value={view}
+        onChange={setView}
+        accessibilityLabel="Show the log or the graphs"
+      />
+    </View>
+  );
+
+  if (view === 'graphs') {
+    return (
+      <ProgressScreen
+        workouts={workouts}
+        historyByExerciseId={history}
+        exercisesById={exercisesById}
+        toolbar={toolbar}
+      />
+    );
+  }
+
+  return (
+    <HistoryScreen
+      workouts={workouts}
+      numbers={numbers}
+      exercisesById={exercisesById}
+      focusWorkoutId={focusWorkoutId}
+      onFocusHandled={onFocusHandled}
+      unitSystem={unitSystem}
+      onDelete={onDelete}
+      onSetNumber={onSetNumber}
+      onEditSet={onEditSet}
+      onDeleteSet={onDeleteSet}
+      toolbar={toolbar}
+    />
+  );
+}
+
+const VIEWS = [
+  { value: 'log' as const, label: 'Log' },
+  { value: 'graphs' as const, label: 'Graphs' },
+];
 
 type LibraryProps = React.ComponentProps<typeof ExerciseLibraryScreen>;
 

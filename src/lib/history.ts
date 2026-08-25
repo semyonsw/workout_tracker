@@ -14,6 +14,7 @@
  */
 
 import type { Exercise, ID, SetHistory } from '../types/models';
+import type { TrendPoint } from './trends';
 import { formatDuration } from './units';
 
 export interface SessionRow {
@@ -26,6 +27,9 @@ export interface SessionRow {
   /** " · 75 kg · 7 7 6" — drop sets. Rendered ink-faint, or null if there were none. */
   drops: string | null;
 }
+
+/** All the shorthand needs to know about an exercise. See `summarizeSessionSets`. */
+export type ShorthandSubject = Pick<Exercise, 'countUnit' | 'loadMode'>;
 
 /** One group of consecutive sets at the same weight, in set order. */
 interface WeightGroup {
@@ -58,9 +62,7 @@ export function sessionRows(history: SetHistory[], exercise: Exercise): SessionR
     rows.push({ sessionId, performedAt: ordered[0].performedAt, topWeightKg, lead, drops });
   }
 
-  return rows.sort(
-    (a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime(),
-  );
+  return rows.sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime());
 }
 
 /**
@@ -71,11 +73,29 @@ export function sessionRows(history: SetHistory[], exercise: Exercise): SessionR
  * means the same thing in all three places.
  *
  * `sets` must already be in set order.
+ *
+ * WARM-UPS ARE DROPPED HERE, not only by the callers. All three of them filter
+ * already — `sessionRows` above, `lastSessionSets` for the prefills,
+ * `buildCompletedWorkout` for the stored summary — so this is belt and braces,
+ * and it is the right place for the belt: the alternative is three callers that
+ * each have to remember, and the failure mode of forgetting is a light warm-up
+ * rendering as a drop-set group and a heavy one leading the line as though it
+ * were the working weight.
  */
 export function summarizeSessionSets(
-  sets: SetHistory[],
-  exercise: Exercise,
+  rawSets: SetHistory[],
+  /*
+   * Narrowed to the two fields it actually reads, so a caller holding a SNAPSHOT
+   * rather than a library row can use it — which is the whole point of the record
+   * keeping `countUnit` and `loadMode`: the shorthand can be regenerated after the
+   * exercise has been renamed or deleted. Widening this back to `Exercise` would
+   * force `recomputeWorkout` to fabricate a library row it does not have.
+   */
+  exercise: ShorthandSubject,
 ): { lead: string; drops: string | null; topWeightKg: number | null } {
+  const sets = rawSets.filter((s) => !s.isWarmup);
+  if (sets.length === 0) return { lead: '', drops: null, topWeightKg: null };
+
   const groups = groupByWeight(sets);
   const weights = sets.map((s) => s.weightKg).filter((w): w is number => w != null);
   const topWeightKg = weights.length > 0 ? Math.max(...weights) : null;
@@ -97,11 +117,14 @@ export function summarizeSessionSets(
   };
 }
 
-/** Oldest-first series for the chart. Unweighted exercises have no line to draw. */
-export function topWeightSeries(rows: SessionRow[]) {
+/**
+ * Oldest-first series for the chart, in the shape every chart in the app takes
+ * (see `lib/trends.ts`). Unweighted exercises have no line to draw.
+ */
+export function topWeightSeries(rows: SessionRow[]): TrendPoint[] {
   return rows
     .filter((r): r is SessionRow & { topWeightKg: number } => r.topWeightKg != null)
-    .map((r) => ({ performedAt: r.performedAt, topWeightKg: r.topWeightKg }))
+    .map((r) => ({ at: r.performedAt, value: r.topWeightKg }))
     .reverse();
 }
 
@@ -141,7 +164,7 @@ function groupByWeight(ordered: SetHistory[]): WeightGroup[] {
  * ("12 rounds · 3 min") because twelve identical clock values in a row is not a
  * record of anything.
  */
-function formatGroup(group: WeightGroup, exercise: Exercise, totalSets: number): string {
+function formatGroup(group: WeightGroup, exercise: ShorthandSubject, totalSets: number): string {
   if (exercise.countUnit === 'rounds') {
     return `${totalSets} rounds · ${formatDuration(group.counts[0])}`;
   }

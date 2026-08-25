@@ -18,10 +18,15 @@ import { sessionRows, summarizeSessionSets, topWeightSeries } from './history';
 import { formatCount, formatDuration, formatShortDate } from './units';
 import { seedExercisesById } from '../data/seed';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
-import type { Exercise, SetHistory } from '../types/models';
+import type { SetHistory } from '../types/models';
 
 /** One session's sets for an exercise, in set order. */
-function sets(exerciseId: string, weightKg: number | null, counts: number[], startIndex = 0): SetHistory[] {
+function sets(
+  exerciseId: string,
+  weightKg: number | null,
+  counts: number[],
+  startIndex = 0,
+): SetHistory[] {
   const exercise = seedExercisesById[exerciseId];
   return counts.map((count, i) => ({
     id: `t_${exerciseId}_${weightKg}_${startIndex + i}`,
@@ -35,7 +40,6 @@ function sets(exerciseId: string, weightKg: number | null, counts: number[], sta
     loadMode: exercise.loadMode,
     isWarmup: false,
     isCompleted: true,
-    estimated1RM: null,
   }));
 }
 
@@ -66,7 +70,11 @@ describe('summarizeLastSession', () => {
   });
 
   it('collapses rounds to a count and a length', () => {
-    const twelve = sets('ex_boxing_bag', null, Array.from({ length: 12 }, () => 180));
+    const twelve = sets(
+      'ex_boxing_bag',
+      null,
+      Array.from({ length: 12 }, () => 180),
+    );
     expect(summarizeLastSession(twelve, boxing)).toBe('12 rounds · 3 min');
   });
 
@@ -108,12 +116,12 @@ describe('exercise shape', () => {
   });
 
   it('names the set inputs for the create screen kicker', () => {
-    expect(describeSetInputs({ requiresWeight: true, countUnit: 'reps', loadMode: 'added_bodyweight' })).toBe(
-      'weight + reps',
-    );
-    expect(describeSetInputs({ requiresWeight: false, countUnit: 'rounds', loadMode: 'none' })).toBe(
-      'rounds only',
-    );
+    expect(
+      describeSetInputs({ requiresWeight: true, countUnit: 'reps', loadMode: 'added_bodyweight' }),
+    ).toBe('weight + reps');
+    expect(
+      describeSetInputs({ requiresWeight: false, countUnit: 'rounds', loadMode: 'none' }),
+    ).toBe('rounds only');
   });
 
   it('removes the weight well when weight is off, rather than disabling it', () => {
@@ -139,7 +147,7 @@ describe('sessionRows', () => {
 
   it('orders newest first and plots oldest first', () => {
     expect(rows[0].performedAt.startsWith('2026-08-08')).toBe(true);
-    expect(topWeightSeries(rows).map((p) => p.topWeightKg)).toEqual([60, 70, 75, 80, 80, 80]);
+    expect(topWeightSeries(rows).map((p) => p.value)).toEqual([60, 70, 75, 80, 80, 80]);
   });
 
   it('drops warm-ups and incomplete sets, exactly as the overload engine does', () => {
@@ -182,5 +190,53 @@ describe('formatting primitives', () => {
 
   it('formats dates the way a training log reads them', () => {
     expect(formatShortDate('2026-08-08T18:00:00.000Z')).toBe('8 Aug');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Warm-ups, now that they are reachable.
+ *
+ * `isWarmup` was on both `DraftSet` and `SetHistory` from the first release with
+ * two consumers filtering on it and nothing able to set it. The 0.12.0 toggle in
+ * `QuickAdjust` makes these cases real rather than theoretical.
+ */
+describe('the shorthand ignores warm-ups', () => {
+  const exercise = seedExercisesById['ex_pullup_90'];
+
+  it('leaves a light warm-up out instead of rendering it as a drop set', () => {
+    // "+15 kg · 8" reads as a drop from +40, which is a session that did not
+    // happen: it was the set before the working sets, not after them.
+    const rows = [
+      { ...sets(exercise.id, 15, [8])[0], isWarmup: true, setIndex: 0 },
+      ...sets(exercise.id, 40, [4, 4, 4]).map((r, i) => ({ ...r, setIndex: i + 1 })),
+    ];
+
+    const { lead, drops, topWeightKg } = summarizeSessionSets(rows, exercise);
+    expect(lead).toBe('+40 kg · 4 4 4');
+    expect(drops).toBeNull();
+    expect(topWeightKg).toBe(40);
+  });
+
+  it('never lets a heavy warm-up single lead the line', () => {
+    // The bug this fixes twice over: the same row also drove the overload verdict.
+    const rows = [
+      { ...sets(exercise.id, 60, [1])[0], isWarmup: true, setIndex: 0 },
+      ...sets(exercise.id, 40, [4, 4]).map((r, i) => ({ ...r, setIndex: i + 1 })),
+    ];
+
+    const { lead, topWeightKg } = summarizeSessionSets(rows, exercise);
+    expect(lead).toBe('+40 kg · 4 4');
+    expect(topWeightKg).toBe(40);
+  });
+
+  it('says nothing at all about a session of only warm-ups', () => {
+    const rows = sets(exercise.id, 15, [8, 8]).map((r) => ({ ...r, isWarmup: true }));
+    expect(summarizeSessionSets(rows, exercise)).toEqual({
+      lead: '',
+      drops: null,
+      topWeightKg: null,
+    });
   });
 });

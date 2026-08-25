@@ -21,9 +21,10 @@
  *     frozen — and a paused rest cannot expire in the user's pocket.
  *
  *  3. `completeSet` is the only action the finger needs in the happy path: it
- *     marks the set, starts the right rest period, and advances the cursor.
- *     `commitSetTimer` routes through it rather than reimplementing it, so a
- *     plank logged by the clock and a set logged by the ✓ take the same path.
+ *     marks the set, starts the right rest period — or none, mid-superset — and
+ *     advances the cursor. `commitSetTimer` routes through it rather than
+ *     reimplementing it, so a plank logged by the clock and a set logged by the ✓
+ *     take the same path.
  *
  *  4. THE SESSION'S SHAPE IS EDITABLE, NOT FIXED AT START. Exercises can be
  *     appended (`addEntry`), dropped (`removeEntry`), reordered (`moveEntry`), and
@@ -55,12 +56,25 @@ import {
   withWorkAdjusted,
   type SetTimerSpec,
 } from '../lib/setTimer';
+import { MAX_PLAUSIBLE_REST_SECONDS } from '../lib/restHistory';
+import { moveToIndex } from '../lib/reorder';
+import { nextInSupersetRound } from '../lib/superset';
 import { currentSettings } from './settingsStore';
 import type { ID } from '../types/models';
 
 export type RestSource = 'set' | 'transition' | 'manual';
 
 export interface RestState {
+  /**
+   * Epoch ms when this rest BEGAN. Null when idle.
+   *
+   * Stored so `completeSet` can measure the rest actually taken, and stored as
+   * wall time rather than derived from `endsAt` minus `totalSeconds` for two
+   * reasons: `+15` moves the deadline, and a PAUSE stops it entirely. Pause time
+   * is rest taken — the user was resting — so the honest measurement is "how long
+   * since rest started", which is what this is. See `restTakenSeconds`.
+   */
+  startedAt: number | null;
   /** Epoch ms when rest ends. null = idle, or paused (see `pausedRemainingMs`). */
   endsAt: number | null;
   /** What the timer was started with, for the drain line. */
@@ -163,6 +177,7 @@ interface ActiveWorkoutState {
 }
 
 export const NO_REST: RestState = {
+  startedAt: null,
   endsAt: null,
   totalSeconds: 0,
   source: null,
@@ -252,20 +267,19 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
        * Reorder. `toIndex` is an index into the list WITHOUT the moved entry, which
        * is what a drop position on screen actually is — so no off-by-one correction
        * is needed and dropping a row back where it came from is a no-op.
+       *
+       * The splice itself is `lib/reorder.ts`, shared with the routine editor: the
+       * two screens choose a drop position in completely different ways (a drag here,
+       * a tap there) and then do exactly the same thing with it, and that was written
+       * out twice.
        */
       moveEntry: (entryId, toIndex) => {
         const { session } = get();
         if (!session) return;
-
-        const from = session.entries.findIndex((e) => e.localId === entryId);
-        if (from === -1) return;
-
-        const without = session.entries.filter((e) => e.localId !== entryId);
-        const target = Math.min(Math.max(0, Math.round(toIndex)), without.length);
         set({
           session: {
             ...session,
-            entries: [...without.slice(0, target), session.entries[from], ...without.slice(target)],
+            entries: moveToIndex(session.entries, (e) => e.localId === entryId, toIndex),
           },
         });
       },
@@ -311,6 +325,22 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
        *     exercise's rows is in the way — a rest the user started by hand used
        *     to be wiped by the next ✓. Now rest is only ever REPLACED, by a rest
        *     this set actually earned.
+       *
+       * ── AND THE THIRD BRANCH: A SUPERSET ROUND ─────────────────────────────
+       *
+       * This used to choose between two rests, set and transition. A superset adds
+       * a third answer, which is NO rest: if another member of the group still
+       * owes a set in this round, the next thing to do is that set, so the cursor
+       * moves there and no pill appears. Rest fires after the LAST member of the
+       * round, exactly as `RoutineItem.supersetGroup` has said since the model was
+       * written — the identifier existed in one file for two releases and this
+       * function never consulted it.
+       *
+       * "Whose turn is it" is `nextInSupersetRound`, in `lib/superset.ts`, because
+       * that is where the edge cases live: unequal set counts between members, a
+       * member removed mid-session, a member already finished, sets logged out of
+       * order. All of them testable without a store, none of them a session in a
+       * gym.
        */
       completeSet: (entryId, setId) => {
         const { session, rest } = get();
@@ -324,29 +354,70 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         // a rest the user is currently watching.
         if (!target.sets.some((s) => s.localId === setId)) return;
 
+        const restTaken = measureRestTaken(rest, Date.now());
         const sets = target.sets.map((s) =>
           s.localId === setId
-            ? { ...s, isCompleted: true, completedAt: new Date().toISOString(), isPrefilled: false }
+            ? {
+                ...s,
+                isCompleted: true,
+                completedAt: new Date().toISOString(),
+                isPrefilled: false,
+                ...(restTaken != null ? { restTakenSeconds: restTaken } : {}),
+              }
             : s,
         );
         const entries = [...session.entries];
         entries[index] = { ...target, sets };
 
         const exerciseDone = sets.every((s) => s.isCompleted);
-        const advanceTo = exerciseDone ? (session.entries[index + 1]?.localId ?? null) : null;
+
+        /*
+         * The superset question, asked against the session AS IT NOW IS — the ✓
+         * that just landed is what moves the group's round on, so the check has to
+         * see it. Null means "not in a superset, or the round is over", which is
+         * every non-superset exercise and therefore the old behaviour untouched.
+         */
+        const partner = nextInSupersetRound({ ...session, entries }, entryId);
+
+        const advanceTo = partner
+          ? partner.entryId
+          : exerciseDone
+            ? (session.entries[index + 1]?.localId ?? null)
+            : null;
         /*
          * The workout is over: every set of every exercise is logged, so there is
          * nothing to rest FOR. Deliberately not "this was the last exercise in the
          * list" — people skip an exercise and come back to it, and in that case
          * there is still work to walk to.
          */
-        const workoutDone = exerciseDone && entries.every((e) => e.sets.every((s) => s.isCompleted));
+        const workoutDone =
+          exerciseDone && entries.every((e) => e.sets.every((s) => s.isCompleted));
 
         const settings = currentSettings();
+        /*
+         * BETWEEN SETS: this exercise's own rest if the routine gave it one,
+         * otherwise the live setting. BETWEEN EXERCISES: always the live setting.
+         *
+         * The asymmetry is deliberate and it is the same rule stated twice. A
+         * number only overrides the setting if the user can SEE that it does — the
+         * routine editor shows the between-sets override on the row and can clear
+         * it, so it is a choice; nothing anywhere edits
+         * `RoutineItem.transitionRestSeconds`, so honouring it would be the old bug
+         * again, a setting silently doing nothing.
+         *
+         * Read at the moment rest starts rather than captured at session start, so
+         * an item that is FOLLOWING Settings follows it live: change "Between sets"
+         * mid-workout and the very next set rests for the new length.
+         */
         const restSeconds = exerciseDone
           ? settings.restSecondsBetweenExercises
-          : settings.restSecondsBetweenSets;
-        const startsRest = settings.autoStartRest && restSeconds > 0 && !workoutDone;
+          : (target.restSecondsOverride ?? settings.restSecondsBetweenSets);
+        /*
+         * `!partner` is the superset rule: mid-round, the next thing to do is the
+         * other exercise, and a countdown over its rows is the pill getting in the
+         * way of the work. The round's rest comes after its last member.
+         */
+        const startsRest = settings.autoStartRest && restSeconds > 0 && !workoutDone && !partner;
 
         set({
           session: {
@@ -362,6 +433,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
           activeEntryId: advanceTo ?? get().activeEntryId,
           rest: startsRest
             ? {
+                startedAt: Date.now(),
                 endsAt: Date.now() + restSeconds * 1000,
                 totalSeconds: restSeconds,
                 // The source is what the pill labels itself with, so it has to
@@ -465,14 +537,24 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
 
         set({
           session: mapEntry(session, entryId, (entry) => {
-            const { suggestedWeightKg, suggestedReps } = entry.overload;
+            /*
+             * One suggestion, two axes, and the same rule for both: a suggested
+             * number replaces the current one on every set that has NOT been
+             * logged, and a set already ticked is history.
+             *
+             * `suggestedCount` covers reps-before-weight on a weighted lift AND
+             * the whole of `due_count` — one more push-up, fifteen more seconds of
+             * plank, twenty-five more metres. It is one field because it is one
+             * thing: the number that goes into `count`.
+             */
+            const { suggestedWeightKg, suggestedCount } = entry.overload;
             const sets = entry.sets.map((s) =>
               s.isCompleted
                 ? s
                 : {
                     ...s,
                     weightKg: suggestedWeightKg ?? s.weightKg,
-                    count: suggestedReps ?? s.count,
+                    count: suggestedCount ?? s.count,
                     isPrefilled: false,
                   },
             );
@@ -500,6 +582,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         }
         set({
           rest: {
+            startedAt: Date.now(),
             endsAt: Date.now() + total * 1000,
             totalSeconds: total,
             source,
@@ -700,10 +783,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
 /* Rehydration guards                                                  */
 /* ------------------------------------------------------------------ */
 
-type PersistedSlice = Pick<
-  ActiveWorkoutState,
-  'session' | 'activeEntryId' | 'rest' | 'setTimer'
->;
+type PersistedSlice = Pick<ActiveWorkoutState, 'session' | 'activeEntryId' | 'rest' | 'setTimer'>;
 
 function finiteOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -731,7 +811,8 @@ function isRenderableSession(value: unknown): value is DraftSession {
     const e = entry as Partial<DraftEntry>;
     if (typeof e.localId !== 'string' || !Array.isArray(e.sets)) return false;
     if (typeof e.exercise !== 'object' || e.exercise === null) return false;
-    if (typeof e.exercise.countUnit !== 'string' || typeof e.exercise.name !== 'string') return false;
+    if (typeof e.exercise.countUnit !== 'string' || typeof e.exercise.name !== 'string')
+      return false;
     if (!Array.isArray(e.exercise.muscleGroups)) return false;
     if (typeof e.overload !== 'object' || e.overload === null) return false;
     if (!Number.isFinite(e.restSeconds) || !Number.isFinite(e.transitionRestSeconds)) return false;
@@ -764,7 +845,12 @@ function sanitizeState(persisted: unknown): PersistedSlice {
       ? raw.activeEntryId
       : (session.entries[0]?.localId ?? null);
 
-  return { session, activeEntryId, rest: sanitizeRest(raw.rest), setTimer: sanitizeTimer(raw.setTimer, entryIds) };
+  return {
+    session,
+    activeEntryId,
+    rest: sanitizeRest(raw.rest),
+    setTimer: sanitizeTimer(raw.setTimer, entryIds),
+  };
 }
 
 function sanitizeRest(value: unknown): RestState {
@@ -782,6 +868,14 @@ function sanitizeRest(value: unknown): RestState {
   if (endsAt == null && paused == null) return NO_REST;
 
   return {
+    /*
+     * A rest from an older build has no `startedAt`. Repaired to null rather than
+     * to "now", because a fabricated start instant would be recorded as a rest
+     * somebody took: `measureRestTaken` reads null as "cannot say" and writes
+     * nothing, which is the same answer it gives for no rest at all.
+     */
+    startedAt:
+      typeof rest.startedAt === 'number' && Number.isFinite(rest.startedAt) ? rest.startedAt : null,
     // A paused rest owns the state exclusively; a blob claiming both is repaired
     // in favour of the pause, which is the one the user chose.
     endsAt: paused != null ? null : endsAt,
@@ -812,6 +906,37 @@ function sanitizeTimer(value: unknown, entryIds: Set<string>): SetTimerState | n
     prepareSeconds: Math.max(0, Math.round(finiteOr(timer.prepareSeconds, 0))),
     workSeconds: Math.max(0, Math.round(finiteOr(timer.workSeconds, 0))),
   };
+}
+
+/**
+ * How long the rest on screen has actually lasted, in whole seconds — or null
+ * when there is nothing to measure.
+ *
+ * Wall time from `startedAt`, deliberately, rather than `totalSeconds` minus
+ * what is left on the clock. Three things make those different numbers and the
+ * wall clock is right about all three:
+ *
+ *  • PAUSE. A paused rest's deadline stops moving while the user carries on
+ *    resting. Pause time is rest taken — they were resting — so the measurement
+ *    has to keep running.
+ *  • `+15`. Adjusting the timer moves the deadline without changing how long the
+ *    user has been standing there.
+ *  • OVERRUN. Coming back at 3:10 to a 2:00 rest is a 3:10 rest, and clamping it
+ *    to the timer would make the log agree with the setting instead of with the
+ *    gym.
+ *
+ * Null in two cases, both of which mean "record nothing": no rest was on screen,
+ * and a gap too long to be a rest anybody took (see
+ * `MAX_PLAUSIBLE_REST_SECONDS`). The second is the app being force-quit mid-rest
+ * and relaunched the next morning: the elapsed wall time is real and it is not a
+ * rest, and writing nothing is more honest than writing either the true eight
+ * hours or a clamped thirty minutes.
+ */
+export function measureRestTaken(rest: RestState, now: number): number | null {
+  if (!isResting(rest) || rest.startedAt == null) return null;
+  const seconds = Math.round((now - rest.startedAt) / 1000);
+  if (seconds <= 0 || seconds > MAX_PLAUSIBLE_REST_SECONDS) return null;
+  return seconds;
 }
 
 /* ------------------------------------------------------------------ */

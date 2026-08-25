@@ -61,10 +61,7 @@ export function ScreenHeader({
   return (
     <View
       style={{ paddingTop: insets.top + 4 }}
-      className={[
-        'bg-bg px-lg pb-md',
-        bordered ? 'border-b border-b-hairline' : '',
-      ].join(' ')}
+      className={['bg-bg px-lg pb-md', bordered ? 'border-b border-b-hairline' : ''].join(' ')}
     >
       <View className="flex-row items-center">
         {/* 32 wide, 44 high: a narrow glyph with a full-height hit area. */}
@@ -104,9 +101,7 @@ export function ScreenHeader({
             accessibilityLabel={action.label}
             className={[
               'h-[36px] items-center justify-center rounded-pill px-lg',
-              action.tone === 'muted'
-                ? 'border border-hairline bg-surface-alt'
-                : 'bg-green',
+              action.tone === 'muted' ? 'border border-hairline bg-surface-alt' : 'bg-green',
             ].join(' ')}
           >
             <Text

@@ -65,7 +65,12 @@ export interface User {
   id: ID;
   displayName: string;
   unitSystem: UnitSystem;
-  bodyweightKg?: number;
+  /**
+   * NOTE: bodyweight is NOT here. It used to be, unset by the seed and read by
+   * nothing, and it is a preference the user types — so it lives in
+   * `settingsStore` beside the unit system, which is the only place the app can
+   * actually be told it. Two homes for one number is one of them being stale.
+   */
   /** Fallback rest when neither exercise nor routine specifies one. */
   defaultRestSeconds: number;
   overloadPolicy: OverloadPolicy;
@@ -173,6 +178,22 @@ export interface Exercise {
   incrementKg?: number;
 
   /**
+   * The empty bar, in kilograms — and the switch that turns the plate label on.
+   *
+   * Present ⟹ this movement is loaded with plates on a bar, so the weight cell
+   * gets a micro-label reading `20 + 2×10 + 2×2.5`. Absent ⟹ nothing renders, which
+   * is what a machine, a dumbbell and a cable stack want: a "plate breakdown" for a
+   * pin position is a lie about the equipment.
+   *
+   * On the exercise rather than in Settings because it is a fact about the
+   * movement — an Olympic bar is 20, a women's bar is 15, a trap bar is whatever it
+   * says on it — and one number in Settings would put a 20 kg bar under a hex bar.
+   * Which PLATES exist is the opposite kind of fact, about the gym rather than the
+   * lift, so that one does live in Settings.
+   */
+  barWeightKg?: number;
+
+  /**
    * Where to START, the first time this exercise is ever performed.
    *
    * Prefills come from HISTORY as soon as there is any — that is the whole
@@ -234,9 +255,19 @@ export interface RoutineItem {
   restSeconds?: number;
   /** Extra rest after the LAST set, before moving on. */
   transitionRestSeconds?: number;
-  /** Same string = same superset; rest only fires after the last member. */
+  /**
+   * Same string = same superset; rest only fires after the last member.
+   *
+   * Set by the routine editor's one superset control — a toggle reading "with the
+   * exercise above" — so the string itself is never shown to anybody and is only
+   * ever compared. `lib/superset.ts` owns whose turn is next, `completeSet` owns
+   * the no-rest branch, and `lib/routinePlan.ts` owns joining and splitting.
+   *
+   * ADJACENCY IS THE MODEL. Two items sharing a group but separated by a third are
+   * read as no superset at all: a bracket that skips a row is a lie about what
+   * happens in the gym, and it is reachable just by reordering a routine.
+   */
   supersetGroup?: string;
-  notes?: string;
 }
 
 export interface Routine {
@@ -245,7 +276,6 @@ export interface Routine {
   name: string; // "Pull + Swimming"
   items: RoutineItem[];
   estimatedMinutes?: number;
-  notes?: string;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }
@@ -257,6 +287,31 @@ export interface Routine {
 /**
  * One logged set. This is the atom of the whole app — everything else is
  * scaffolding around producing and reading these rows.
+ *
+ * WHAT IS NOT ON IT, and why. Five fields were declared here and read by nothing,
+ * which is the most expensive kind of field: it looks like a feature to whoever
+ * reads the type next, and it is written to disk forever.
+ *
+ *  `estimated1RM` — an Epley estimate, computed on every rep set and displayed
+ *    nowhere. `ExerciseHistoryScreen` states the case against it directly: it is a
+ *    number that goes up on its own and tells you nothing about whether to add a
+ *    plate. A derived number that no screen shows is a number that cannot be wrong
+ *    in a way anybody notices.
+ *  `rpe` — nothing collected it. Rate of perceived exertion is a real training
+ *    tool and a different product: it asks the user to grade every set, which is
+ *    the opposite of a log that costs one tap.
+ *  `notes` — nothing wrote it, and prose per set is a search feature this app has
+ *    no screen for.
+ *  `side` — a per-set left/right split. `Exercise.isUnilateral` already says "each
+ *    side", and it says it once on the card instead of on every row.
+ *  `partials` — rendered on the set row and writable from nowhere, which is worse
+ *    than absent: the one place it could appear was a value only a hand-edited
+ *    backup could produce.
+ *
+ * They are gone rather than kept "in case". The one that stayed is
+ * `restTakenSeconds`, because `completeSet` now writes it: the store knows when
+ * rest started and when the next ✓ landed, so the number is free and the median
+ * of it is a fact about the lifter that Settings can offer back.
  */
 export interface SetHistory {
   id: ID;
@@ -275,20 +330,11 @@ export interface SetHistory {
   countUnit: CountUnit;
   loadMode: LoadMode;
 
-  /** Trailing partials / cheat reps: "+25kg 12 + 1" -> count 12, partials 1. */
-  partials?: number;
-  side?: 'both' | 'left' | 'right';
-  rpe?: number; // 1–10, optional, never required
-
   /** Warm-ups are excluded from every analysis. */
   isWarmup: boolean;
   isCompleted: boolean;
   /** Actual rest taken before this set — feeds future rest suggestions. */
   restTakenSeconds?: number;
-
-  /** Denormalized Epley estimate, null for non-weighted work. */
-  estimated1RM: number | null;
-  notes?: string;
 }
 
 /**

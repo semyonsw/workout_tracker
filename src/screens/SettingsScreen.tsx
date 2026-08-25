@@ -11,12 +11,19 @@
  *   │ │ Start rest automatically         [ ●━ ]  │ │
  *   │ │ Timer ± step              15 s ( − )( + )│ │
  *   │ └──────────────────────────────────────────┘ │
+ *   │ │ You rest 2:38 between sets.      Use it  │ │
  *   │ COUNTDOWN                                    │
  *   │ ┌──────────────────────────────────────────┐ │
  *   │ │ Beep the last            5 s   ( − )( + )│ │
  *   │ │ Sound                            [ ●━ ]  │ │
  *   │ │ Test the beep                        ▶   │ │
  *   │ └──────────────────────────────────────────┘ │
+ *   │ BODY                                         │
+ *   │ ┌──────────────────────────────────────────┐ │
+ *   │ │ Bodyweight              82 kg  ( − )( + )│ │
+ *   │ └──────────────────────────────────────────┘ │
+ *   │ PLATES                                       │
+ *   │ (25)(20)(15)(10)( 5 )(2.5)(1.25) 0.5         │
  *   └──────────────────────────────────────────────┘
  *
  * WHY ± CHIPS AND NOT A KEYPAD. This is the same decision `QuickAdjust` makes on
@@ -32,11 +39,27 @@
  * that out at 0:05 of a two-minute plank is finding it out too late. One tap here
  * proves the thing works before it matters.
  *
+ * THREE SECTIONS THAT ARE NOT DURATIONS, and what each is for. `Body` holds the
+ * one number that makes bodyweight and assisted work countable — without it a
+ * session of push-ups reports no volume at all, and the app will not guess.
+ * `Plates` holds what is on the rack, which is the other half of the
+ * `20 + 2×10 + 2×2.5` line under a barbell lift's weight cell (the bar itself is
+ * a fact about the movement, so it lives on the exercise). Both are read in
+ * exactly one place each, and both say so on screen.
+ *
+ * AND ONE ROW THAT MEASURES RATHER THAN ASKS. Under each rest stepper, once there
+ * is enough data: "You rest 2:38 between sets." with one tap to adopt it. The
+ * timer has always known when a rest began and when the next ✓ landed; this is
+ * that number, as a median so one interrupted workout does not move it. It
+ * appears only when it disagrees with the setting by more than one nudge, so a tap
+ * always does something, and it disappears when they agree — there is nothing to
+ * dismiss because it is not asking for anything.
+ *
  * Every number is clamped by `settingsStore`, so a row cannot hand a `NaN` to a
  * deadline; this screen only ever asks for a nudge.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
@@ -46,6 +69,7 @@ import {
   Kicker,
   ListCard,
   Segmented,
+  SelectChip,
   Separator,
   TextButton,
   Toggle,
@@ -58,18 +82,48 @@ import {
   type BackupCounts,
   type BackupEnvelope,
 } from '../lib/backup';
-import { describeError, pickJsonFile, readTextFile, saveJsonFile } from '../lib/backupFile';
-import { commit, countFinal, countTick, tap } from '../lib/feedback';
-import { formatClock } from '../lib/units';
-import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
 import {
-  SETTING_LIMITS,
-  useSettings,
-  type NumericSetting,
-} from '../state/settingsStore';
+  describeError,
+  pickJsonFile,
+  readTextFile,
+  saveCsvFile,
+  saveJsonFile,
+} from '../lib/backupFile';
+import { csvBaseName, workoutsToCsv } from '../lib/csv';
+import { commit, countFinal, countTick, tap } from '../lib/feedback';
+import { restMedians } from '../lib/restHistory';
+import { formatClock, formatWeight, kgToLb, lbToKg, unitLabel, weightSteps } from '../lib/units';
+import {
+  applyBackup,
+  currentSnapshot,
+  exportBackupText,
+  mergeBackupWorkouts,
+} from '../state/dataTransfer';
+import { SETTING_LIMITS, useSettings, type NumericSetting } from '../state/settingsStore';
 import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import type { UnitSystem } from '../types/models';
+
+/**
+ * Where the bodyweight row starts from when it has never been set.
+ *
+ * A visible starting point for the ± chips, not a default: it is stored only once
+ * the user taps the row, and what they see immediately is the number they are
+ * adjusting. `sanitizeSettings` still has no fallback — an unset bodyweight stays
+ * unset everywhere else in the app.
+ */
+const BODYWEIGHT_START_KG = 70;
+
+/**
+ * The plate sizes this screen offers, heaviest first.
+ *
+ * A superset of the default list: 25 down to 1.25 is what a metric gym stocks, and
+ * 0.5 is the change plate some of them have. Fixed rather than free-form because a
+ * plate is a physical object with a stamped size — a keypad here would let somebody
+ * enter 7 kg and then wonder why nothing loads (see `platesFor` on why a
+ * non-canonical set fails).
+ */
+const PLATE_SIZES_KG = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5];
 
 const UNIT_OPTIONS: readonly { value: UnitSystem; label: string }[] = [
   { value: 'metric', label: 'Kilograms' },
@@ -90,11 +144,20 @@ function formatSeconds(seconds: number, zeroLabel = 'Off'): string {
   return formatClock(seconds);
 }
 
-/** A file that has been read and understood, waiting for a yes. */
+/**
+ * A file that has been read and understood, waiting for a yes.
+ *
+ * `mode` is the whole difference between the two actions, and it is carried here
+ * rather than in a second piece of state so the sheet cannot be shown for one and
+ * confirmed as the other.
+ */
 interface PendingImport {
+  mode: 'replace' | 'merge';
   file: string;
   envelope: BackupEnvelope;
   counts: BackupCounts;
+  /** For a merge: how many of the file's workouts this phone does not have. */
+  newWorkouts: number;
 }
 
 /** The one line under the two rows. `quiet` is "nothing happened", not an alarm. */
@@ -118,7 +181,14 @@ function onThisPhone(): BackupCounts {
 export function SettingsScreen() {
   const settings = useSettings();
   const clearHistory = useWorkoutHistory((s) => s.clearHistory);
-  const workoutCount = useWorkoutHistory((s) => s.workouts.length);
+  const workouts = useWorkoutHistory((s) => s.workouts);
+  const workoutCount = workouts.length;
+  /*
+   * What the user ACTUALLY rests, from the timer's own measurements. Null until
+   * there are enough samples to mean anything — see `restHistory.ts` — and the
+   * rows below render nothing at all in that case rather than hedging.
+   */
+  const measured = useMemo(() => restMedians(workouts), [workouts]);
   const [confirming, setConfirming] = useState<'reset' | 'history' | null>(null);
 
   /** A parsed file waiting for a yes: importing replaces everything. */
@@ -131,6 +201,29 @@ export function SettingsScreen() {
   const bump = (key: NumericSetting, direction: 1 | -1) => {
     tap();
     settings.bumpNumber(key, SETTING_LIMITS[key].step * direction);
+  };
+
+  /**
+   * ± on the bodyweight, in the user's own units.
+   *
+   * THE FIRST TAP SEEDS, it does not nudge. Nudging from "not set" has to start
+   * somewhere, and starting from zero would walk up from 20 kg while
+   * `BODYWEIGHT_START_KG` puts the number on screen in one tap where it can be
+   * read and corrected. It is a starting point the user is looking at, not a
+   * guess the app acts on: nothing is stored until this row is touched, and
+   * `Clear my bodyweight` puts it back.
+   */
+  const bumpBodyweight = (direction: 1 | -1) => {
+    tap();
+    if (settings.bodyweightKg == null) {
+      settings.setBodyweightKg(BODYWEIGHT_START_KG);
+      return;
+    }
+    const { coarse } = weightSteps(settings.unitSystem);
+    const display =
+      settings.unitSystem === 'imperial' ? kgToLb(settings.bodyweightKg) : settings.bodyweightKg;
+    const next = Number((display + coarse * direction).toFixed(2));
+    settings.setBodyweightKg(settings.unitSystem === 'imperial' ? lbToKg(next) : next);
   };
 
   /**
@@ -165,13 +258,54 @@ export function SettingsScreen() {
   };
 
   /**
+   * EXPORT SETS — the same log, flat, one row per set.
+   *
+   * A copy you can read, not a second backup: there is no CSV import and there will
+   * not be one, because a table of set rows carries no exercises, no routines and
+   * no settings. `lib/csv.ts` has the whole argument.
+   */
+  const exportSets = async () => {
+    if (busy) return;
+    tap();
+    setBusy(true);
+    setDataStatus(null);
+    try {
+      const rows = workouts.reduce((n, w) => n + w.sets.length, 0);
+      if (rows === 0) {
+        setDataStatus({ tone: 'quiet', text: 'There are no logged sets to export yet.' });
+        return;
+      }
+      const outcome = await saveCsvFile(csvBaseName(), workoutsToCsv(workouts));
+      if (!outcome.saved) {
+        setDataStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
+        return;
+      }
+      commit();
+      setDataStatus({
+        tone: 'ok',
+        text: `Saved ${outcome.name} to ${outcome.where} — ${rows} ${rows === 1 ? 'set' : 'sets'}.`,
+      });
+    } catch (error) {
+      setDataStatus({ tone: 'quiet', text: describeError(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
    * IMPORT — the phone's own file browser, then a question.
    *
    * Reading the file and APPLYING it are deliberately two steps: this is the only
    * irreversible action in the app that isn't a delete, so the sheet gets to state
    * what is in the file and what is on the phone before anything is replaced.
+   *
+   * TWO ACTIONS, ONE PICKER. `mode` decides what the sheet asks and what the yes
+   * does: `replace` is a restore, `merge` adds only the workouts this phone does
+   * not already have. They share this function because reading and validating a
+   * file is identical work, and they must never share a confirmation — see
+   * `PendingImport`.
    */
-  const importData = async () => {
+  const importData = async (mode: 'replace' | 'merge') => {
     if (busy) return;
     tap();
     setBusy(true);
@@ -187,7 +321,25 @@ export function SettingsScreen() {
         setDataStatus({ tone: 'quiet', text: `${file.name}: ${result.error}` });
         return;
       }
-      setPendingImport({ file: file.name, envelope: result.envelope, counts: result.counts });
+      /*
+       * How many workouts a merge would ADD, counted before asking, so the
+       * confirmation states a number rather than a hope. Counted from the file's
+       * ids against this phone's — the same union the store performs, so the sheet
+       * cannot promise more than the merge delivers.
+       */
+      const known = new Set(workouts.map((w) => w.id));
+      const newWorkouts = result.envelope.workouts.filter((w) => {
+        const id = (w as { id?: unknown }).id;
+        return typeof id === 'string' && !known.has(id);
+      }).length;
+
+      setPendingImport({
+        mode,
+        file: file.name,
+        envelope: result.envelope,
+        counts: result.counts,
+        newWorkouts,
+      });
     } catch (error) {
       setDataStatus({ tone: 'quiet', text: describeError(error) });
     } finally {
@@ -197,6 +349,23 @@ export function SettingsScreen() {
 
   const confirmImport = () => {
     if (!pendingImport) return;
+
+    if (pendingImport.mode === 'merge') {
+      const merged = mergeBackupWorkouts(pendingImport.envelope);
+      commit();
+      setPendingImport(null);
+      setDataStatus({
+        tone: 'ok',
+        text:
+          merged.workoutsAdded === 0
+            ? 'Nothing to add — every workout in that file was already here.'
+            : `Added ${merged.workoutsAdded} ${
+                merged.workoutsAdded === 1 ? 'workout' : 'workouts'
+              } and ${merged.setsAdded} ${merged.setsAdded === 1 ? 'set' : 'sets'}.`,
+      });
+      return;
+    }
+
     const applied = applyBackup(pendingImport.envelope);
     commit();
     setPendingImport(null);
@@ -231,12 +400,28 @@ export function SettingsScreen() {
               onDecrease={() => bump('restSecondsBetweenSets', -1)}
               onIncrease={() => bump('restSecondsBetweenSets', 1)}
             />
+            <MeasuredRestRow
+              measuredSeconds={measured.betweenSets}
+              settingSeconds={settings.restSecondsBetweenSets}
+              what="between sets"
+              onAdopt={() =>
+                settings.setNumber('restSecondsBetweenSets', measured.betweenSets ?? 0)
+              }
+            />
             <Separator />
             <StepperRow
               label="Between exercises"
               value={formatSeconds(settings.restSecondsBetweenExercises, 'No rest')}
               onDecrease={() => bump('restSecondsBetweenExercises', -1)}
               onIncrease={() => bump('restSecondsBetweenExercises', 1)}
+            />
+            <MeasuredRestRow
+              measuredSeconds={measured.betweenExercises}
+              settingSeconds={settings.restSecondsBetweenExercises}
+              what="between exercises"
+              onAdopt={() =>
+                settings.setNumber('restSecondsBetweenExercises', measured.betweenExercises ?? 0)
+              }
             />
             <Separator />
             <SwitchRow
@@ -307,6 +492,83 @@ export function SettingsScreen() {
             <TestBeepRow />
           </ListCard>
 
+          {/* ----------------------------------------------------------
+              BODY — one number, and it is opt-in.
+
+              This is what makes bodyweight and assisted work COUNTABLE, and it is
+              the only thing it does. A +40 kg dip moves a body plus forty; a
+              −20 kg assisted pull-up moves a body minus twenty; a push-up moves a
+              body. Without this number the app cannot weigh any of them, so it
+              leaves them out of session volume and drops the volume figure from
+              the history line rather than printing one that undercounts.
+
+              It is NOT a weigh-in log, a target, or a chart. There is one value,
+              it is the current one, and nothing tracks it over time — that is a
+              different app, and this one has no opinion about anybody's weight.
+              Nudged by the app's own coarse weight step (2 kg / 5 lb) because
+              bodyweight to the nearest couple of kilos is all volume needs, and
+              because a once-ever setting nudged in half-kilos is forty taps. */}
+          <Kicker className="mx-lg mb-sm mt-xxl">Body</Kicker>
+          <ListCard className="mx-lg">
+            <StepperRow
+              label="Bodyweight"
+              hint="What makes push-ups, dips and assisted work countable"
+              value={
+                settings.bodyweightKg == null
+                  ? 'Not set'
+                  : `${formatWeight(settings.bodyweightKg, settings.unitSystem)} ${unitLabel(settings.unitSystem)}`
+              }
+              onDecrease={() => bumpBodyweight(-1)}
+              onIncrease={() => bumpBodyweight(1)}
+            />
+            {settings.bodyweightKg != null ? (
+              <>
+                <Separator />
+                <TextButton
+                  label="Clear my bodyweight"
+                  onPress={() => {
+                    tap();
+                    settings.setBodyweightKg(undefined);
+                  }}
+                />
+              </>
+            ) : null}
+          </ListCard>
+          <Text className="mx-lg mt-sm text-label text-ink-faint">
+            {settings.bodyweightKg == null
+              ? 'Until this is set, a session of push-ups or dips reports no volume — the app will not guess what your body weighs. Nothing else reads it.'
+              : 'Read only when working out session volume. It is not logged, charted or compared to anything.'}
+          </Text>
+
+          {/* ----------------------------------------------------------
+              PLATES — what is on the rack behind you.
+
+              A fact about the GYM, not about any one lift, which is why the bar
+              weight lives on the exercise instead. Read in exactly one place: the
+              `20 + 2×10 + 2×2.5` line under the weight cell of an exercise that
+              declares a bar, so switching a size off here removes it from every
+              breakdown the app draws. It informs and never rounds — a target these
+              plates cannot make shows no line at all rather than the nearest
+              loadable weight. */}
+          <Kicker className="mx-lg mb-sm mt-xxl">Plates</Kicker>
+          <View className="mx-lg flex-row flex-wrap">
+            {PLATE_SIZES_KG.map((plate) => (
+              <SelectChip
+                key={plate}
+                label={String(plate)}
+                selected={settings.availablePlatesKg.includes(plate)}
+                onPress={() => {
+                  tap();
+                  settings.togglePlate(plate);
+                }}
+              />
+            ))}
+          </View>
+          <Text className="mx-lg text-label text-ink-faint">
+            Which plates this gym has, in kilograms. Only used to work out what goes on the bar; it
+            never changes a weight you have typed.
+          </Text>
+
           {/* ---------------------------------------------------------- */}
           <Kicker className="mx-lg mb-sm mt-xxl">Units</Kicker>
           <View className="mx-lg">
@@ -340,7 +602,24 @@ export function SettingsScreen() {
           <View className="mx-lg mt-xxl overflow-hidden rounded-surface border border-hairline bg-surface">
             <TextButton label="Export data" tone="green" onPress={() => void exportData()} />
             <Separator inset={0} />
-            <TextButton label="Import data" tone="green" onPress={() => void importData()} />
+            <TextButton label="Export sets as CSV" tone="green" onPress={() => void exportSets()} />
+            <Separator inset={0} />
+            {/* TWO CLEARLY-DIFFERENT IMPORTS, named for what they do rather than
+                for what they are. "Replace everything" and "Add workouts from a
+                file" cannot be confused for each other by somebody reading fast,
+                which one row labelled "Import data" with a mode picker behind it
+                absolutely could. */}
+            <TextButton
+              label="Replace everything from a file"
+              tone="green"
+              onPress={() => void importData('replace')}
+            />
+            <Separator inset={0} />
+            <TextButton
+              label="Add workouts from a file"
+              tone="green"
+              onPress={() => void importData('merge')}
+            />
             <Separator inset={0} />
             <TextButton label="Reset settings to defaults" onPress={() => setConfirming('reset')} />
             {/* Last, and only when there is something to lose. One workout at a
@@ -369,9 +648,19 @@ export function SettingsScreen() {
 
           <Text className="mx-lg mt-md text-label text-ink-faint">
             A backup is plain JSON, so you can read it, keep it anywhere, and move it to another
-            phone. Importing REPLACES what is on this phone — it is never merged — so export first
-            if there is anything here you would miss. A workout in progress is not part of a backup:
-            it carries a running clock.
+            phone. <Text className="text-ink-muted">Replace everything</Text> makes this phone look
+            like the file — exercises, routines, workouts and settings — so export first if there is
+            anything here you would miss. <Text className="text-ink-muted">Add workouts</Text> only
+            ever adds: workouts from the file that this phone does not already have, and nothing
+            else. Your exercises, routines and settings are never merged, because a merged library
+            brings back every exercise you have deleted. A workout in progress is not part of a
+            backup: it carries a running clock.
+          </Text>
+
+          <Text className="mx-lg mt-md text-label text-ink-faint">
+            The CSV is one row per set — date, workout, exercise, set number, weight, count, and
+            whether it was a warm-up — for a spreadsheet. It is an export only; the JSON file is the
+            backup.
           </Text>
         </ScrollView>
       </View>
@@ -379,7 +668,7 @@ export function SettingsScreen() {
       {confirming === 'reset' ? (
         <ConfirmSheet
           title="Reset settings?"
-          body="Every duration and switch goes back to its default. Your exercises, routines and history are untouched."
+          body="Every duration and switch goes back to its default, and your bodyweight is cleared. Your exercises, routines and history are untouched."
           confirmLabel="Reset settings"
           cancelLabel="Keep mine"
           onConfirm={() => {
@@ -390,7 +679,7 @@ export function SettingsScreen() {
         />
       ) : null}
 
-      {pendingImport ? (
+      {pendingImport?.mode === 'replace' ? (
         <ConfirmSheet
           title="Replace everything with this file?"
           body={[
@@ -400,6 +689,32 @@ export function SettingsScreen() {
           ].join(' ')}
           confirmLabel="Import it"
           cancelLabel="Keep what I have"
+          onConfirm={confirmImport}
+          onCancel={() => setPendingImport(null)}
+        />
+      ) : null}
+
+      {/* The merge asks a different question, so it says a different sentence: HOW
+          MANY workouts will be added, and what will not be touched. A confirmation
+          that reused the replace copy would be the one place this feature could
+          mislead somebody into losing a library. */}
+      {pendingImport?.mode === 'merge' ? (
+        <ConfirmSheet
+          title={
+            pendingImport.newWorkouts === 0
+              ? 'Nothing to add'
+              : `Add ${pendingImport.newWorkouts} ${
+                  pendingImport.newWorkouts === 1 ? 'workout' : 'workouts'
+                }?`
+          }
+          body={[
+            pendingImport.newWorkouts === 0
+              ? `Every workout in ${pendingImport.file} is already on this phone.`
+              : `${pendingImport.newWorkouts} of the ${pendingImport.counts.workouts} workouts in ${pendingImport.file} are not on this phone yet.`,
+            'Your exercises, routines and settings are not touched, and nothing already here is changed or removed.',
+          ].join(' ')}
+          confirmLabel={pendingImport.newWorkouts === 0 ? 'Fine' : 'Add them'}
+          cancelLabel="Not now"
           onConfirm={confirmImport}
           onCancel={() => setPendingImport(null)}
         />
@@ -423,6 +738,65 @@ export function SettingsScreen() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * "You rest 2:38 between sets" — and one tap to make that the setting.
+ *
+ * Measured by the rest timer itself: the store has always known when a rest began
+ * and when the next ✓ landed, and `SetHistory.restTakenSeconds` has always had a
+ * field for it. `restMedians` is the median rather than the mean, so one workout
+ * interrupted by a phone call does not move it.
+ *
+ * FOUR THINGS IT DOES NOT DO, and each of them is why it can be trusted:
+ *
+ *  • It does not appear without the data. Below `MIN_REST_SAMPLES` recorded rests
+ *    the median swings on one interruption, and a suggestion that changes every
+ *    workout is one nobody trusts twice.
+ *  • It does not appear when it agrees with the setting, or agrees within one nudge
+ *    of the ± chips. A row whose tap would change nothing is a row that trains
+ *    people to ignore rows.
+ *  • It does not nag. One line, `ink-muted`, no icon, no dot, and it disappears the
+ *    moment the setting matches — there is no dismissing it because there is
+ *    nothing to dismiss.
+ *  • It does not judge. "You rest 2:38" is a measurement of what happened, not a
+ *    comparison with what should have. Resting longer than you planned is not a
+ *    failure, it is information about the plan.
+ */
+function MeasuredRestRow({
+  measuredSeconds,
+  settingSeconds,
+  what,
+  onAdopt,
+}: {
+  measuredSeconds: number | null;
+  settingSeconds: number;
+  /** "between sets" / "between exercises" — the tail of the sentence. */
+  what: string;
+  onAdopt: () => void;
+}) {
+  if (measuredSeconds == null) return null;
+  // Within one nudge of the chips is agreement. See the note above.
+  if (Math.abs(measuredSeconds - settingSeconds) < SETTING_LIMITS.restSecondsBetweenSets.step) {
+    return null;
+  }
+
+  return (
+    <Pressable
+      onPress={() => {
+        commit();
+        onAdopt();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`You rest ${formatClock(measuredSeconds)} ${what}. Use that as the setting.`}
+      className="min-h-[44px] flex-row items-center px-lg pb-md"
+    >
+      <Text className="flex-1 pr-md text-label tabular-nums text-ink-muted">
+        You rest {formatClock(measuredSeconds)} {what}.
+      </Text>
+      <Text className="text-label font-semibold text-green-bright">Use it</Text>
+    </Pressable>
+  );
+}
 
 /**
  * A number with a `−` and a `+`.

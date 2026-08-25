@@ -3,8 +3,9 @@
 A minimal, local-first Android workout tracker built around one rule: **logging a
 set that repeats last session costs one tap.**
 
-- **Stack** — Expo (React Native) + TypeScript + NativeWind + Zustand, everything
-  persisted in AsyncStorage. No account, no server, no cloud build.
+- **Stack** — Expo (React Native) + TypeScript + NativeWind + Zustand. The
+  finished-workout log lives in SQLite; the library, routines and settings are a
+  few dozen rows and stay in AsyncStorage. No account, no server, no cloud build.
 - **Design** — near-black + a single green scale, hairlines, tabular numerals,
   five type sizes, two radii, and exactly one shadow (under the timer). Colour
   means one thing: progressive overload.
@@ -12,8 +13,9 @@ set that repeats last session costs one tap.**
 ```bash
 npm ci                   # exactly the locked tree — see BUILD_ANDROID.md
 npx expo start           # dev server
-npm test                 # 280+ tests: timers, overload, stores, backups
+npm test                 # 560+ tests: timers, overload, trends, stores, backups, migration
 npm run typecheck
+npm run lint             # also what CI runs, on every push
 ```
 
 ## What it does
@@ -27,18 +29,30 @@ npm run typecheck
 | Timed sets | ▶ on the row: a get-ready count, then either a countdown that logs itself at the bell (a 2:00 plank, a boxing round) or an open hold you stop (a dead hang) |
 | Training sequence | optional, off by default. Build an order — push → pull → push — and the home screen names the next one up and advances when you finish it. Off means invisible |
 | Routines | add, rename, reorder by long-press-and-slide, remove an exercise with the ✕ on its row, delete the routine |
+| The plan is editable | tap a row in the routine editor and it opens in place: sets, the rep range, and how long to rest, all on ± chips. Rest names which of the two it is using — this exercise's own, or your Settings value — and can be put back to following Settings |
+| Supersets | one toggle, `with the exercise above`. Members share a green rule down their left edge, no rest fires between them, and rest comes after the last one of the round |
 | Change the plan mid-set | `+ Add set` / `− Remove set` in every card, `+ Add an exercise` at the bottom (library picker and create screen included), long-press a card and slide to reorder |
+| …and it learns | on `Finish`, if you did five sets where the routine plans four, one extra tap writes that back. Declining changes nothing and it does not ask twice |
+| Warm-up sets | a chip in the set editor. A warm-up reads `W` instead of a number and counts towards nothing — not the volume, not the set count, not the shorthand, not the suggestions |
 | Exercise library | a muscle tree — `push → chest → dips` — with search, create-from-query, edit in place (a rename keeps every set ever logged) and delete |
-| Overload nudges | derived from your own set history: a weight that has been the same for N days over M sessions, with the suggestion applied to every unlogged set in one tap |
-| History | every finished workout, newest first, by month: date, duration, sets, volume, each exercise in the app's shorthand **and its total** — `+40 kg · 4 4 4` with `12 reps total` under it |
-| Settings | every duration the app counts, plus sound, vibration, screen-on and notification switches |
-| Export / Import | everything you own — exercises, routines, the sequence, every workout with its set rows, your settings — as one readable JSON file, and back again through the phone's file browser |
+| Overload nudges | derived from your own set history: a weight, a hold or a rep count that has been the same for N days over M sessions, with the suggestion applied to every unlogged set in one tap. Planks and push-ups get the same treatment as the barbell — `3× at 2:00 — try 2:15` |
+| Plate maths | `20 + 2×10 + 2×2.5` under the weight cell of a barbell lift. It informs and never rounds: a weight your plates cannot make shows no line rather than the nearest one |
+| History | every finished workout, newest first, by month: date, duration, sets, volume, each exercise in the app's shorthand **and its total** — `+40 kg · 4 4 4` with `12 reps total` under it. Tapping a workout anywhere in the app opens that workout |
+| Workout numbers | every workout carries an ordinal — `Workout 92`. Pin the number on any one session (`Set the workout number` inside it) and every other workout counts from there, backwards and forwards, so a log that starts at 91 because ninety happened before this app says so |
+| Graphs | `History → Graphs`: reps per workout and kilograms per workout over time, or pick one exercise for its reps per session and top weight per session. Each line states its own direction — `up 34 reps since 11 Jun` — because the shape is visible but the arithmetic isn't |
+| Sets per cluster | pull 42 · push 31 · legs 8, over 4 weeks, 12 weeks or all of it. Counts and bars, and a zero is the point |
+| Numbers it will not fake | volume needs a bodyweight to weigh a push-up or an assisted pull-up. Without one the clause is dropped rather than printed short, and no bodyweight is ever guessed |
+| Correct a typo | inside an open workout, one logged set at a time, on the same ± chips. Everything derived from it is recomputed rather than patched |
+| Settings | every duration the app counts, plus sound, vibration, screen-on and notification switches. Your bodyweight, which is what makes push-ups and assisted work countable. Which plates the gym has. And what you actually rest, measured, with one tap to adopt it |
+| Export / Import | everything you own — exercises, routines, the sequence, every workout with its set rows, your settings — as one readable JSON file, and back again through the phone's file browser. The pinned workout number travels with it, because it is the one fact that cannot be recomputed. `Add workouts from a file` merges a second phone's log instead of replacing yours; a CSV of every set row is there too, for a spreadsheet |
 
 ## Android APK
 
-Android-only, sideloaded. **[BUILD_ANDROID.md](BUILD_ANDROID.md)** covers
-installing it on a phone, rebuilding, and — importantly — where the signing
-keystore lives and why losing it costs you an uninstall.
+Android-only, sideloaded, from the **[Releases page](../../releases)** — a `v*`
+tag builds and signs it in CI and attaches it there.
+**[BUILD_ANDROID.md](BUILD_ANDROID.md)** covers installing it on a phone,
+rebuilding locally, and — importantly — where the signing keystore lives and why
+losing it costs you an uninstall.
 
 ```bash
 npx expo prebuild -p android      # only when app.json or native deps changed
@@ -48,25 +62,36 @@ cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 ## Layout
 
 ```
-App.tsx                     providers, the error boundary, notifications, audio
+App.tsx                     providers, the error boundary, notifications, audio,
+                            and the one-time history migration
 src/navigation/AppShell     five tabs and a stack; no tab bar during a session
 src/screens/                one file per screen, all plain props-and-callbacks
 src/components/             SetRow, ExerciseCard, TimerPill, primitives,
                             ErrorBoundary, ConfirmSheet…
 src/hooks/                  the two timers and the count-in
 src/lib/                    the decisions: overload, set timer, count-in cue,
-                            muscles, draft, completed workout, history, shape,
-                            units, backup — all pure, all tested. Plus
-                            beeper/notify/feedback, the three wrappers around
-                            native side effects that must never throw mid-set
+                            muscles, draft, routine plan, superset, balance,
+                            rest history, plates, reorder, completed workout,
+                            history, trends, shape, units, backup, csv — all
+                            pure, all tested. Plus beeper/notify/feedback, the
+                            three wrappers around native side effects that must
+                            never throw mid-set
 src/state/                  the live session, the finished workouts, the library
-                            (+ the sequence), the settings — zustand +
-                            AsyncStorage, every one validated on rehydration
+                            (+ the sequence), the settings — zustand, every one
+                            validated on the way in. historyDb.ts is the SQLite
+                            schema and the migration off AsyncStorage; the other
+                            three stores are a few dozen rows and stay there
 src/data/seed.ts            the starting library and three routines. No history,
                             no sequence: both are only ever yours
 test/fixtures/history.ts    a real training log, as a test fixture only
+test/*Stub.ts               the three native modules the suite aliases away.
+                            expoSqliteStub is the odd one out: a thin adapter
+                            over Node's own `node:sqlite`, so the schema and the
+                            migration are tested against a real engine
 src/theme/tokens.ts         the values className can't reach
 plugins/                    Expo config plugins (release signing, no microphone)
+.github/workflows/          ci.yml on every push (test, typecheck, lint) and
+                            release.yml on a `v*` tag (the signed APK)
 ```
 
 Each file opens with a header explaining what it owns and why it is built the way

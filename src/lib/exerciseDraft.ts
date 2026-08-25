@@ -58,9 +58,7 @@ export interface ExerciseDraft {
  * one shape where the number the user sets is a clock. Mirrors `wellsFor`.
  */
 function targetIsDuration(shape: { requiresWeight: boolean; countUnit: CountUnit }): boolean {
-  return (
-    !shape.requiresWeight && (shape.countUnit === 'seconds' || shape.countUnit === 'rounds')
-  );
+  return !shape.requiresWeight && (shape.countUnit === 'seconds' || shape.countUnit === 'rounds');
 }
 
 /** A usable positive number, or the fallback. */

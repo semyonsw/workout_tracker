@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  BODYWEIGHT_LIMITS,
   DEFAULT_SETTINGS,
   SETTING_LIMITS,
+  clampBodyweightKg,
+  clampPlates,
   clampSetting,
   currentSettings,
   sanitizeSettings,
@@ -81,7 +84,7 @@ describe('sanitizeSettings', () => {
 });
 
 describe('the store', () => {
-  it('bumps by the setting\'s own step and stops at the ceiling', () => {
+  it("bumps by the setting's own step and stops at the ceiling", () => {
     const { bumpNumber } = useSettings.getState();
     const step = SETTING_LIMITS.restSecondsBetweenSets.step;
     const start = useSettings.getState().restSecondsBetweenSets;
@@ -119,5 +122,107 @@ describe('the store', () => {
 
     s.resetToDefaults();
     expect(currentSettings()).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The bodyweight is the one setting with no default, and that is the point.
+ *
+ * It is the multiplier on every bodyweight and assisted set the user has ever
+ * logged, so a fallback number would quietly invent a year of volume figures.
+ * `undefined` is a fact the app acts on: `effectiveLoadKg` returns null, session
+ * volume leaves those sets out, and the history line drops its volume clause.
+ */
+describe('the bodyweight', () => {
+  it('is unset by default, and stays unset through a sanitize', () => {
+    expect(DEFAULT_SETTINGS.bodyweightKg).toBeUndefined();
+    expect(sanitizeSettings(undefined).bodyweightKg).toBeUndefined();
+    expect(sanitizeSettings({}).bodyweightKg).toBeUndefined();
+  });
+
+  it('is a declared key, so a device that upgraded gets it filled', () => {
+    // Rule 2 of this store: it rehydrates TOTAL. A key missing from
+    // DEFAULT_SETTINGS is a key `merge` never fills.
+    expect(Object.keys(DEFAULT_SETTINGS)).toContain('bodyweightKg');
+  });
+
+  it('holds a real weight inside a believable range', () => {
+    expect(clampBodyweightKg(82)).toBe(82);
+    expect(clampBodyweightKg(82.4)).toBe(82.4);
+    expect(clampBodyweightKg(1)).toBe(BODYWEIGHT_LIMITS.min);
+    expect(clampBodyweightKg(5000)).toBe(BODYWEIGHT_LIMITS.max);
+  });
+
+  it('reads one decimal place, so a pound round-trip is not a paragraph', () => {
+    expect(clampBodyweightKg(82.34567)).toBe(82.3);
+  });
+
+  it('takes a numeric string, because a text field hands one over', () => {
+    expect(clampBodyweightKg('82.5')).toBe(82.5);
+  });
+
+  it('is UNSET rather than defaulted for anything unusable', () => {
+    // Unlike `clampSetting`, which has a number to fall back to. Every one of
+    // these would pass through `Number()` as a finite 0.
+    for (const bad of [undefined, null, NaN, 0, -5, '', '  ', [], false, {}]) {
+      expect(clampBodyweightKg(bad)).toBeUndefined();
+    }
+  });
+
+  it('can be set and cleared through the store', () => {
+    useSettings.getState().setBodyweightKg(82);
+    expect(currentSettings().bodyweightKg).toBe(82);
+
+    // Clearing is a real choice: "I would rather the app said nothing than guessed".
+    useSettings.getState().setBodyweightKg(undefined);
+    expect(currentSettings().bodyweightKg).toBeUndefined();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The gym's plates.
+ *
+ * A fact about the gym rather than about any one lift — which is why the bar
+ * weight is on the exercise and this is here. Read only by `platesFor`, and only
+ * for an exercise that declares a bar.
+ */
+describe('the plate list', () => {
+  it('defaults to what most gyms have, heaviest first', () => {
+    expect(DEFAULT_SETTINGS.availablePlatesKg).toEqual([25, 20, 15, 10, 5, 2.5, 1.25]);
+  });
+
+  it('sorts and deduplicates whatever comes off disk', () => {
+    // Sorted here so the greedy walk in `platesFor` always gets a canonical list,
+    // and deduplicated because two 20s in the list is one entry written twice, not
+    // two plates in the gym.
+    expect(clampPlates([2.5, 25, 25, 10])).toEqual([25, 10, 2.5]);
+  });
+
+  it('drops entries that are not usable plates', () => {
+    expect(clampPlates([20, 0, -5, NaN, 'heavy', null, 10])).toEqual([20, 10]);
+  });
+
+  it('falls back to the default rather than to an empty list', () => {
+    // `[]` means every target is unreachable, so every plate label silently
+    // disappears — which looks exactly like the feature being broken.
+    for (const bad of [[], undefined, null, 'plates', [0, -1], {}]) {
+      expect(clampPlates(bad)).toEqual(DEFAULT_SETTINGS.availablePlatesKg);
+    }
+  });
+
+  it('caps a corrupt blob at a believable number of sizes', () => {
+    const absurd = Array.from({ length: 500 }, (_, i) => i + 1);
+    expect(clampPlates(absurd)).toHaveLength(16);
+  });
+
+  it('survives a round trip through sanitizeSettings', () => {
+    expect(sanitizeSettings({ availablePlatesKg: [10, 20] }).availablePlatesKg).toEqual([20, 10]);
+    expect(sanitizeSettings(undefined).availablePlatesKg).toEqual(
+      DEFAULT_SETTINGS.availablePlatesKg,
+    );
   });
 });

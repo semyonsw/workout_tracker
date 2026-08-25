@@ -3,7 +3,7 @@
  *
  *   ┌──────────────────────────────────────────────┐
  *   │  −2   −0.5      42.5 KG      +0.5   +2       │
- *   │  Type          Remove set            Done    │
+ *   │  Type    Warm-up    Remove set       Done    │
  *   └──────────────────────────────────────────────┘
  *
  * This is where the tap-count promise is proven. One tap logs an unchanged set
@@ -22,6 +22,19 @@
  * stays 16.5 rather than being rounded to something "loadable" by a machine the
  * app has never seen. There is no Cancel: edits are applied live, and `Done`
  * only closes the panel.
+ *
+ * WARM-UP LIVES HERE, as a chip beside `Remove set`, because this panel already IS
+ * the set-row editor and a flag on a set does not earn a surface of its own.
+ * `isWarmup` has been on both `DraftSet` and `SetHistory` since the first release,
+ * with two consumers filtering on it — the overload engine and the shorthand — and
+ * nothing anywhere able to set it. That is worse than a missing feature: a light
+ * warm-up rendered as a drop-set group in the history line, and a heavy warm-up
+ * single was read as the session's TOP WORKING WEIGHT and drove a nudge off a set
+ * the user never worked at.
+ *
+ * The label says what tapping it will do, not what the set currently is:
+ * `Warm-up` on a working set, `Working set` on a warm-up. It is green-bright in the
+ * second case because green means "this is on" everywhere else in the app.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -188,6 +201,29 @@ export function QuickAdjust({
         </Pressable>
 
         <Pressable
+          onPress={() => {
+            tap();
+            onChange({ isWarmup: !set.isWarmup });
+          }}
+          hitSlop={8}
+          className="h-hit justify-center"
+          accessibilityRole="switch"
+          accessibilityState={{ checked: set.isWarmup }}
+          accessibilityLabel={
+            set.isWarmup ? 'Make this a working set' : 'Mark this set as a warm-up'
+          }
+        >
+          <Text
+            className={[
+              'text-label font-medium',
+              set.isWarmup ? 'text-green-bright' : 'text-ink-muted',
+            ].join(' ')}
+          >
+            {set.isWarmup ? 'Working set' : 'Warm-up'}
+          </Text>
+        </Pressable>
+
+        <Pressable
           onPress={onRemoveSet}
           hitSlop={8}
           className="h-hit justify-center"
@@ -212,15 +248,7 @@ export function QuickAdjust({
 }
 
 /** 44 high, 46 wide minimum — a thumb target, not a decoration. */
-function Chip({
-  label,
-  first,
-  onPress,
-}: {
-  label: string;
-  first: boolean;
-  onPress: () => void;
-}) {
+function Chip({ label, first, onPress }: { label: string; first: boolean; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
@@ -243,7 +271,8 @@ function Chip({
  */
 function formatDelta(delta: number, exercise: Exercise, isWeight: boolean): string {
   const rounded = Number(delta.toFixed(2));
-  const timeBased = !isWeight && (exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds');
+  const timeBased =
+    !isWeight && (exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds');
   const body = `${Math.abs(rounded)}${timeBased ? 's' : ''}`;
   return rounded < 0 ? `−${body}` : `+${body}`;
 }

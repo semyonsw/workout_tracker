@@ -13,11 +13,11 @@ import {
   useSessionProgress,
 } from './activeWorkoutStore';
 import { useSettings } from './settingsStore';
-import { buildDraftEntry } from '../lib/draft';
+import { buildDraftEntry, draftToSetHistory, type DraftEntry } from '../lib/draft';
 import { DEFAULT_OVERLOAD_POLICY } from '../lib/progressiveOverload';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
-import type { Exercise, ID } from '../types/models';
+import type { Exercise, ID, Routine } from '../types/models';
 
 const exercisesById = Object.fromEntries(seedExercises.map((e) => [e.id, e])) as Record<
   ID,
@@ -132,17 +132,25 @@ function sourceFiles(dir: string): string[] {
 /* ------------------------------------------------------------------ */
 
 describe('rest: pause, resume, skip', () => {
-  it('completing a set starts rest of the entry\'s own length', () => {
+  /*
+   * This asserted `entry.restSeconds`, the length the session was BUILT with, and
+   * passed only because that number happened to equal the setting. It is now the
+   * length the rule below actually resolves — see 'rest lengths: the item
+   * override, then settings' for the rule itself; this test is about the pill
+   * being started, running, and not paused.
+   */
+  it('completing a set starts a running rest of the resolved length', () => {
     const session = startRoutine();
     const entry = session.entries[0];
+    const expected = entry.restSecondsOverride ?? useSettings.getState().restSecondsBetweenSets;
     const before = Date.now();
 
     useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
     const { rest } = useActiveWorkout.getState();
 
     expect(rest.source).toBe('set');
-    expect(rest.totalSeconds).toBe(entry.restSeconds);
-    expect(rest.endsAt).toBeGreaterThanOrEqual(before + entry.restSeconds * 1000 - 50);
+    expect(rest.totalSeconds).toBe(expected);
+    expect(rest.endsAt).toBeGreaterThanOrEqual(before + expected * 1000 - 50);
     expect(rest.pausedRemainingMs).toBeNull();
     expect(isResting(rest)).toBe(true);
   });
@@ -265,16 +273,29 @@ describe('rest: pause, resume, skip', () => {
 /* ------------------------------------------------------------------ */
 
 /**
- * The two rest lengths in Settings, and whether they are actually the numbers the
- * timer uses.
+ * Where the two rest lengths actually come from.
  *
- * They were not. Rest was resolved once, at session start, from a cascade that
- * checked the routine item and the exercise first — and nearly every shipped
- * routine item carries its own rest, so both settings were shadowed on almost
- * every exercise. Setting "Between sets" to 1:30 and then watching a 3:00
- * countdown is a setting that does nothing.
+ * The history matters, because both halves of it were bugs.
+ *
+ * FIRST, rest was resolved once at session start from a cascade that checked the
+ * routine item and then `exercise.defaultRestSeconds` — and nearly every shipped
+ * exercise carries one, so both Settings values were shadowed on almost every
+ * exercise. Setting "Between sets" to 1:30 and watching a 3:00 countdown is a
+ * setting that does nothing. The fix was to ignore the routine entirely.
+ *
+ * THAT WENT TOO FAR, and 0.12.0 walks it back one level. The routine editor can
+ * now SET a per-item rest, show which of the two is in force on the row, and
+ * clear it again — so an override is a choice the user made and can see, which
+ * was the only thing missing. The rule is therefore:
+ *
+ *   between sets       item's override if it has one, else the live setting
+ *   between exercises  always the live setting
+ *
+ * and the asymmetry is the same rule stated twice: nothing edits
+ * `RoutineItem.transitionRestSeconds`, so honouring it would be the first bug
+ * again on a number nobody can reach.
  */
-describe('rest lengths come from settings, live', () => {
+describe('rest lengths: the item override, then settings', () => {
   function withSettings(values: Partial<Record<'sets' | 'exercises', number>>, run: () => void) {
     const settings = useSettings.getState();
     if (values.sets != null) settings.setNumber('restSecondsBetweenSets', values.sets);
@@ -288,15 +309,59 @@ describe('rest lengths come from settings, live', () => {
     }
   }
 
+  /**
+   * The first entry whose routine item did NOT set a rest, and the first that did.
+   *
+   * Picked by asking the built session rather than by index: the seed routine's
+   * shape is not this suite's business, and an index would silently start testing
+   * the wrong branch the day somebody adds a rest to an item.
+   */
+  function following(session: { entries: DraftEntry[] }): DraftEntry {
+    const entry = session.entries.find((e) => e.restSecondsOverride == null);
+    if (!entry) throw new Error('the seed routine has no item that follows Settings');
+    return entry;
+  }
+
+  function overriding(session: { entries: DraftEntry[] }): DraftEntry {
+    const entry = session.entries.find((e) => (e.restSecondsOverride ?? 0) > 0);
+    if (!entry) throw new Error('the seed routine has no item with its own rest');
+    return entry;
+  }
+
   it('a set that is not the last uses "between sets"', () => {
     withSettings({ sets: 45 }, () => {
-      const session = startRoutine();
-      const entry = session.entries[0];
+      const entry = following(startRoutine());
       useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
 
       const { rest } = useActiveWorkout.getState();
       expect(rest.source).toBe('set');
       expect(rest.totalSeconds).toBe(45);
+    });
+  });
+
+  it("uses the ITEM's own rest where the routine set one", () => {
+    withSettings({ sets: 45 }, () => {
+      const entry = overriding(startRoutine());
+      useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+      const { rest } = useActiveWorkout.getState();
+      expect(rest.source).toBe('set');
+      expect(rest.totalSeconds).toBe(entry.restSecondsOverride);
+      expect(rest.totalSeconds).not.toBe(45);
+    });
+  });
+
+  it('an override does NOT follow the setting as it changes', () => {
+    // The other half of "no override means live": if both tracked Settings, the
+    // override would be decoration. 45 then 300, and the item ignores both.
+    withSettings({ sets: 45 }, () => {
+      const entry = overriding(startRoutine());
+      useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(entry.restSecondsOverride);
+
+      useSettings.getState().setNumber('restSecondsBetweenSets', 300);
+      useActiveWorkout.getState().completeSet(entry.localId, entry.sets[1].localId);
+      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(entry.restSecondsOverride);
     });
   });
 
@@ -313,8 +378,7 @@ describe('rest lengths come from settings, live', () => {
   });
 
   it('changing a setting mid-session applies to the next set, not the next session', () => {
-    const session = startRoutine();
-    const entry = session.entries[0];
+    const entry = following(startRoutine());
 
     withSettings({ sets: 30 }, () => {
       useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
@@ -388,7 +452,7 @@ describe('rest lengths come from settings, live', () => {
     }
   });
 
-  it('startRestNow runs the user\'s between-sets length', () => {
+  it("startRestNow runs the user's between-sets length", () => {
     withSettings({ sets: 75 }, () => {
       startRoutine();
       useActiveWorkout.getState().startRestNow();
@@ -714,7 +778,7 @@ describe('editing the session while it runs', () => {
     expect(after?.sets.map((s) => s.localId)).toEqual(before.slice(0, -1));
   });
 
-  it("removing the last remaining set removes the exercise", () => {
+  it('removing the last remaining set removes the exercise', () => {
     const session = startRoutine();
     const entry = session.entries[0];
 
@@ -940,5 +1004,270 @@ describe('editing the session while it runs', () => {
     useActiveWorkout.getState().completeSet(entry.localId, entry.sets[1].localId);
 
     expect(useActiveWorkout.getState().session?.startedAt).toBe(first);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The third branch of `completeSet`: a superset round.
+ *
+ * `RoutineItem.supersetGroup` said "rest only fires after the last member" from
+ * the first release and this function never read it. The decision itself is
+ * `nextInSupersetRound` and is tested over a draft in `lib/superset.test.ts`;
+ * these are the two things only the store can show — that no pill appears
+ * mid-round, and that the cursor lands on the partner.
+ */
+describe('supersets', () => {
+  /** A two-exercise superset plus one ordinary exercise after it. */
+  function startSuperset(sets = [3, 3]) {
+    const [dipsSets, rowsSets] = sets;
+    const routine: Routine = {
+      id: 'r_ss',
+      ownerId: 'u1',
+      name: 'Superset day',
+      items: [
+        {
+          id: 'ri0',
+          exerciseId: 'ex_pushups',
+          order: 0,
+          targetSets: dipsSets,
+          targetRepsMax: 10,
+          supersetGroup: 'sg_a',
+        },
+        {
+          id: 'ri1',
+          exerciseId: 'ex_row_stomach',
+          order: 1,
+          targetSets: rowsSets,
+          targetRepsMax: 10,
+          supersetGroup: 'sg_a',
+        },
+        { id: 'ri2', exerciseId: 'ex_plank', order: 2, targetSets: 2, targetRepsMax: 60 },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    useActiveWorkout.getState().discardSession();
+    useActiveWorkout.getState().startSession({
+      routine,
+      exercisesById,
+      historyByExerciseId: {},
+      policy: seedUser.overloadPolicy,
+      unitSystem: 'metric',
+      defaultRestSeconds: 120,
+      defaultTransitionRestSeconds: 150,
+    });
+    const session = useActiveWorkout.getState().session;
+    if (!session) throw new Error('the superset routine built no session');
+    return session;
+  }
+
+  it('starts no rest and moves the cursor to the partner', () => {
+    const session = startSuperset();
+    const [a, b] = session.entries;
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[0].localId);
+    const state = useActiveWorkout.getState();
+
+    // No pill: the next thing to do is the other exercise, and a countdown over
+    // its rows is the timer getting in the way of the work.
+    expect(isResting(state.rest)).toBe(false);
+    expect(state.activeEntryId).toBe(b.localId);
+  });
+
+  it('rests only after the last member of the round', () => {
+    const session = startSuperset();
+    const [a, b] = session.entries;
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[0].localId);
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(false);
+
+    useActiveWorkout.getState().completeSet(b.localId, b.sets[0].localId);
+    const { rest } = useActiveWorkout.getState();
+
+    expect(isResting(rest)).toBe(true);
+    expect(rest.source).toBe('set');
+  });
+
+  it('goes back round for the next set', () => {
+    const session = startSuperset();
+    const [a, b] = session.entries;
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[0].localId);
+    useActiveWorkout.getState().completeSet(b.localId, b.sets[0].localId);
+    useActiveWorkout.getState().skipRest();
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[1].localId);
+    const state = useActiveWorkout.getState();
+
+    expect(state.activeEntryId).toBe(b.localId);
+    expect(isResting(state.rest)).toBe(false);
+  });
+
+  it('rests immediately on the unequal tail', () => {
+    // Three sets against two: the third round has one member in it.
+    const session = startSuperset([3, 2]);
+    const [a, b] = session.entries;
+
+    for (let round = 0; round < 2; round += 1) {
+      useActiveWorkout.getState().completeSet(a.localId, a.sets[round].localId);
+      useActiveWorkout.getState().completeSet(b.localId, b.sets[round].localId);
+      useActiveWorkout.getState().skipRest();
+    }
+
+    // `b` is finished, so `a`'s last set is an ordinary set — and it is also the
+    // last of its exercise, so it earns the longer transition rest.
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[2].localId);
+    const { rest } = useActiveWorkout.getState();
+
+    expect(isResting(rest)).toBe(true);
+    expect(rest.source).toBe('transition');
+  });
+
+  it('leaves no orphaned cursor when a member is removed mid-session', () => {
+    const session = startSuperset();
+    const [a, b, plank] = session.entries;
+
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[0].localId);
+    expect(useActiveWorkout.getState().activeEntryId).toBe(b.localId);
+
+    // The machine is taken. `b` comes off the workout.
+    useActiveWorkout.getState().removeEntry(b.localId);
+    const afterRemoval = useActiveWorkout.getState();
+
+    // The cursor moved off the entry that is gone, and it points at something that
+    // exists.
+    const ids = afterRemoval.session?.entries.map((e) => e.localId) ?? [];
+    expect(ids).not.toContain(b.localId);
+    expect(ids).toContain(afterRemoval.activeEntryId);
+    expect(afterRemoval.activeEntryId).toBe(plank.localId);
+
+    // And `a` now behaves like an exercise with no group: its next ✓ rests.
+    useActiveWorkout.getState().completeSet(a.localId, a.sets[1].localId);
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
+  });
+
+  it('leaves an exercise outside the group alone', () => {
+    const session = startSuperset();
+    const plank = session.entries[2];
+
+    useActiveWorkout.getState().completeSet(plank.localId, plank.sets[0].localId);
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Recording the rest that was actually taken.
+ *
+ * `SetHistory.restTakenSeconds` sat in the model with nothing writing it while
+ * this store knew both instants the whole time. These are the cases the pure
+ * median function cannot see: what happens with the timer paused, and what happens
+ * when there was no timer at all.
+ */
+describe('rest actually taken', () => {
+  /** The set that was just logged, so its recorded rest can be read back. */
+  function setById(entryId: ID, setId: ID) {
+    const entry = useActiveWorkout.getState().session?.entries.find((e) => e.localId === entryId);
+    return entry?.sets.find((s) => s.localId === setId);
+  }
+
+  it('records nothing when no rest was running', () => {
+    // "I did not use the timer" and "I rested zero seconds" are different facts,
+    // and a log where the first is written as the second has a median of nothing.
+    const session = startRoutine();
+    const entry = session.entries[0];
+    useActiveWorkout.getState().skipRest();
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBeUndefined();
+  });
+
+  it('records the elapsed rest against the set that ends it', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    // A rest that began 95 seconds ago, whatever it was set to.
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 95_000 },
+    }));
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    // The field means "rest taken BEFORE this set", so it lands on the set that
+    // was just completed.
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBe(95);
+  });
+
+  it('counts pause time — the user was still resting', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 200_000 },
+    }));
+    // Freeze the clock. The deadline stops; the wall clock does not, and the
+    // measurement follows the wall clock.
+    useActiveWorkout.getState().pauseRest();
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBe(200);
+  });
+
+  it('records the overrun rather than the number that was set', () => {
+    // Coming back at 3:10 to a 2:00 rest is a 3:10 rest. Clamping it would make
+    // the log agree with the setting instead of with the gym.
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 190_000 },
+    }));
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBe(190);
+  });
+
+  it('records nothing for a gap too long to be a rest anybody took', () => {
+    // Force-quit mid-rest, relaunched the next morning. The elapsed wall time is
+    // real and it is not a rest, and writing nothing beats writing either the true
+    // eight hours or a clamped thirty minutes.
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 8 * 3600 * 1000 },
+    }));
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(setById(entry.localId, entry.sets[0].localId)?.restTakenSeconds).toBeUndefined();
+  });
+
+  it('rides through to the stored set rows', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().startRest(120, 'set');
+    useActiveWorkout.setState((state) => ({
+      rest: { ...state.rest, startedAt: Date.now() - 100_000 },
+    }));
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    const finished = useActiveWorkout.getState().session;
+    if (!finished) throw new Error('no session');
+    const rows = draftToSetHistory(finished);
+
+    expect(rows[0].restTakenSeconds).toBe(100);
   });
 });

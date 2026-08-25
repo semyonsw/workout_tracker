@@ -18,7 +18,7 @@
  *   │ Push              Push · chest · 2 ex   ▶    │
  *   │ Boxing (cardio)   Cardio · 2 ex         ▶    │
  *   │ RECENT                                       │
- *   │ Pull + swimming              8 Aug · 74 min  │
+ *   │ #91  Pull + swimming        8 Aug · 74 min   │
  *   └──────────────────────────────────────────────┘
  *
  * THE USER PICKS THE WORKOUT. Every routine is on this screen and every one of
@@ -98,6 +98,11 @@ interface HomeScreenProps {
   /** Every routine, in list order. */
   choices: RoutineChoice[];
   recent: RecentSessionSummary[];
+  /**
+   * Workout ordinals, keyed by session id — the same numbers History shows, so
+   * "workout 92" means one thing everywhere. See `workoutNumbers`.
+   */
+  numbers: Record<ID, number>;
   onOpen: (routineId: ID) => void;
   /** Back to the logging screen of the workout in progress. */
   onResume: () => void;
@@ -111,6 +116,7 @@ export function HomeScreen({
   sequence,
   choices,
   recent,
+  numbers,
   onOpen,
   onResume,
   onOpenSequence,
@@ -194,7 +200,11 @@ export function HomeScreen({
               {recent.map((session, index) => (
                 <View key={session.id}>
                   {index > 0 ? <Separator /> : null}
-                  <RecentRow session={session} onPress={() => onOpenSession(session.id)} />
+                  <RecentRow
+                    session={session}
+                    number={numbers[session.id]}
+                    onPress={() => onOpenSession(session.id)}
+                  />
                 </View>
               ))}
             </ListCard>
@@ -216,13 +226,7 @@ export function HomeScreen({
  * it opens the screen that edits it — a chip is a label, not a start button, and
  * the thing you want after looking at your order is usually to change it.
  */
-function SequenceStrip({
-  sequence,
-  onPress,
-}: {
-  sequence: SequenceView;
-  onPress: () => void;
-}) {
+function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress: () => void }) {
   return (
     <View>
       <Kicker className="mx-lg">Sequence</Kicker>
@@ -302,18 +306,34 @@ function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => 
 
 function RecentRow({
   session,
+  number,
   onPress,
 }: {
   session: RecentSessionSummary;
+  /** Its ordinal, when the numbering gives it one. */
+  number?: number;
   onPress: () => void;
 }) {
+  const numbered = number != null && number >= 1;
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${session.title}, ${formatShortDate(session.performedAt)}, ${session.durationMinutes} minutes`}
+      accessibilityLabel={[
+        numbered ? `Workout ${number},` : '',
+        session.title,
+        formatShortDate(session.performedAt),
+        `${session.durationMinutes} minutes`,
+      ]
+        .filter(Boolean)
+        .join(' ')}
       className="h-row flex-row items-center px-lg"
     >
+      {/* Same left column as the History rows, so the number reads the same in
+          both places. */}
+      <Text className="w-[38px] text-label font-semibold tabular-nums text-green-bright">
+        {numbered ? `#${number}` : ''}
+      </Text>
       <Text numberOfLines={1} className="flex-1 text-body font-medium text-ink">
         {session.title}
       </Text>
@@ -330,8 +350,8 @@ function Empty() {
     <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
       <Kicker>Nothing to open</Kicker>
       <Text className="mt-sm text-body text-ink-muted">
-        Put some exercises in a routine — Routines, in the tab bar — and it shows up here, ready
-        to open.
+        Put some exercises in a routine — Routines, in the tab bar — and it shows up here, ready to
+        open.
       </Text>
     </View>
   );

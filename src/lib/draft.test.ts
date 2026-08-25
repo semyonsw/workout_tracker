@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDraftEntry, buildDraftSession, defaultTargetCount } from './draft';
+import {
+  buildDraftEntry,
+  buildDraftSession,
+  defaultTargetCount,
+  defaultTargetSets,
+  sessionVolume,
+  workingSetLabels,
+  type DraftSession,
+} from './draft';
 import { DEFAULT_OVERLOAD_POLICY } from './progressiveOverload';
 import type { Exercise, Routine, SetHistory } from '../types/models';
 
@@ -67,7 +75,6 @@ function loggedSet(overrides: Partial<SetHistory> = {}): SetHistory {
     loadMode: 'external',
     isWarmup: false,
     isCompleted: true,
-    estimated1RM: null,
     ...overrides,
   };
 }
@@ -183,7 +190,7 @@ describe('an exercise added mid-workout', () => {
     expect(entry.lastSessionSummary).toBeTruthy();
   });
 
-  it('falls back to the exercise\'s own starting numbers with no history', () => {
+  it("falls back to the exercise's own starting numbers with no history", () => {
     const entry = entryFor();
 
     expect(entry.sets[0].weightKg).toBe(30);
@@ -219,5 +226,197 @@ describe('defaultTargetCount', () => {
   it('treats a NaN that survived a JSON round-trip as not set', () => {
     expect(defaultTargetCount({ countUnit: 'reps', defaultCount: Number.NaN })).toBe(10);
     expect(defaultTargetCount({ countUnit: 'reps', defaultCount: 0 })).toBe(10);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Session volume, and what it does when it cannot weigh a set.
+ *
+ * The old function skipped every exercise with `requiresWeight === false` — so
+ * push-ups, planks, boxing and swimming all contributed zero — and for the two
+ * modes it did count it counted the belt instead of the load. These tests pin the
+ * four load modes and, more importantly, what happens with no bodyweight on file.
+ */
+describe('sessionVolume', () => {
+  /** One exercise, one completed set, in whatever shape the case needs. */
+  function oneSet(
+    overrides: Partial<Exercise>,
+    weightKg: number | null,
+    count: number,
+    isWarmup = false,
+  ): DraftSession {
+    const exercise: Exercise = { ...machine, ...overrides };
+    const session = build(exercise);
+    const [entry] = session.entries;
+    return {
+      ...session,
+      entries: [
+        {
+          ...entry,
+          sets: [
+            {
+              localId: 'set_1',
+              weightKg,
+              count,
+              isWarmup,
+              isCompleted: true,
+              completedAt: '2026-08-17T18:00:00.000Z',
+              isPrefilled: false,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('multiplies an external load by its reps', () => {
+    expect(sessionVolume(oneSet({ loadMode: 'external' }, 80, 8), 82)).toEqual({
+      kg: 640,
+      unweighable: 0,
+    });
+  });
+
+  it('counts a weighted dip as body plus belt', () => {
+    expect(sessionVolume(oneSet({ loadMode: 'added_bodyweight' }, 40, 5), 82).kg).toBe(610);
+  });
+
+  it('counts an assisted pull-up as body MINUS the help', () => {
+    // 62 × 8 = 496. The old maths gave (20 × 8) = 160 and called more help progress.
+    expect(sessionVolume(oneSet({ loadMode: 'assisted' }, 20, 8), 82).kg).toBe(496);
+  });
+
+  it('counts push-ups, which used to be worth nothing at all', () => {
+    const pushups = oneSet({ loadMode: 'none', requiresWeight: false }, null, 20);
+    expect(sessionVolume(pushups, 82).kg).toBe(1640);
+  });
+
+  it('falls back to external-only and says so when no bodyweight is set', () => {
+    // This is the upgrade path for every existing user: the number is exactly what
+    // the old function produced, and `unweighable` is the app admitting it.
+    const dips = oneSet({ loadMode: 'added_bodyweight' }, 40, 5);
+    expect(sessionVolume(dips)).toEqual({ kg: 0, unweighable: 1 });
+
+    const bar = oneSet({ loadMode: 'external' }, 80, 8);
+    expect(sessionVolume(bar)).toEqual({ kg: 640, unweighable: 0 });
+  });
+
+  it('never multiplies kilograms by seconds, metres or rounds', () => {
+    for (const countUnit of ['seconds', 'meters', 'rounds'] as const) {
+      const timed = oneSet({ countUnit, loadMode: 'none', requiresWeight: false }, null, 120);
+      // Not "unweighable" either — a 2:00 plank has no weight volume to be missing.
+      expect(sessionVolume(timed, 82)).toEqual({ kg: 0, unweighable: 0 });
+    }
+  });
+
+  it('leaves warm-ups out, like every other analysis in the app', () => {
+    expect(sessionVolume(oneSet({ loadMode: 'external' }, 80, 8, true), 82)).toEqual({
+      kg: 0,
+      unweighable: 0,
+    });
+  });
+
+  it('ignores planned sets that were never completed', () => {
+    const session = build({ ...machine, loadMode: 'external' });
+    // Straight from `buildDraftSession`: rows exist, none are ✓.
+    expect(sessionVolume(session, 82)).toEqual({ kg: 0, unweighable: 0 });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Rest, back to two levels.
+ *
+ * `buildDraftSession` deliberately ignored `item.restSeconds` for a release,
+ * because the cascade it replaced went one level further — through
+ * `exercise.defaultRestSeconds`, which nearly every shipped exercise carries and
+ * nobody could see or change — so the only two rest controls in the app were
+ * shadowed almost everywhere. The routine editor can set, show and clear an item
+ * override now, which is the condition that was missing.
+ */
+describe('the rest an entry is built with', () => {
+  function routineWithRest(restSeconds?: number): Routine {
+    return {
+      ...routineFor(machine.id),
+      items: [
+        {
+          id: 'ri1',
+          exerciseId: machine.id,
+          order: 0,
+          targetSets: 4,
+          ...(restSeconds != null ? { restSeconds } : {}),
+        },
+      ],
+    };
+  }
+
+  it('follows Settings when the item has no override', () => {
+    const session = build(machine, [], routineWithRest());
+    expect(session.entries[0].restSeconds).toBe(120);
+    // And says so: no override recorded, which is what `completeSet` checks.
+    expect(session.entries[0].restSecondsOverride).toBeUndefined();
+  });
+
+  it("uses the ITEM's rest where the routine set one", () => {
+    const session = build(machine, [], routineWithRest(180));
+    expect(session.entries[0].restSeconds).toBe(180);
+    expect(session.entries[0].restSecondsOverride).toBe(180);
+  });
+
+  it('records an explicit no-rest as an override, not as missing', () => {
+    // A swim rests for nothing on purpose.
+    const session = build(machine, [], routineWithRest(0));
+    expect(session.entries[0].restSeconds).toBe(0);
+    expect(session.entries[0].restSecondsOverride).toBe(0);
+  });
+
+  it('never reads the exercise’s own default rest', () => {
+    // The level that was removed, and the reason the setting looked broken.
+    const withOwnRest: Exercise = { ...machine, defaultRestSeconds: 240 };
+    const session = build(withOwnRest, [], routineWithRest());
+    expect(session.entries[0].restSeconds).toBe(120);
+    expect(session.entries[0].restSecondsOverride).toBeUndefined();
+  });
+});
+
+describe('defaultTargetSets', () => {
+  it('is four sets of reps, twelve rounds, three holds and one distance', () => {
+    // Per unit, because "four" means different things: four sets of reps, twelve
+    // rounds on a bag, three holds of a plank, one swim.
+    expect(defaultTargetSets({ countUnit: 'reps' })).toBe(4);
+    expect(defaultTargetSets({ countUnit: 'rounds' })).toBe(12);
+    expect(defaultTargetSets({ countUnit: 'seconds' })).toBe(3);
+    expect(defaultTargetSets({ countUnit: 'meters' })).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * W, 1, 2, 3.
+ *
+ * A warm-up is a set that does not count, so it must not be numbered as one:
+ * "set 2 of 3" has to mean the second of three sets that counted.
+ */
+describe('workingSetLabels', () => {
+  const w = { isWarmup: true };
+  const s = { isWarmup: false };
+
+  it('numbers only the working sets', () => {
+    expect(workingSetLabels([w, s, s, s])).toEqual([null, 1, 2, 3]);
+  });
+
+  it('numbers straight through when nothing is a warm-up', () => {
+    expect(workingSetLabels([s, s, s])).toEqual([1, 2, 3]);
+  });
+
+  it('handles a warm-up in the middle, which is unusual but legal', () => {
+    expect(workingSetLabels([s, w, s])).toEqual([1, null, 2]);
+  });
+
+  it('is empty for an empty list', () => {
+    expect(workingSetLabels([])).toEqual([]);
   });
 });

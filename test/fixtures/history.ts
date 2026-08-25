@@ -21,7 +21,6 @@
  */
 
 import { seedExercisesById } from '../../src/data/seed';
-import { estimate1RM } from '../../src/lib/units';
 import type { RecentSessionSummary, SetHistory } from '../../src/types/models';
 
 /** Terse fixture helper: one call per (session, exercise, weight) group. */
@@ -46,7 +45,6 @@ function log(
     loadMode: exercise.loadMode,
     isWarmup: false,
     isCompleted: true,
-    estimated1RM: estimate1RM(weightKg, count),
   }));
 }
 

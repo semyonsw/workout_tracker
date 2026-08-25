@@ -17,13 +17,18 @@
  * you nothing about whether to add a plate. Top working weight per session, the
  * sessions that produced it, and how long it has been stuck — that's the whole
  * screen, and it's the same data the nudge fires on.
+ *
+ * The 1RM refusal outlived a field: `SetHistory.estimated1RM` was computed and
+ * stored on every rep set for two releases and rendered nowhere, because this is
+ * the screen it would have been rendered on and this is the screen that says no.
+ * It is deleted as of 0.12.0 — the argument here was the whole case against it.
  */
 
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Kicker, ListCard, Separator } from '../components/primitives';
-import { TopWeightChart } from '../components/TopWeightChart';
+import { TrendChart } from '../components/TrendChart';
 import { describeHistory, sessionRows, topWeightSeries } from '../lib/history';
 import type { OverloadVerdict } from '../lib/progressiveOverload';
 import { formatShortDate } from '../lib/units';
@@ -63,8 +68,7 @@ export function ExerciseHistoryScreen({
    * willing to nudge. On a lift that is still climbing there is no run to report
    * and the clause drops out entirely.
    */
-  const plateauDays =
-    verdict && verdict.sessionsAtWeight >= 2 ? verdict.plateauDays : null;
+  const plateauDays = verdict && verdict.sessionsInRun >= 2 ? verdict.plateauDays : null;
   const loadPrefix = exercise.loadMode === 'added_bodyweight' ? '+' : '';
 
   return (
@@ -89,7 +93,7 @@ export function ExerciseHistoryScreen({
           <>
             <Kicker className="mx-lg mt-xl">Top working weight</Kicker>
             <View className="mx-lg mt-md">
-              <TopWeightChart points={series} />
+              <TrendChart points={series} />
             </View>
           </>
         ) : null}
@@ -130,9 +134,7 @@ export function ExerciseHistoryScreen({
             </ListCard>
           </>
         ) : (
-          <Text className="mx-lg mt-xl text-body text-ink-muted">
-            No completed sets yet.
-          </Text>
+          <Text className="mx-lg mt-xl text-body text-ink-muted">No completed sets yet.</Text>
         )}
       </ScrollView>
     </View>

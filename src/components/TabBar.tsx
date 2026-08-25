@@ -30,10 +30,7 @@ export function TabBar({ active, onSelect }: TabBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View
-      style={{ paddingBottom: insets.bottom }}
-      className="border-t border-t-hairline bg-bg"
-    >
+    <View style={{ paddingBottom: insets.bottom }} className="border-t border-t-hairline bg-bg">
       <View className="h-[64px] flex-row items-center">
         {TABS.map((tab) => {
           const isActive = tab === active;

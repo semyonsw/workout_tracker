@@ -24,9 +24,21 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { DEFAULT_PLATES_KG } from '../lib/plates';
 import type { UnitSystem } from '../types/models';
 
 export interface Settings {
+  /**
+   * The user's own bodyweight, in kilograms. UNSET BY DEFAULT, and unset means
+   * unset — see `clampBodyweightKg`.
+   *
+   * It is here rather than derived because nothing else in the app can know it,
+   * and it is optional because guessing it would be worse than not having it: it
+   * is the multiplier on every bodyweight and assisted set the user has ever
+   * logged, so a made-up 80 kg would quietly invent a year of volume figures. The
+   * only thing that reads it is `effectiveLoadKg`.
+   */
+  bodyweightKg?: number;
   /** Rest after a set, when the routine doesn't override it. */
   restSecondsBetweenSets: number;
   /** Rest after the LAST set of an exercise, before the next one. */
@@ -49,9 +61,26 @@ export interface Settings {
   /** Fire a local notification when a timer ends, for a phone in a pocket. */
   notifyOnTimerEnd: boolean;
   unitSystem: UnitSystem;
+  /**
+   * The plates this gym has, in kilograms.
+   *
+   * A fact about the gym rather than about any one lift, which is why it is here
+   * and `Exercise.barWeightKg` is not: the bar you are holding changes between
+   * exercises, the rack of plates behind you does not. Read only by
+   * `platesFor`, and only for an exercise that declares a bar weight.
+   */
+  availablePlatesKg: number[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  /*
+   * Listed, and `undefined`. Rule 2 of this store is that it rehydrates TOTAL —
+   * `merge` fills every key from here — so a key that is absent from this object is
+   * a key a device that upgraded never gets filled. `undefined` IS the default for
+   * a bodyweight: see `clampBodyweightKg` for why there is no number to fall back
+   * to.
+   */
+  bodyweightKg: undefined,
   restSecondsBetweenSets: 120,
   restSecondsBetweenExercises: 150,
   prepareSeconds: 5,
@@ -63,6 +92,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keepAwakeEnabled: true,
   notifyOnTimerEnd: true,
   unitSystem: 'metric',
+  availablePlatesKg: [...DEFAULT_PLATES_KG],
 };
 
 /**
@@ -79,6 +109,42 @@ export const SETTING_LIMITS = {
 } as const satisfies Record<string, { min: number; max: number; step: number }>;
 
 export type NumericSetting = keyof typeof SETTING_LIMITS;
+
+/**
+ * The believable range for a human bodyweight, in kilograms.
+ *
+ * Wide on purpose — it is a guard against a typo and a corrupt blob, not an
+ * opinion about anybody's body. 20 kg is a small child and 300 kg is past the
+ * heaviest person who has ever trained; anything outside that reached the field by
+ * accident.
+ */
+export const BODYWEIGHT_LIMITS = { min: 20, max: 300 } as const;
+
+/**
+ * A believable bodyweight in kilograms, or `undefined` for "not set".
+ *
+ * NOT `clampSetting`: that function's contract is that every setting has a
+ * default, and this one deliberately has none. `undefined` here is a fact the app
+ * acts on — `effectiveLoadKg` returns null for the three bodyweight-dependent
+ * load modes, session volume leaves those sets out, and the history totals line
+ * drops its volume clause rather than printing a figure that undercounts. Falling
+ * back to a number would turn all of that into a silent wrong answer.
+ *
+ * One decimal place: a lifter knows their weight to the half-kilo and nothing
+ * downstream needs more, while a raw float round-tripped through lb would print
+ * 82.30000000000001 in a 40 px numeral.
+ */
+export function clampBodyweightKg(value: unknown): number | undefined {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  const { min, max } = BODYWEIGHT_LIMITS;
+  return Number(Math.min(max, Math.max(min, n)).toFixed(1));
+}
 
 /**
  * Whole seconds inside the setting's own range. Anything unusable → the default.
@@ -104,6 +170,31 @@ export function clampSetting(key: NumericSetting, value: unknown): number {
 }
 
 /**
+ * A usable plate list: positive, finite, deduplicated, heaviest first.
+ *
+ * Sorted here rather than in `platesFor`, so the greedy walk gets a canonical list
+ * however the value reached disk — and deduplicated because two 20s in the list is
+ * not two 20 kg plates in the gym, it is one entry written twice. An empty or
+ * unusable list falls back to the default rather than to nothing: `[]` means every
+ * target is unreachable, so every plate label silently disappears, which looks
+ * exactly like the feature being broken.
+ *
+ * Capped at sixteen entries. A real gym has seven sizes; sixteen is room to be
+ * unusual, and a blob with four thousand of them is corrupt.
+ */
+export function clampPlates(value: unknown): number[] {
+  if (!Array.isArray(value)) return [...DEFAULT_PLATES_KG];
+  const usable = [
+    ...new Set(
+      value.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0),
+    ),
+  ]
+    .sort((a, b) => b - a)
+    .slice(0, 16);
+  return usable.length > 0 ? usable : [...DEFAULT_PLATES_KG];
+}
+
+/**
  * A complete, in-range `Settings` from anything at all — including `undefined`.
  *
  * Every field is named explicitly rather than spread through. This function is
@@ -117,6 +208,10 @@ export function clampSetting(key: NumericSetting, value: unknown): number {
 export function sanitizeSettings(input: Partial<Settings> | undefined | null): Settings {
   const raw: Settings = { ...DEFAULT_SETTINGS, ...(input ?? {}) };
   return {
+    // Named here like every other key, and `undefined` is a legal result: see
+    // `clampBodyweightKg`. `JSON.stringify` drops it, so an unset bodyweight
+    // costs no bytes on disk and reads back as unset.
+    bodyweightKg: clampBodyweightKg(raw.bodyweightKg),
     restSecondsBetweenSets: clampSetting('restSecondsBetweenSets', raw.restSecondsBetweenSets),
     restSecondsBetweenExercises: clampSetting(
       'restSecondsBetweenExercises',
@@ -131,6 +226,7 @@ export function sanitizeSettings(input: Partial<Settings> | undefined | null): S
     keepAwakeEnabled: raw.keepAwakeEnabled !== false,
     notifyOnTimerEnd: raw.notifyOnTimerEnd !== false,
     unitSystem: raw.unitSystem === 'imperial' ? 'imperial' : 'metric',
+    availablePlatesKg: clampPlates(raw.availablePlatesKg),
   };
 }
 
@@ -139,10 +235,22 @@ interface SettingsState extends Settings {
   /** Relative nudge, for the ± controls on the settings rows. */
   bumpNumber: (key: NumericSetting, delta: number) => void;
   setFlag: (
-    key: 'autoStartRest' | 'soundEnabled' | 'hapticsEnabled' | 'keepAwakeEnabled' | 'notifyOnTimerEnd',
+    key:
+      'autoStartRest' | 'soundEnabled' | 'hapticsEnabled' | 'keepAwakeEnabled' | 'notifyOnTimerEnd',
     value: boolean,
   ) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;
+  /**
+   * Set or clear the bodyweight. `undefined` clears it, which is a real choice —
+   * "I would rather the app said nothing than guessed".
+   */
+  setBodyweightKg: (kg: number | undefined) => void;
+  /**
+   * Add or remove one plate size. Removing the last one is a no-op: an empty list
+   * makes every target unreachable, so every plate label silently disappears —
+   * which looks exactly like the feature being broken.
+   */
+  togglePlate: (kg: number) => void;
   resetToDefaults: () => void;
   /**
    * Replace every setting from a restored backup.
@@ -167,6 +275,17 @@ export const useSettings = create<SettingsState>()(
       setFlag: (key, value) => set({ [key]: value } as Partial<Settings>),
 
       setUnitSystem: (unitSystem) => set({ unitSystem }),
+
+      setBodyweightKg: (kg) => set({ bodyweightKg: clampBodyweightKg(kg) }),
+
+      togglePlate: (kg) => {
+        const current = get().availablePlatesKg;
+        const next = current.includes(kg) ? current.filter((p) => p !== kg) : [...current, kg];
+        // `clampPlates` falls back to the default on an empty list, which would
+        // read as "removing my last plate restored all of them". Refuse instead.
+        if (next.length === 0) return;
+        set({ availablePlatesKg: clampPlates(next) });
+      },
 
       resetToDefaults: () => set({ ...DEFAULT_SETTINGS }),
 

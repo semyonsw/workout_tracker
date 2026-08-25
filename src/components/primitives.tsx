@@ -46,7 +46,11 @@ export function Kicker({
   const toneClass =
     tone === 'green' ? 'text-green-bright' : tone === 'dim' ? 'text-green-dim' : 'text-ink-faint';
   return (
-    <Text className={['text-micro font-semibold uppercase tabular-nums', toneClass, className].join(' ')}>
+    <Text
+      className={['text-micro font-semibold uppercase tabular-nums', toneClass, className].join(
+        ' ',
+      )}
+    >
       {children}
     </Text>
   );
@@ -180,6 +184,7 @@ export function FieldWell({
   onPress,
   autoFocus = false,
   selectAllOnFocus = false,
+  keyboardType = 'default',
   accessibilityLabel,
 }: {
   value: string;
@@ -198,14 +203,15 @@ export function FieldWell({
    * placeholder name instead of appending to it.
    */
   selectAllOnFocus?: boolean;
+  /** `number-pad` for a field that only ever holds digits. */
+  keyboardType?: 'default' | 'number-pad';
   accessibilityLabel: string;
 }) {
   const box = [
     'h-row flex-row items-center border border-hairline bg-surface-alt',
     shape === 'pill' ? 'rounded-pill px-[20px]' : 'rounded-surface px-lg',
   ].join(' ');
-  const textClass =
-    size === 'title' ? 'text-title font-medium text-ink' : 'text-body text-ink';
+  const textClass = size === 'title' ? 'text-title font-medium text-ink' : 'text-body text-ink';
 
   if (onChangeText) {
     return (
@@ -222,6 +228,7 @@ export function FieldWell({
           selectionColor={palette.greenBright}
           autoFocus={autoFocus}
           selectTextOnFocus={selectAllOnFocus}
+          keyboardType={keyboardType}
           accessibilityLabel={accessibilityLabel}
           returnKeyType="done"
           className={`flex-1 ${textClass}`}

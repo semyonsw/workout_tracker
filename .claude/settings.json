@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -d node_modules ] || npm ci",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -33,6 +33,15 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 
 const JSON_MIME = 'application/json';
+/**
+ * The CSV export's type.
+ *
+ * Named separately rather than parameterised at every call, because the MIME type
+ * is what SAF derives the extension from: a `.csv` written as `application/json`
+ * arrives as `name.json` holding commas, and every tool that opens it is wrong
+ * about what it is.
+ */
+const CSV_MIME = 'text/csv';
 
 /** Can this platform show a folder picker at all? SAF is Android-only. */
 export function canPickFolder(): boolean {
@@ -63,7 +72,9 @@ export function folderLabel(folderUri: string): string {
   const decoded = safeDecode(folderUri);
   const afterTree = decoded.split('tree/').pop() ?? decoded;
   // `primary:Download` — the volume prefix is noise to everyone but Android.
-  const withoutVolume = afterTree.includes(':') ? afterTree.split(':').slice(1).join(':') : afterTree;
+  const withoutVolume = afterTree.includes(':')
+    ? afterTree.split(':').slice(1).join(':')
+    : afterTree;
   const cleaned = withoutVolume.replace(/^\/+|\/+$/g, '').replace(/\//g, ' / ');
   return cleaned === '' ? 'the folder you picked' : cleaned;
 }
@@ -102,29 +113,33 @@ export async function writeToFolder(
   folderUri: string,
   baseName: string,
   contents: string,
+  mimeType: string = JSON_MIME,
 ): Promise<string> {
   const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
     folderUri,
     baseName,
-    JSON_MIME,
+    mimeType,
   );
   await FileSystem.writeAsStringAsync(fileUri, contents);
   return displayName(fileUri);
 }
 
 /** Write into the app's own documents directory. Returns the full path. */
-export async function writeToAppFolder(baseName: string, contents: string): Promise<string> {
+export async function writeToAppFolder(
+  baseName: string,
+  contents: string,
+  extension = 'json',
+): Promise<string> {
   const folder = appFolderUri();
   if (!folder) throw new Error('This device has no writable app folder.');
-  const fileUri = `${folder}${baseName}.json`;
+  const fileUri = `${folder}${baseName}.${extension}`;
   await FileSystem.writeAsStringAsync(fileUri, contents);
   return fileUri.replace('file://', '');
 }
 
 /** What `saveJsonFile` did. `cancelled` is a user decision, not a failure. */
 export type SaveOutcome =
-  | { saved: true; name: string; where: string }
-  | { saved: false; cancelled: true };
+  { saved: true; name: string; where: string } | { saved: false; cancelled: true };
 
 /**
  * Write the file somewhere the user picked and can find again.
@@ -134,15 +149,35 @@ export type SaveOutcome =
  * stated as a path, so it is at least reachable over a cable.
  */
 export async function saveJsonFile(baseName: string, contents: string): Promise<SaveOutcome> {
+  return saveTextFile(baseName, contents, JSON_MIME, 'json');
+}
+
+/**
+ * The same folder picker, for the CSV export.
+ *
+ * A thin wrapper rather than a second implementation: the picker, the fallback, the
+ * cancelled-is-not-an-error rule and the "say where it went" contract are identical,
+ * and the only thing that differs is the MIME type SAF derives the extension from.
+ */
+export async function saveCsvFile(baseName: string, contents: string): Promise<SaveOutcome> {
+  return saveTextFile(baseName, contents, CSV_MIME, 'csv');
+}
+
+async function saveTextFile(
+  baseName: string,
+  contents: string,
+  mimeType: string,
+  extension: string,
+): Promise<SaveOutcome> {
   if (!canPickFolder()) {
-    const path = await writeToAppFolder(baseName, contents);
-    return { saved: true, name: `${baseName}.json`, where: path };
+    const path = await writeToAppFolder(baseName, contents, extension);
+    return { saved: true, name: `${baseName}.${extension}`, where: path };
   }
 
   const folder = await pickFolder();
   if (!folder) return { saved: false, cancelled: true };
 
-  const name = await writeToFolder(folder, baseName, contents);
+  const name = await writeToFolder(folder, baseName, contents, mimeType);
   return { saved: true, name, where: folderLabel(folder) };
 }
 

@@ -24,10 +24,39 @@
  *  2. REGRESSION GUARD. If the user recently handled MORE than they're using
  *     now (deload, injury, fatigue), they are already working back up — a nudge
  *     there is noise, and worse, it's wrong. Verdict: `regressing`, stay quiet.
+ *
+ * ── THE COUNT AXIS ─────────────────────────────────────────────────────────
+ *
+ * Everything above describes the WEIGHT axis. Work with no weight axis used to
+ * get a single line — `if (!exercise.requiresWeight) return empty` — on the
+ * grounds that rep- and time-based progression was "handled by the routine's
+ * target". Two things were wrong with that. The routine's target was not
+ * editable at all until 0.12.0; and even now it is a number the user has to think
+ * of themselves, while every weighted lift gets a nudge derived from its own
+ * history. Push-ups, planks, dead hangs, hollow holds and boxing rounds are most
+ * of the shipped library, and none of them ever progressed.
+ *
+ * So the same machinery runs on the COUNT: the top count per session, the same
+ * plateau run, the same staleness test in days and sessions, the same regression
+ * guard. One status, `due_count`, because there is no reps-before-weight
+ * distinction when there is no weight to hold back — the count IS the axis. The
+ * step comes from `countStep`, the same function the quick-adjust chips use, so a
+ * nudge suggests a number a thumb could have produced.
+ *
+ * WHAT STILL RETURNS NOTHING, and why it is not an oversight: time-counted work
+ * the phone did not time. A 50-minute swim is typed in from memory in a changing
+ * room, and a 3-minute round somebody records by hand is a plan they wrote down,
+ * not a measurement. "3 sessions at 50:00 — try 50:15" is the app pretending to
+ * read a stopwatch that was never running. A hold the app DID time (a plank, a
+ * dead hang, a bag round on the countdown) is a real measurement and progresses
+ * like anything else. Distance is measured too — by the pool, not by the phone —
+ * so metres progress; twenty-five of them is the step `countStep` already offers
+ * on the row.
  */
 
-import type { Exercise, OverloadPolicy, SetHistory, UnitSystem } from '../types/models';
-import { daysBetween, resolveIncrementKg, roundToStep } from './units';
+import type { CountUnit, Exercise, OverloadPolicy, SetHistory, UnitSystem } from '../types/models';
+import { countStep, daysBetween, formatCount, resolveIncrementKg, roundToStep } from './units';
+import { resolveTimerMode } from './setTimer';
 
 /* ------------------------------------------------------------------ */
 /* Public types                                                        */
@@ -36,49 +65,87 @@ import { daysBetween, resolveIncrementKg, roundToStep } from './units';
 export type OverloadStatus =
   /** Not enough logged history to say anything. */
   | 'insufficient_data'
-  /** Weight went up in the most recent session — already progressing. */
+  /** The axis moved up in the most recent session — already progressing. */
   | 'progressing'
   /** Plateau detected but still inside the policy window — watching. */
   | 'building'
-  /** Working back up from a heavier recent weight. Stay silent. */
+  /** Working back up from a heavier / longer recent session. Stay silent. */
   | 'regressing'
   /** Plateaued long enough, but reps aren't there yet → chase a rep. */
   | 'due_reps'
   /** Plateaued long enough and reps are owned → add load. */
-  | 'due_weight';
+  | 'due_weight'
+  /**
+   * Unweighted work stuck at the same count → do one more, or hold it longer.
+   *
+   * ONE status, not two. On the weight axis reps come before load, so there are
+   * two things a nudge can ask for; here the count is the only axis there is.
+   */
+  | 'due_count';
 
 export interface OverloadVerdict {
   status: OverloadStatus;
-  /** True only for the two `due_*` statuses — the single flag the UI checks. */
+  /** True only for the three `due_*` statuses — the single flag the UI checks. */
   shouldNudge: boolean;
 
   /** Top working weight of the most recent session (kg), null if unweighted. */
   currentWeightKg: number | null;
   /** Suggested next weight (kg), rounded to a loadable step. Null for `due_reps`. */
   suggestedWeightKg: number | null;
-  /** Suggested next rep count. Set for `due_reps`, null otherwise. */
-  suggestedReps: number | null;
+  /**
+   * Top count of the most recent session, in the exercise's own unit — reps at
+   * the top weight, or the longest hold / furthest distance. Null when there is
+   * nothing to report.
+   */
+  currentCount: number | null;
+  /**
+   * Suggested next count, in the exercise's own unit. Set for `due_reps` (one
+   * more rep at the same weight) and for `due_count` (one more rep, fifteen more
+   * seconds, twenty-five more metres). Null otherwise.
+   *
+   * ONE field for both, because it is one thing: the number `acceptOverload`
+   * writes into every unlogged set's `count`, exactly as `suggestedWeightKg` is
+   * the number it writes into `weightKg`.
+   */
+  suggestedCount: number | null;
 
   /** Calendar days spanned by the current plateau run. */
   plateauDays: number;
-  /** Number of sessions in the plateau run. */
-  sessionsAtWeight: number;
+  /** Number of sessions in the plateau run, on whichever axis is in play. */
+  sessionsInRun: number;
   /** Best reps achieved at the current top weight in the latest session. */
   bestRepsAtWeight: number;
-  /** ISO date the current weight was first used as a top set. */
+  /** ISO date the current weight or count was first reached. */
   since: string | null;
 
   /** One short line, already written for the UI. Never longer than ~40 chars. */
   message: string;
 }
 
-/** One session, reduced to the only facts the engine cares about. */
+/**
+ * One session, reduced to the only facts the engine cares about.
+ *
+ * Two axes on one row rather than two summarizers. The weight fields are null on
+ * unweighted work and `topCount` is filled for everything, so the plateau-run
+ * machinery below reads whichever axis the exercise actually has — and there is
+ * one place that decides what "the top set of a session" means.
+ */
 interface SessionSummary {
   sessionId: string;
   performedAt: string;
   topWeightKg: number | null;
   /** Best reps achieved AT the top weight (not the best reps overall). */
   bestRepsAtTop: number;
+  /**
+   * The session's best count, ignoring weight entirely: the most reps, the
+   * longest hold, the furthest distance.
+   *
+   * Deliberately the TOP set and not the total, for the same reason the weight
+   * axis judges the top working weight: sessions ramp and taper, so a total moves
+   * when the number of sets moves and says nothing about whether the work got
+   * harder. Three planks of 2:00 / 2:00 / 1:31 is a 2:00 plank session.
+   */
+  topCount: number;
 }
 
 export const DEFAULT_OVERLOAD_POLICY: OverloadPolicy = {
@@ -116,9 +183,14 @@ export function summarizeSessions(history: SetHistory[], exerciseId: string): Se
         performedAt: set.performedAt,
         topWeightKg: weight,
         bestRepsAtTop: set.count,
+        topCount: set.count,
       });
       continue;
     }
+
+    // The count axis is independent of the weight axis and simply takes the best
+    // set: a plank session's number is its longest hold, whatever else was in it.
+    existing.topCount = Math.max(existing.topCount, set.count);
 
     if (weight != null && (existing.topWeightKg == null || weight > existing.topWeightKg)) {
       // Heavier set found → it defines the session's top weight, and its reps
@@ -140,7 +212,7 @@ export function summarizeSessions(history: SetHistory[], exerciseId: string): Se
 /* ------------------------------------------------------------------ */
 
 export interface EvaluateOverloadParams {
-  exercise: Pick<Exercise, 'id' | 'requiresWeight' | 'incrementKg' | 'countUnit'>;
+  exercise: Pick<Exercise, 'id' | 'requiresWeight' | 'incrementKg' | 'countUnit' | 'timerMode'>;
   /** Completed sets for this exercise. Order doesn't matter; extras are filtered. */
   history: SetHistory[];
   policy?: OverloadPolicy;
@@ -160,12 +232,20 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
 
   const empty = emptyVerdict();
 
-  // Bodyweight / cardio work has no load axis to progress. Rep- and time-based
-  // progression is handled by the routine's target, not by this engine.
-  if (!exercise.requiresWeight) return empty;
-
   const sessions = summarizeSessions(history, exercise.id);
   if (sessions.length === 0) return empty;
+
+  /*
+   * No weight axis → judge the COUNT instead of returning nothing.
+   *
+   * This used to be a single early return, and the comment on it said rep- and
+   * time-based progression was "handled by the routine's target". It was not:
+   * that target was not editable until 0.12.0, and even now it is a number the
+   * user has to think of, while every weighted lift gets one derived from its own
+   * history. See the file header for the whole argument, and for the one case that
+   * still returns nothing.
+   */
+  if (!exercise.requiresWeight) return evaluateCountOverload(exercise, sessions, policy, now);
 
   const latest = sessions[0];
   if (latest.topWeightKg == null) return empty;
@@ -189,19 +269,22 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
   /* --- guard 1: regression --------------------------------------------- */
   // Look past the run for a heavier top weight in the recent past. If the user
   // was heavier lately, they're rebuilding — never nudge into a deload.
-  const heavierRecently = sessions.slice(run).some(
-    (s) =>
-      s.topWeightKg != null &&
-      s.topWeightKg > currentWeight &&
-      daysBetween(s.performedAt, now) <= policy.regressionLookbackDays,
-  );
+  const heavierRecently = sessions
+    .slice(run)
+    .some(
+      (s) =>
+        s.topWeightKg != null &&
+        s.topWeightKg > currentWeight &&
+        daysBetween(s.performedAt, now) <= policy.regressionLookbackDays,
+    );
   if (heavierRecently) {
     return {
       ...empty,
       status: 'regressing',
       currentWeightKg: currentWeight,
+      currentCount: bestReps,
       plateauDays,
-      sessionsAtWeight: run,
+      sessionsInRun: run,
       bestRepsAtWeight: bestReps,
       since: sinceDate,
       message: 'Working back up — hold here',
@@ -219,7 +302,7 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
         status: 'progressing',
         currentWeightKg: currentWeight,
         plateauDays,
-        sessionsAtWeight: 1,
+        sessionsInRun: 1,
         bestRepsAtWeight: bestReps,
         since: sinceDate,
         message: 'Moved up last session',
@@ -234,8 +317,9 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
       ...empty,
       status: 'building',
       currentWeightKg: currentWeight,
+      currentCount: bestReps,
       plateauDays,
-      sessionsAtWeight: run,
+      sessionsInRun: run,
       bestRepsAtWeight: bestReps,
       since: sinceDate,
       message: `${run}× at this weight`,
@@ -249,9 +333,10 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
       status: 'due_reps',
       shouldNudge: true,
       currentWeightKg: currentWeight,
-      suggestedReps: bestReps + 1,
+      currentCount: bestReps,
+      suggestedCount: bestReps + 1,
       plateauDays,
-      sessionsAtWeight: run,
+      sessionsInRun: run,
       bestRepsAtWeight: bestReps,
       since: sinceDate,
       message: `${plateauDays}d here — chase ${bestReps + 1} reps`,
@@ -267,13 +352,168 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
     status: 'due_weight',
     shouldNudge: true,
     currentWeightKg: currentWeight,
+    currentCount: bestReps,
     suggestedWeightKg: suggested,
     plateauDays,
-    sessionsAtWeight: run,
+    sessionsInRun: run,
     bestRepsAtWeight: bestReps,
     since: sinceDate,
     message: `Same weight ${plateauDays}d — try heavier`,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Step 3 — the same verdict, on the count axis                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Is this exercise's count a MEASUREMENT, or a number somebody typed?
+ *
+ * The distinction decides whether progression means anything. A plank, a dead
+ * hang and a bag round on the countdown are all timed by the phone: the number in
+ * the row is what the clock read, so "you have held 2:00 three times — try 2:15"
+ * is a real suggestion about a real measurement. A 50-minute swim is typed from
+ * memory in a changing room, and a round somebody records by hand is a plan they
+ * wrote down. Nudging those is the app pretending to read a stopwatch that was
+ * never running.
+ *
+ * Reps and metres are always in. Nobody types a rep count they did not do, and a
+ * distance is measured by the pool or the track even though the phone is not the
+ * thing measuring it.
+ */
+function countIsMeasured(exercise: Pick<Exercise, 'countUnit' | 'timerMode'>): boolean {
+  const timeCounted = exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds';
+  if (!timeCounted) return true;
+  return resolveTimerMode(exercise) !== 'manual';
+}
+
+/**
+ * The count-axis verdict: the same plateau run, staleness test and regression
+ * guard as the weight axis, reading `topCount` instead of `topWeightKg`.
+ *
+ * Deliberately a second pass over the SAME `SessionSummary` rows rather than a
+ * second summarizer — there is one definition of "the top set of a session" in
+ * this file and it serves both axes.
+ */
+function evaluateCountOverload(
+  exercise: Pick<Exercise, 'countUnit' | 'timerMode'>,
+  sessions: SessionSummary[],
+  policy: OverloadPolicy,
+  now: Date,
+): OverloadVerdict {
+  const empty = emptyVerdict();
+  if (!countIsMeasured(exercise)) return empty;
+
+  const latest = sessions[0];
+  const currentCount = latest.topCount;
+  if (!Number.isFinite(currentCount) || currentCount <= 0) return empty;
+
+  const base = { ...empty, currentCount };
+
+  /* --- the plateau run: consecutive recent sessions at the same top count --- */
+  let run = 1;
+  let oldestInRun = latest;
+  for (let i = 1; i < sessions.length; i += 1) {
+    const s = sessions[i];
+    if (!nearlyEqual(s.topCount, currentCount)) break;
+    run += 1;
+    oldestInRun = s;
+  }
+
+  const plateauDays = daysBetween(oldestInRun.performedAt, now);
+  const since = oldestInRun.performedAt;
+
+  /* --- guard 1: regression --------------------------------------------- */
+  // Held longer, or did more, in the recent past → they are working back up, and
+  // a nudge there is both noise and wrong. Same rule as the weight axis.
+  const moreRecently = sessions
+    .slice(run)
+    .some(
+      (s) =>
+        s.topCount > currentCount &&
+        daysBetween(s.performedAt, now) <= policy.regressionLookbackDays,
+    );
+  if (moreRecently) {
+    return {
+      ...base,
+      status: 'regressing',
+      plateauDays,
+      sessionsInRun: run,
+      since,
+      message: 'Working back up — hold here',
+    };
+  }
+
+  /* --- guard 2: already progressing ------------------------------------ */
+  if (run === 1 && sessions.length > 1 && sessions[1].topCount < currentCount) {
+    return {
+      ...base,
+      status: 'progressing',
+      plateauDays,
+      sessionsInRun: 1,
+      since,
+      message: 'Moved up last session',
+    };
+  }
+
+  /* --- the same staleness test ----------------------------------------- */
+  const stale = plateauDays >= policy.stalenessDays && run >= policy.minSessions;
+  if (!stale) {
+    return {
+      ...base,
+      status: 'building',
+      plateauDays,
+      sessionsInRun: run,
+      since,
+      message: `${run}× at ${describeCount(currentCount, exercise.countUnit)}`,
+    };
+  }
+
+  /*
+   * The step is the count unit's own, straight from `countStep` — the same
+   * function the quick-adjust chips read, so a nudge only ever suggests a number
+   * a thumb could have produced on the row itself.
+   */
+  const suggestedCount = currentCount + countStep(exercise.countUnit);
+
+  return {
+    ...base,
+    status: 'due_count',
+    shouldNudge: true,
+    suggestedCount,
+    plateauDays,
+    sessionsInRun: run,
+    since,
+    /*
+     * A CLOCK, not a number of seconds. "3 sessions at 2:00 — try 2:15" is how
+     * anyone says it; "try 135 seconds" is the storage unit leaking into copy that
+     * somebody has to read between sets.
+     */
+    message: `${run}× at ${describeCount(currentCount, exercise.countUnit)} — try ${describeCount(
+      suggestedCount,
+      exercise.countUnit,
+    )}`,
+  };
+}
+
+/**
+ * A count in the shortest form that still says what it is.
+ *
+ * Time reads as a clock, distance carries its unit, reps are bare — the unit is
+ * obvious from the sentence around them ("3× at 14 — try 15" is reps or it is
+ * nothing). Rounds read as a clock too, because `count` holds the LENGTH of a
+ * round: the number of rounds is the number of SETS, which lives on the routine.
+ *
+ * Exported because `OverloadNudge` renders the same numbers this file writes
+ * `message` from, and two functions deciding whether 135 is "135" or "2:15" is
+ * two places for one answer. `formatCount` in `units.ts` is the SET ROW's
+ * formatter: it fills a fixed-width cell that already has a unit label beside it,
+ * so it never carries one.
+ */
+export function describeCount(count: number, countUnit: CountUnit): string {
+  if (countUnit === 'seconds' || countUnit === 'rounds') return formatCount(count, countUnit);
+  if (countUnit === 'meters') return `${count} m`;
+  return String(count);
 }
 
 /* ------------------------------------------------------------------ */
@@ -286,9 +526,10 @@ function emptyVerdict(): OverloadVerdict {
     shouldNudge: false,
     currentWeightKg: null,
     suggestedWeightKg: null,
-    suggestedReps: null,
+    currentCount: null,
+    suggestedCount: null,
     plateauDays: 0,
-    sessionsAtWeight: 0,
+    sessionsInRun: 0,
     bestRepsAtWeight: 0,
     since: null,
     message: '',

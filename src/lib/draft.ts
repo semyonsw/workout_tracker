@@ -17,7 +17,8 @@ import type {
   SetHistory,
   UnitSystem,
 } from '../types/models';
-import { countUnitLabel, estimate1RM, formatDuration } from './units';
+import { countUnitLabel, effectiveLoadKg, formatDuration } from './units';
+import { resolveItemRest } from './routinePlan';
 import { summarizeSessionSets } from './history';
 import { evaluateOverload, type OverloadVerdict } from './progressiveOverload';
 
@@ -34,7 +35,15 @@ export interface DraftSet {
   completedAt: string | null;
   /** True until the user edits it — drives the faint "ghost" styling. */
   isPrefilled: boolean;
-  partials?: number;
+  /**
+   * Seconds of rest actually taken BEFORE this set, measured by `completeSet`.
+   *
+   * Absent, not zero, when no rest was running: "I did not use the timer" and "I
+   * rested zero seconds" are different facts, and the median in
+   * `lib/restHistory.ts` would be dragged to nothing by a log full of the second
+   * one standing in for the first.
+   */
+  restTakenSeconds?: number;
 }
 
 export interface DraftEntry {
@@ -46,14 +55,41 @@ export interface DraftEntry {
   /**
    * The two rest lengths this session was BUILT with, in seconds.
    *
-   * Recorded, not obeyed: rest is started by `completeSet`, which reads the live
-   * Settings values at the moment it starts one, so changing a rest length
-   * mid-workout takes effect on the next set instead of the next session. These
-   * fields are what the session began with — useful in a log or a test, and the
+   * Recorded, not obeyed. Rest is started by `completeSet`, and what it runs is
+   * `restSecondsOverride ?? the live Settings value` — so changing a setting
+   * mid-workout takes effect on the very next set rather than on the next session.
+   * These two are what the session began with: useful in a log or a test, and the
    * shape older persisted sessions already have.
    */
   restSeconds: number;
   transitionRestSeconds: number;
+  /**
+   * The superset this exercise belongs to, carried straight off the routine item.
+   *
+   * Same string = same superset, and the behaviour is `completeSet`'s: no rest
+   * between members, one rest after the last member of a round. `lib/superset.ts`
+   * owns the "whose turn is it" decision.
+   *
+   * Absent on an exercise added mid-session, for the same reason
+   * `restSecondsOverride` is: there is no routine item behind it. Joining a
+   * superset mid-workout is a plan change, and the place to make one is the
+   * routine editor.
+   */
+  supersetGroup?: string;
+  /**
+   * THIS EXERCISE'S OWN between-sets rest, if the routine item set one.
+   *
+   * The difference between "an override of 2:00" and "following Settings, which
+   * currently says 2:00" is not visible in a number, and it is the whole
+   * distinction the routine editor now exposes: an item with no override tracks
+   * the setting as it changes, an item with one does not. `completeSet` needs to
+   * know which, so it is carried separately rather than folded into
+   * `restSeconds` — a single field could not tell the two apart.
+   *
+   * Absent on an exercise added mid-session: there is no routine item behind it,
+   * so there is nothing it could be overriding.
+   */
+  restSecondsOverride?: number;
   sets: DraftSet[];
   /** Computed once at session start — history doesn't change mid-workout. */
   overload: OverloadVerdict;
@@ -105,7 +141,16 @@ function finiteOrNull(value: number | undefined): number | null {
 /* History lookup                                                      */
 /* ------------------------------------------------------------------ */
 
-/** Working sets of the most recent session for an exercise, in set order. */
+/**
+ * WORKING sets of the most recent session for an exercise, in set order.
+ *
+ * `!s.isWarmup` in the filter is what makes prefills correct now that warm-ups
+ * are reachable: without it, a light warm-up single would be copied into the
+ * first row of the next session as though it were the working weight, and the
+ * one-tap promise would hand the user a set they never meant to do. It was
+ * already there — this note is here so a future edit knows it is load-bearing
+ * rather than defensive.
+ */
 export function lastSessionSets(history: SetHistory[], exerciseId: ID): SetHistory[] {
   const relevant = history.filter(
     (s) => s.exerciseId === exerciseId && s.isCompleted && !s.isWarmup,
@@ -117,9 +162,7 @@ export function lastSessionSets(history: SetHistory[], exerciseId: ID): SetHisto
     relevant[0].performedAt,
   );
 
-  return relevant
-    .filter((s) => s.performedAt === latestAt)
-    .sort((a, b) => a.setIndex - b.setIndex);
+  return relevant.filter((s) => s.performedAt === latestAt).sort((a, b) => a.setIndex - b.setIndex);
 }
 
 /**
@@ -196,6 +239,32 @@ export function defaultTargetCount(exercise: Pick<Exercise, 'countUnit' | 'defau
   return 10;
 }
 
+/**
+ * How many sets a brand-new routine item plans, by count unit.
+ *
+ * `appendToRoutine` used to write a bare `4` here (12 for rounds), and because
+ * nothing else in the app could write `targetSets`, that 4 was not a starting
+ * point — it was the answer, on every routine, forever. The editor can change it
+ * now, so this is a starting point again, and it lives here beside
+ * `defaultTargetCount` as a per-unit decision rather than a literal inside a store
+ * action.
+ *
+ * Deliberately NOT read from a new `Exercise.defaultSets` field: nothing would
+ * write one. The create screen asks for a starting weight and a target count, not
+ * a set count, and a model field with no writer is the thing Phase 1 spent a
+ * commit deleting five of.
+ *
+ * Per unit, because "four" means different things: four sets of reps, twelve
+ * rounds on a bag, three holds of a plank (nobody plans four two-minute planks),
+ * and one swim — a distance is done once.
+ */
+export function defaultTargetSets(exercise: Pick<Exercise, 'countUnit'>): number {
+  if (exercise.countUnit === 'rounds') return 12;
+  if (exercise.countUnit === 'seconds') return 3;
+  if (exercise.countUnit === 'meters') return 1;
+  return 4;
+}
+
 export interface BuildDraftParams {
   routine: Routine;
   /** Exercise library rows keyed by id, for the routine's items. */
@@ -243,6 +312,10 @@ export interface BuildEntryParams {
   unitSystem: UnitSystem;
   restSeconds: number;
   transitionRestSeconds: number;
+  /** The routine item's own rest, if it has one. See `DraftEntry`. */
+  restSecondsOverride?: number;
+  /** The routine item's superset group, if it is in one. See `DraftEntry`. */
+  supersetGroup?: string;
   /** What the header states — "4 × 8–10". */
   targetSets: number;
   targetRepsMin?: number;
@@ -309,6 +382,10 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
     targetRepsMax,
     restSeconds,
     transitionRestSeconds,
+    ...(params.restSecondsOverride != null
+      ? { restSecondsOverride: params.restSecondsOverride }
+      : {}),
+    ...(params.supersetGroup ? { supersetGroup: params.supersetGroup } : {}),
     sets,
     overload,
     overloadAccepted: false,
@@ -336,29 +413,54 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
       const exercise = exercisesById[item.exerciseId];
       if (!exercise) return null;
 
+      const rest = resolveItemRest(item, defaultRestSeconds);
+
       return buildDraftEntry({
         exercise,
         history: historyByExerciseId[exercise.id] ?? [],
         policy,
         unitSystem,
         /*
-         * REST COMES FROM SETTINGS, NOT FROM THE ROUTINE.
+         * REST: THE ITEM'S OVERRIDE IF IT HAS ONE, OTHERWISE SETTINGS.
          *
-         * This used to read `item.restSeconds ?? exercise.defaultRestSeconds ??
-         * defaultRestSeconds`, which sounds like a sensible cascade and is, in
-         * practice, a bug: nearly every shipped routine item and exercise carries
-         * its own rest, so the two numbers in Settings — the only rest controls
-         * anywhere in the app the user can actually reach — were shadowed on
-         * almost every exercise. Setting "Between sets" to 1:30 and then watching
-         * a 3:00 countdown is indistinguishable from a broken setting.
+         * That day arrived. This used to be `defaultRestSeconds` and nothing else,
+         * with a note saying per-exercise rest could come back once the routine
+         * editor let someone SET it — because the cascade it replaced went through
+         * `exercise.defaultRestSeconds`, which nearly every shipped exercise
+         * carries and nobody could see or change. The two numbers in Settings were
+         * the only rest controls in the app, and they were shadowed on almost
+         * every exercise: setting "Between sets" to 1:30 and then watching a 3:00
+         * countdown is indistinguishable from a broken setting.
          *
-         * Per-exercise rest can come back the day the routine editor lets someone
-         * SET it, at which point an override is a choice the user made and can
-         * see. Until then the honest rule is that the setting wins. It is also
-         * live: `completeSet` re-reads it each time rest starts.
+         * The editor sets `item.restSeconds` now, shows which of the two is in
+         * force on the row, and can clear it back to "follow Settings". So an
+         * override is a choice the user made and can see, which is the whole
+         * condition that was missing. `resolveItemRest` is the one place the
+         * cascade lives, and it is two levels — the exercise's own default is
+         * still not in it, for exactly the reason above. It seeds an override in
+         * `appendToRoutine`, where it becomes visible and clearable, and reaches a
+         * session no other way.
+         *
+         * NO OVERRIDE STILL MEANS LIVE. `completeSet` re-reads Settings every time
+         * it starts a rest, so an item that is following Settings tracks the
+         * setting as it changes mid-workout. The value recorded here is what the
+         * session was BUILT with — see the note on `DraftEntry.restSeconds`.
+         *
+         * `transitionRestSeconds` deliberately still comes from Settings alone.
+         * `RoutineItem` declares one, and nothing sets it and no control edits it
+         * — so honouring it would recreate the original bug for the
+         * between-exercises setting, on a number nobody can reach.
          */
-        restSeconds: defaultRestSeconds,
+        restSeconds: rest.seconds,
         transitionRestSeconds: defaultTransitionRestSeconds,
+        ...(rest.source === 'item' ? { restSecondsOverride: rest.seconds } : {}),
+        /*
+         * Carried onto the entry rather than looked up later. The session is what
+         * `completeSet` and the cards read, and a store action reaching back into
+         * the routine store to ask which group an exercise is in would tie the
+         * live session to a template the user may have edited since.
+         */
+        ...(item.supersetGroup ? { supersetGroup: item.supersetGroup } : {}),
         targetSets: item.targetSets,
         targetRepsMin: item.targetRepsMin,
         targetRepsMax: item.targetRepsMax,
@@ -374,6 +476,29 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
     startedAt,
     entries,
   };
+}
+
+/**
+ * What each row's index column reads: the WORKING-set number, or null for a
+ * warm-up.
+ *
+ * A warm-up is a set that does not count — it is out of the volume, out of the
+ * set count, out of the shorthand and out of every overload verdict — so
+ * numbering it as one would make every number below it wrong. Three working sets
+ * with a warm-up on top read W, 1, 2, 3, and "set 2 of 3" means what it says.
+ *
+ * Here rather than in the card because it is arithmetic over a list, which is
+ * exactly the kind of thing a screen should not be doing: a component that
+ * subtracts a running count from an index is a component with a state machine in
+ * it.
+ */
+export function workingSetLabels(sets: readonly Pick<DraftSet, 'isWarmup'>[]): (number | null)[] {
+  let working = 0;
+  return sets.map((set) => {
+    if (set.isWarmup) return null;
+    working += 1;
+    return working;
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -402,11 +527,10 @@ export function draftToSetHistory(session: DraftSession): SetHistory[] {
         count: set.count,
         countUnit: entry.exercise.countUnit,
         loadMode: entry.exercise.loadMode,
-        partials: set.partials,
         isWarmup: set.isWarmup,
         isCompleted: true,
-        estimated1RM:
-          entry.exercise.countUnit === 'reps' ? estimate1RM(set.weightKg, set.count) : null,
+        // Absent rather than zero — see `DraftSet.restTakenSeconds`.
+        ...(set.restTakenSeconds != null ? { restTakenSeconds: set.restTakenSeconds } : {}),
       });
     });
   }
@@ -435,14 +559,68 @@ export function sessionPerformedAt(session: DraftSession): string {
   return earliest ?? new Date().toISOString();
 }
 
-/** Session volume in kg — only meaningful for rep-based, weighted work. */
-export function totalVolumeKg(session: DraftSession): number {
-  let total = 0;
+/**
+ * Kilograms moved this session, and whether that figure is the whole story.
+ *
+ * ── WHAT WAS WRONG ─────────────────────────────────────────────────────────
+ *
+ * This used to skip every exercise with `requiresWeight === false`, which is
+ * most of the seed library: push-ups, planks, boxing and swimming all scored
+ * zero, and a session of nothing but bodyweight work reported no volume at all.
+ * For the two modes it did count it counted the wrong number — a +40 kg dip
+ * scored 40 × reps rather than (bodyweight + 40) × reps, and an assisted pull-up
+ * ADDED the assistance, so a −20 kg set scored +20 kg a rep and asking the
+ * machine for more help made the number go up.
+ *
+ * `effectiveLoadKg` owns that arithmetic now, and it is the only place it lives.
+ *
+ * ── THE TWO RULES ──────────────────────────────────────────────────────────
+ *
+ *  1. REPS ONLY, whatever `requiresWeight` says. A rep-counted set has a load and
+ *     a number of times it was moved, and that multiplies. Seconds, metres and
+ *     rounds do not: kilograms × seconds is not a unit, and a 50-minute swim
+ *     dressed up as a volume figure would swamp every real number in the log.
+ *  2. A SET WHOSE LOAD WILL NOT RESOLVE IS LEFT OUT AND COUNTED AS LEFT OUT.
+ *     Without a bodyweight in Settings, the three bodyweight-dependent modes
+ *     return null — so `kg` is exactly what the old function would have produced
+ *     (the honest fallback: external work only) and `unweighable` is how many sets
+ *     the total is missing. Callers that print the figure use that to drop the
+ *     clause rather than show a number that undercounts. Nothing is guessed and
+ *     no bodyweight is invented.
+ */
+export interface SessionVolume {
+  /** Kilograms of resolvable load × reps, rounded. */
+  kg: number;
+  /**
+   * Completed rep-counted sets whose load could not be resolved — bodyweight or
+   * assisted work with no bodyweight set. Non-zero means `kg` undercounts.
+   */
+  unweighable: number;
+}
+
+export function sessionVolume(session: DraftSession, bodyweightKg?: number | null): SessionVolume {
+  let kg = 0;
+  let unweighable = 0;
+
   for (const entry of session.entries) {
-    if (!entry.exercise.requiresWeight || entry.exercise.countUnit !== 'reps') continue;
+    if (entry.exercise.countUnit !== 'reps') continue;
     for (const set of entry.sets) {
-      if (set.isCompleted && set.weightKg != null) total += set.weightKg * set.count;
+      // Warm-ups are excluded here exactly as they are from the overload engine
+      // and the shorthand: a warm-up is a set that does not count.
+      if (!set.isCompleted || set.isWarmup) continue;
+      const load = effectiveLoadKg(set.weightKg, entry.exercise.loadMode, bodyweightKg);
+      if (load == null) {
+        unweighable += 1;
+        continue;
+      }
+      kg += load * set.count;
     }
   }
-  return Math.round(total);
+
+  return { kg: Math.round(kg), unweighable };
+}
+
+/** Just the kilograms — the shape `CompletedWorkout.totalVolumeKg` stores. */
+export function totalVolumeKg(session: DraftSession, bodyweightKg?: number | null): number {
+  return sessionVolume(session, bodyweightKg).kg;
 }
