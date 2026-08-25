@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyDraftToExercise,
+  bumpLadderMax,
   draftToExercise,
   emptyExerciseDraft,
   exerciseToDraft,
+  toggleLadder,
 } from './exerciseDraft';
 import type { Exercise } from '../types/models';
 
@@ -205,5 +207,76 @@ describe('creating', () => {
     // where the user was looking.
     expect(created.muscleGroups).toEqual(['quads']);
     expect(created.defaultRestSeconds).toBe(150);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The ladder, through the editor and back.
+ *
+ * The one that matters: `ladderEarned` is not on the screen and must survive
+ * anyway. A user who renames their pull-ups must not lose the two reps their
+ * ladder has climbed — the same rule that makes `id` and `createdAt` survive an
+ * edit, for the same reason.
+ */
+describe('the ladder round trip', () => {
+  const withLadder: Exercise = { ...machine, ladder: { max: 16, earned: 2 } };
+
+  it('opens an existing ladder as on, with its max and its progress', () => {
+    const draft = exerciseToDraft(withLadder);
+    expect(draft.ladderOn).toBe(true);
+    expect(draft.ladderMax).toBe(16);
+    expect(draft.ladderEarned).toBe(2);
+  });
+
+  it('carries the earned reps through an unrelated edit', () => {
+    const draft = exerciseToDraft(withLadder);
+    const saved = applyDraftToExercise({ ...draft, name: 'Wide pull-ups' }, withLadder);
+    expect(saved.name).toBe('Wide pull-ups');
+    expect(saved.ladder).toEqual({ max: 16, earned: 2 });
+  });
+
+  it('resets the earned reps when the max is retested by hand', () => {
+    const draft = bumpLadderMax(exerciseToDraft(withLadder), 1);
+    expect(draft.ladderMax).toBe(17);
+    // Two reps earned against 16 say nothing about 17.
+    expect(draft.ladderEarned).toBe(0);
+  });
+
+  it('does not reset anything when the max cannot move', () => {
+    const pinned = { ...exerciseToDraft(withLadder), ladderMax: 100 };
+    expect(bumpLadderMax(pinned, 1)).toBe(pinned);
+  });
+
+  it('switches on with a max seeded from the target reps on screen', () => {
+    const draft = toggleLadder({ ...emptyExerciseDraft('Pull-ups'), targetCount: 12 }, true);
+    expect(draft.ladderOn).toBe(true);
+    expect(draft.ladderMax).toBe(12);
+  });
+
+  it('keeps the max when switched off, so the toggle is reversible', () => {
+    const off = toggleLadder(exerciseToDraft(withLadder), false);
+    expect(off.ladderOn).toBe(false);
+    expect(off.ladderMax).toBe(16);
+    expect(draftToExercise(off, 'ex_x', 'u1').ladder).toBeUndefined();
+  });
+
+  it('writes no ladder on a unit that cannot run one', () => {
+    const draft = { ...exerciseToDraft(plank), ladderOn: true, ladderMax: 16, ladderEarned: 0 };
+    expect(draftToExercise(draft, 'ex_x', 'u1').ladder).toBeUndefined();
+  });
+
+  it('opens a hand-edited or stale ladder as off rather than as a broken form', () => {
+    const broken = { ...machine, ladder: { max: Number.NaN, earned: 0 } };
+    expect(exerciseToDraft(broken).ladderOn).toBe(false);
+    // ...and one on a row whose count unit moved under it.
+    expect(exerciseToDraft({ ...withLadder, countUnit: 'seconds' }).ladderOn).toBe(false);
+  });
+
+  it('is off on a brand-new exercise', () => {
+    const draft = emptyExerciseDraft('Zercher squat');
+    expect(draft.ladderOn).toBe(false);
+    expect(draftToExercise(draft, 'ex_new', 'u1').ladder).toBeUndefined();
   });
 });

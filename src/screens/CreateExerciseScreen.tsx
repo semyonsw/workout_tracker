@@ -70,6 +70,18 @@
  * in the app uses (see `weightSteps`) — and nothing is snapped to the exercise's
  * progression step, so a machine whose pin reads 16 can be entered as 16.
  *
+ * ── THE LADDER ─────────────────────────────────────────────────────────────
+ *
+ * One toggle and one number, and they replace the rep target of every set of this
+ * exercise with a scheme: `max 16 → 16 + 10 + 8 + 8 + 6`. It lives on this screen
+ * because a max is a fact about the lifter and the movement — you have one pull-up
+ * max, not one per routine that contains pull-ups — and this is the one screen that
+ * is about a movement.
+ *
+ * The preview under the chips is the point: a max on its own is an abstraction, and
+ * the five numbers it produces are the session. `lib/repLadder.ts` owns every one
+ * of them.
+ *
  * `Rest` is the exception and is deliberately NOT editable here: rest lengths are
  * two global settings now (see `activeWorkoutStore.completeSet`), so a per-exercise
  * rest on this screen would be a control that quietly does nothing. It states where
@@ -96,9 +108,17 @@ import {
   SettingRow,
   Toggle,
 } from '../components/primitives';
-import { type ExerciseDraft } from '../lib/exerciseDraft';
+import { bumpLadderMax, toggleLadder, type ExerciseDraft } from '../lib/exerciseDraft';
 import { describeSetInputs, wellsFor, type WellSpec } from '../lib/exerciseShape';
 import { tap } from '../lib/feedback';
+import {
+  LADDER_SETS,
+  describeLadder,
+  ladderTargets,
+  ladderTotal,
+  sessionsToNextMax,
+  supportsLadder,
+} from '../lib/repLadder';
 import { CLUSTERS, CLUSTER_MUSCLES, clusterLabel, clusterOf, MUSCLE_CLUSTER } from '../lib/muscles';
 import { formatClock, weightSteps } from '../lib/units';
 import type { CountUnit, LoadMode, MuscleCluster, MuscleGroup, TimerMode } from '../types/models';
@@ -349,6 +369,12 @@ export function CreateExerciseScreen({
           </View>
         ) : null}
 
+        {/* The ladder. Only on rep-counted work — see `supportsLadder`: a hold
+            does not get longer for the reason a set gets easier. */}
+        {supportsLadder(draft.countUnit) ? (
+          <LadderSection draft={draft} onChange={setDraft} />
+        ) : null}
+
         {/* The timer. Only time-counted work has a clock to run, and this is
             what turns "2:00 plank" from a number you type into a set the phone
             counts for you. */}
@@ -418,11 +444,23 @@ export function CreateExerciseScreen({
             valueTone="faint"
           />
 
-          {draft.requiresWeight ? null : (
+          {/* Stated, not hidden: the user should know why they'll never see a
+              nudge here, rather than wonder whether it's broken. A ladder is the
+              second reason there is nothing to nudge — it prescribes the reps
+              itself, and two systems answering "what next" is one of them wrong
+              (see `evaluateOverload`). */}
+          {draft.ladderOn ? (
             <>
               <Separator />
-              {/* Stated, not hidden: the user should know why they'll never see
-                  a nudge here, rather than wonder whether it's broken. */}
+              <SettingRow
+                label="Overload nudges"
+                value="Off · the ladder owns the reps"
+                valueTone="faint"
+              />
+            </>
+          ) : draft.requiresWeight ? null : (
+            <>
+              <Separator />
               <SettingRow label="Overload nudges" value="Off · no load to add" valueTone="faint" />
             </>
           )}
@@ -555,6 +593,140 @@ function WellStepper({
         </Pressable>
       </View>
     </View>
+  );
+}
+
+/**
+ * THE LADDER — one max, and the whole session derived from it.
+ *
+ *   ╭──────────────────────────────────────────────╮
+ *   │ LADDER · 16 + 10 + 8 + 8 + 6                 │
+ *   │ ┌──────────────────────────────────────────┐ │
+ *   │ │ Rep ladder                        [ ●━ ] │ │
+ *   │ │ One max, five sets, one rep every time   │ │
+ *   │ │ you meet it                              │ │
+ *   │ └──────────────────────────────────────────┘ │
+ *   │ ┌──────────────────────────────────────────┐ │
+ *   │ │ ( −5 )( −1 )   16 MAX    ( +1 )( +5 )    │ │
+ *   │ │ CURRENT MAXIMUM                          │ │
+ *   │ └──────────────────────────────────────────┘ │
+ *   │ 16 + 10 + 8 + 8 + 6 · 48 reps                │
+ *   │ Meet every set and one rep is added. Three   │
+ *   │ met sessions and the max becomes 17.         │
+ *   ╰──────────────────────────────────────────────╯
+ *
+ * Deliberately the same two shapes the rest of this screen already uses: the
+ * 64-high toggle row with a helper line that CHANGES with it (that is how the user
+ * learns what the toggle does), and `WellStepper`'s ± panel with the live value at
+ * Display size in the middle. Nothing new to learn.
+ *
+ * ± 1 AND ± 5, not one step. A max is retested in ones, and set up in fives —
+ * somebody switching this on for push-ups is typing thirty, not tapping + thirty
+ * times.
+ *
+ * THE PREVIEW IS THE POINT. A max on its own is an abstraction; `16 + 10 + 8 + 8 +
+ * 6 · 48 reps` is the session, and it moves as the thumb moves. It previews at
+ * FIVE sets because five is the scheme (see `LADDER_SETS`) — the routine decides
+ * how many sets it actually plans, and the ladder shapes whatever it asks for.
+ */
+function LadderSection({
+  draft,
+  onChange,
+}: {
+  draft: ExerciseDraft;
+  onChange: (next: (draft: ExerciseDraft) => ExerciseDraft) => void;
+}) {
+  const ladder = { max: draft.ladderMax, earned: draft.ladderEarned };
+  const targets = draft.ladderOn ? ladderTargets(ladder, LADDER_SETS) : [];
+  const untilPR = draft.ladderOn ? sessionsToNextMax(ladder, LADDER_SETS) : 0;
+
+  return (
+    <>
+      <Kicker tone={draft.ladderOn ? 'green' : 'faint'} className="mx-lg mb-sm mt-xl">
+        Ladder{draft.ladderOn ? ` · ${describeLadder(targets)}` : ''}
+      </Kicker>
+
+      <View className="mx-lg min-h-[64px] flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg py-sm">
+        <View className="flex-1 pr-md">
+          <Text className="text-body font-medium text-ink">Rep ladder</Text>
+          <Text className="mt-[2px] text-label text-ink-faint">
+            {draft.ladderOn
+              ? 'One max, and every set derived from it — plus a rep every session you meet it'
+              : 'Off — every set of this exercise plans the same number'}
+          </Text>
+        </View>
+        <Toggle
+          value={draft.ladderOn}
+          onChange={(on) => {
+            tap();
+            onChange((d) => toggleLadder(d, on));
+          }}
+          accessibilityLabel="Rep ladder"
+        />
+      </View>
+
+      {draft.ladderOn ? (
+        <>
+          <View className="mx-lg mt-sm rounded-surface border border-hairline bg-surface p-md">
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row">
+                {[-5, -1].map((delta, i) => (
+                  <StepChip
+                    key={delta}
+                    label={String(delta)}
+                    first={i === 0}
+                    onPress={() => {
+                      tap();
+                      onChange((d) => bumpLadderMax(d, delta));
+                    }}
+                  />
+                ))}
+              </View>
+
+              <View className="mx-xs flex-row items-baseline">
+                <Text className="text-display font-semibold tabular-nums text-ink">
+                  {draft.ladderMax}
+                </Text>
+                <Text className="ml-xs text-micro font-semibold uppercase text-ink-faint">max</Text>
+              </View>
+
+              <View className="flex-row">
+                {[1, 5].map((delta, i) => (
+                  <StepChip
+                    key={delta}
+                    label={`+${delta}`}
+                    first={i === 0}
+                    onPress={() => {
+                      tap();
+                      onChange((d) => bumpLadderMax(d, delta));
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View className="mt-md">
+              <Kicker>Current maximum</Kicker>
+            </View>
+          </View>
+
+          {/* The session, in the notation the user writes it in themselves. */}
+          <Text className="mx-lg mt-md text-body font-medium tabular-nums text-ink">
+            {describeLadder(targets)} · {ladderTotal(targets)} reps
+          </Text>
+          <Text className="mx-lg mt-xs text-label text-ink-faint">
+            {untilPR === 1
+              ? `Meet every set and the max becomes ${draft.ladderMax + 1}.`
+              : `Meet every set and one rep is added, from the bottom up. ${untilPR} met sessions and the max becomes ${draft.ladderMax + 1}.`}
+          </Text>
+          <Text className="mx-lg mt-xs text-label text-ink-faint">
+            Miss one and nothing moves — the same numbers come back next time. Shown at five sets,
+            as the scheme is written; a routine that plans four or six gets the ladder for four or
+            six.
+          </Text>
+        </>
+      ) : null}
+    </>
   );
 }
 

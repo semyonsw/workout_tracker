@@ -57,6 +57,7 @@
 import type { CountUnit, Exercise, OverloadPolicy, SetHistory, UnitSystem } from '../types/models';
 import { countStep, daysBetween, formatCount, resolveIncrementKg, roundToStep } from './units';
 import { resolveTimerMode } from './setTimer';
+import { ladderOf } from './repLadder';
 
 /* ------------------------------------------------------------------ */
 /* Public types                                                        */
@@ -212,7 +213,10 @@ export function summarizeSessions(history: SetHistory[], exerciseId: string): Se
 /* ------------------------------------------------------------------ */
 
 export interface EvaluateOverloadParams {
-  exercise: Pick<Exercise, 'id' | 'requiresWeight' | 'incrementKg' | 'countUnit' | 'timerMode'>;
+  exercise: Pick<
+    Exercise,
+    'id' | 'requiresWeight' | 'incrementKg' | 'countUnit' | 'timerMode' | 'ladder'
+  >;
   /** Completed sets for this exercise. Order doesn't matter; extras are filtered. */
   history: SetHistory[];
   policy?: OverloadPolicy;
@@ -231,6 +235,25 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
   } = params;
 
   const empty = emptyVerdict();
+
+  /*
+   * A LADDER OWNS THE REPS, so this engine stands down.
+   *
+   * Both of these read the same history and both answer "what should the next
+   * session be", and when an exercise is running a ladder they answer it
+   * differently: the nudge says "3 sessions at 16 — try 17" while the ladder is
+   * mid-level and has already decided that this session's rep goes on the fourth
+   * set. Two suggestions on one card, one of them wrong, and the user has to work
+   * out which — for a prescription they switched on precisely so they would not
+   * have to think about it.
+   *
+   * So the ladder wins wherever it exists, on both axes. Not only the count axis:
+   * `due_reps` is "one more rep at the same weight", which is the ladder's job
+   * stated in the ladder's own units. `CreateExerciseScreen` says so on the row
+   * where the ladder is switched on, because a nudge that silently stops appearing
+   * is indistinguishable from a broken one.
+   */
+  if (ladderOf(exercise)) return empty;
 
   const sessions = summarizeSessions(history, exercise.id);
   if (sessions.length === 0) return empty;

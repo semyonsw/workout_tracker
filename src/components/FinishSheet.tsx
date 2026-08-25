@@ -7,6 +7,9 @@
  *   │ 7 sets are still unlogged. They won't be   │
  *   │ saved.                                     │
  *   │                                            │
+ *   │ Wide pull-ups · new max 17 ·               │
+ *   │ 17 + 10 + 9 + 8 + 7 next time              │
+ *   │                                            │
  *   │ Dips did 5 sets, not 4.                    │
  *   │ ╭─────── Finish and update the plan ────╮  │
  *   │ ╭────────── Finish · 11 sets ───────────╮  │
@@ -57,6 +60,18 @@ interface FinishSheetProps {
    * plan (or had no plan). Null hides the whole offer, button included.
    */
   planChange: string | null;
+  /**
+   * "Wide pull-ups · new max 17 · 17 + 10 + 9 + 8 + 7 next time" — what the
+   * ladders in this session earned, or null when none of them moved.
+   *
+   * A STATEMENT, not an offer, and that is the difference between it and
+   * `planChange` directly above. A routine is a template the user wrote, so
+   * rewriting it is a question. A ladder is a progression they switched on so that
+   * it would move without being asked — see `ladderOutcomes`. It gets a line
+   * because being pushed one rep further is the whole feature and the user should
+   * see the number that did it, not because there is anything to decide.
+   */
+  ladderChange: string | null;
   onConfirm: () => void;
   /** Finish, and write the session's set counts back to the routine. */
   onConfirmAndUpdatePlan: () => void;
@@ -67,6 +82,7 @@ export function FinishSheet({
   unloggedCount,
   loggedCount,
   planChange,
+  ladderChange,
   onConfirm,
   onConfirmAndUpdatePlan,
   onDismiss,
@@ -90,10 +106,21 @@ export function FinishSheet({
         className="rounded-t-surface border-t border-t-hairline bg-surface px-lg pt-xl"
       >
         <Text className="text-title font-medium text-ink">Finish workout?</Text>
-        <Text className="mt-sm text-body tabular-nums text-ink-muted">
-          {unloggedCount} {unloggedCount === 1 ? 'set is' : 'sets are'} still unlogged. They won't
-          be saved.
-        </Text>
+        {/* Only when there is something to lose. A session with everything logged
+            is on this sheet for the ladder line below, and telling it "0 sets are
+            still unlogged" would be the sheet reading out a zero. */}
+        {unloggedCount > 0 ? (
+          <Text className="mt-sm text-body tabular-nums text-ink-muted">
+            {unloggedCount} {unloggedCount === 1 ? 'set is' : 'sets are'} still unlogged. They won't
+            be saved.
+          </Text>
+        ) : null}
+
+        {/* What the ladder did. Green, because it is the one thing on this sheet
+            that is progressive overload — the app's single meaning for colour. */}
+        {ladderChange ? (
+          <Text className="mt-lg text-body tabular-nums text-green-bright">{ladderChange}</Text>
+        ) : null}
 
         {/* The fact, then the button that acts on it. Stated above the buttons
             rather than inside one, because it is a sentence about the session and

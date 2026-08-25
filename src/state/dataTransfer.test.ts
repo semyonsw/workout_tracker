@@ -98,6 +98,31 @@ describe('the round trip', () => {
     expect(workout.sets[0].countUnit).toBeTruthy();
   });
 
+  /**
+   * A ladder is two numbers on a library row, and losing them costs more than it
+   * looks: `max` is a tested maximum and `earned` is how many sessions of progress
+   * stand behind it. Neither can be recomputed from the log — a session that met
+   * its target looks exactly like one that beat a different target.
+   */
+  it('carries a rep ladder, max and earned reps both', () => {
+    const [first] = useLibrary.getState().exercises;
+    useLibrary.getState().updateExercise(first.id, {
+      ...first,
+      countUnit: 'reps',
+      ladder: { max: 16, earned: 2 },
+    });
+
+    const parsed = parseBackup(exportBackupText());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    useLibrary.getState().importLibrary({ exercises: [], routines: [] });
+    applyBackup(parsed.envelope);
+
+    const restored = useLibrary.getState().exercises.find((e) => e.id === first.id);
+    expect(restored?.ladder).toEqual({ max: 16, earned: 2 });
+  });
+
   it('never writes the store actions into the file', () => {
     const file = JSON.parse(exportBackupText()) as { settings: Record<string, unknown> };
 

@@ -4,6 +4,31 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
+## 1.0.0 — what changed on the phone
+
+`versionCode` 13. **It needs a prebuild**, but only because `app.json` carries the
+new version — no native dependency moved, so the set of native modules in this APK
+is identical to 0.12.0's.
+
+- **The rep ladder.** One number per exercise — your max — and the whole session
+  follows it: `max 16 → 16 + 10 + 8 + 8 + 6`. Switch it on in the exercise editor
+  (**Library → an exercise → Edit → Ladder**), set the max with the ± chips, and
+  the preview under them is the session you will be handed.
+- **It adds a rep every time you meet it**, on the lowest set that still needs
+  one, and after enough of those the max itself moves — a personal record, every
+  five to eight workouts in practice, because a session that comes up short earns
+  nothing and repeats unchanged. The finish sheet states the new numbers.
+- **Logging the top set re-shapes the rest of the exercise.** Beat the plan and
+  every set under it moves up to the ladder for what you actually did; miss it and
+  they come down. A row you edited by hand is left alone.
+- **The overload nudge stands down on a laddered exercise** — two systems
+  prescribing one exercise's reps is one of them being wrong. The exercise editor
+  says so where the ladder is switched on, rather than leaving a nudge that
+  silently never appears.
+
+Nothing already on the phone changes: no migration, no schema change, and an
+exercise without a ladder behaves exactly as it did in 0.12.0.
+
 ## 0.12.0 — what changed on the phone
 
 `versionCode` 12. **It needs a prebuild**: `expo-sqlite` is a dependency again —
@@ -132,6 +157,30 @@ $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs \
 
 `CN=Workout Tracker` updates in place. `CN=Android Debug` needs route 2.
 
+**Which key the committed APK actually carries: the DEBUG one.** Both APKs ever
+committed to this repo — 0.10.0 and 0.12.0 — are signed `CN=Android Debug`
+(`FA:C6:17:45…`), so that is what the phone has installed and that is the key the
+next one has to keep, or route 2 is the only way in. `workout-tracker-1.0.0.apk`
+is therefore signed with `android/app/debug.keystore` on purpose:
+
+```bash
+cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a \
+  -PWT_STORE_FILE="$PWD/app/debug.keystore" -PWT_STORE_PASSWORD=android \
+  -PWT_KEY_ALIAS=androiddebugkey -PWT_KEY_PASSWORD=android
+```
+
+The `-P` flags override `~/.gradle/gradle.properties` for that one build, which is
+the whole reason this is a Gradle property rather than a file path in
+`plugins/withReleaseSigning.js`. The debug keystore is the fixed one the Expo
+template ships, identical on every machine, which is why two builds a release apart
+could update each other at all.
+
+**Moving to the real release key is a one-time route 2**, and worth doing before
+this app holds a second year of training: `Export data`, uninstall, install a
+release-signed build, `Import data`. Until then the CI-built APK on the Releases
+page (release-signed, `CN=Workout Tracker`) and the committed one (debug-signed)
+are NOT interchangeable on a phone that has either installed.
+
 ## Install it on the phone
 
 The APK comes from the **[Releases page](../../releases)**. It is built and signed
@@ -195,8 +244,11 @@ Push a tag and the same APK is built, signed and attached to a draft GitHub
 Release:
 
 ```bash
-git tag v0.12.0 && git push origin v0.12.0
+git tag v1.0.0 && git push origin v1.0.0
 ```
+
+⚠️ That APK is signed with the RELEASE keystore, which is not the key the
+committed APKs carry — see the warning above before installing one over the other.
 
 `.github/workflows/release.yml` runs the suite first, prebuilds from `app.json`,
 signs with the keystore out of repository secrets (see

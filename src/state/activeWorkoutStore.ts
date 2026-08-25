@@ -57,6 +57,12 @@ import {
   type SetTimerSpec,
 } from '../lib/setTimer';
 import { MAX_PLAUSIBLE_REST_SECONDS } from '../lib/restHistory';
+import {
+  ladderAfterTopSet,
+  ladderTargets,
+  normalizeLadder,
+  reshapeLadderSets,
+} from '../lib/repLadder';
 import { moveToIndex } from '../lib/reorder';
 import { nextInSupersetRound } from '../lib/superset';
 import { currentSettings } from './settingsStore';
@@ -367,7 +373,12 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
             : s,
         );
         const entries = [...session.entries];
-        entries[index] = { ...target, sets };
+        /*
+         * The ladder gets the last word on this exercise's remaining rows: a top
+         * set that beat its plan — or missed it — reshapes everything under it. No
+         * ladder, no change. See `withLadderPlan`.
+         */
+        entries[index] = withLadderPlan({ ...target, sets });
 
         const exerciseDone = sets.every((s) => s.isCompleted);
 
@@ -465,7 +476,21 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         const { session } = get();
         if (!session) return;
         set({
-          session: mapSet(session, entryId, setId, (s) => ({ ...s, ...patch, isPrefilled: false })),
+          session: mapEntry(session, entryId, (entry) =>
+            /*
+             * Through the ladder as well, because correcting the TOP SET after it is
+             * logged is a supported flow ("I actually got 18") and the rows below it
+             * are derived from that number. The edited row itself is safe either way:
+             * `isPrefilled: false` is exactly what tells the reshape to leave a
+             * hand-set value alone.
+             */
+            withLadderPlan({
+              ...entry,
+              sets: entry.sets.map((s) =>
+                s.localId === setId ? { ...s, ...patch, isPrefilled: false } : s,
+              ),
+            }),
+          ),
         });
       },
 
@@ -486,7 +511,9 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
               completedAt: null,
               isPrefilled: true,
             };
-            return { ...entry, sets: [...entry.sets, next] };
+            // A sixth set changes what a ladder prescribes for all six, so the
+            // whole exercise re-shapes rather than the new row guessing.
+            return withLadderPlan({ ...entry, sets: [...entry.sets, next] });
           }),
         });
       },
@@ -511,10 +538,10 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         }
 
         set({
-          session: mapEntry(session, entryId, (e) => ({
-            ...e,
-            sets: e.sets.filter((s) => s.localId !== setId),
-          })),
+          session: mapEntry(session, entryId, (e) =>
+            // ...and one fewer set does too, in the other direction.
+            withLadderPlan({ ...e, sets: e.sets.filter((s) => s.localId !== setId) }),
+          ),
           // A timer with nothing left to log into is a timer that can't be
           // committed. Drop it rather than leaving an orphan running.
           setTimer: setTimer?.setId === setId ? null : setTimer,
@@ -937,6 +964,62 @@ export function measureRestTaken(rest: RestState, now: number): number | null {
   const seconds = Math.round((now - rest.startedAt) / 1000);
   if (seconds <= 0 || seconds > MAX_PLAUSIBLE_REST_SECONDS) return null;
   return seconds;
+}
+
+/* ------------------------------------------------------------------ */
+/* The ladder, in flight                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Re-shape an exercise's unlogged rows to the ladder, as of right now.
+ *
+ * ── WHY THIS RUNS MID-SESSION AT ALL ────────────────────────────────────────
+ *
+ * A ladder is built from a max, and the max is a guess until the top set has
+ * actually happened. The plan says 16 and the bar says 18: every number below it
+ * was written for a lighter day, and leaving them there wastes the day. The plan
+ * says 16 and you get 14: they were written for a day that did not turn up, and
+ * grinding out backoffs built for it is how one bad session becomes a hurt
+ * shoulder. So the moment the top set is logged, the rest of the exercise is
+ * rebuilt off what the body actually did — `ladderAfterTopSet` is that decision,
+ * and it is in `lib/repLadder.ts` with the rest of the scheme.
+ *
+ * Called from every action that changes an exercise's rows — a ✓, an added set, a
+ * removed one — rather than only from `completeSet`, because the ladder's shape
+ * depends on how many sets there are: a five-set ladder and a six-set ladder are
+ * different numbers, and the header states the plan while the rows are the plan.
+ * Two places showing one thing means one of them can be wrong, and it is
+ * idempotent, so calling it more often costs nothing and cannot drift.
+ *
+ * WHAT IT WILL NOT TOUCH is `reshapeLadderSets`' business: a logged set, a row the
+ * user edited by hand, a warm-up. An UNDONE ✓ leaves the numbers it produced
+ * standing — those reps were still done, and the next ✓ reshapes again anyway.
+ */
+function withLadderPlan(entry: DraftEntry): DraftEntry {
+  const ladder = normalizeLadder(entry.ladder);
+  if (!ladder) return entry;
+
+  const working = entry.sets.filter((s) => !s.isWarmup);
+  if (working.length === 0) return entry;
+
+  const top = working[0];
+  const targets = top.isCompleted
+    ? ladderAfterTopSet(ladder, top.count, working.length)
+    : ladderTargets(ladder, working.length);
+
+  const reshaped = reshapeLadderSets(entry.sets, targets);
+  if (reshaped.every((count) => count == null)) return entry;
+
+  return {
+    ...entry,
+    sets: entry.sets.map((set, i) => {
+      const count = reshaped[i];
+      // Still `isPrefilled`: this is a number the app supplied, so it stays
+      // ghosted, stays overwritable by the next reshape, and a real edit still
+      // pins it.
+      return count == null ? set : { ...set, count };
+    }),
+  };
 }
 
 /* ------------------------------------------------------------------ */
