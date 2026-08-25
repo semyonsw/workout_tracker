@@ -914,6 +914,18 @@ function HistoryTab({
 }) {
   const [view, setView] = useState<'log' | 'graphs'>('log');
 
+  /*
+   * A workout tapped ANYWHERE ELSE in the app lands on this tab expecting the log
+   * — see `openWorkout`. The graphs view has no row to open, so without this the
+   * tap looks like it did nothing, and `focusWorkoutId` is never handled: it sits
+   * there and springs the row open the next time somebody switches to the log.
+   * Switching the view here is what makes the two features compose; neither
+   * branch could have caught it alone, because neither had both.
+   */
+  useEffect(() => {
+    if (focusWorkoutId) setView('log');
+  }, [focusWorkoutId]);
+
   const toolbar = (
     <View className="mt-md">
       <Segmented

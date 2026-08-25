@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { historyTotals, recentSummaries, useWorkoutHistory } from './workoutHistoryStore';
+import {
+  historyTotals,
+  migrateHistoryIfNeeded,
+  recentSummaries,
+  useWorkoutHistory,
+} from './workoutHistoryStore';
 import {
   LEGACY_STORAGE_KEY,
   __closeDb,
@@ -866,6 +871,52 @@ describe('migrating the log out of AsyncStorage', () => {
     const read = readAllWorkouts() as CompletedWorkout[];
     expect(read.map((w) => w.id)).toEqual(expected.map((w) => w.id));
     expect(read[0].sets.map((r) => r.id)).toEqual(expected[0].sets.map((r) => r.id));
+  });
+
+  it('brings the pinned workout number across with the log', async () => {
+    /*
+     * The build that introduced the pin persisted it inside this same blob, beside
+     * the workouts. Moving the workouts and dropping the pin would renumber the
+     * whole log on the first launch after the update, with nothing said about it —
+     * and the pin is the one fact in the app that cannot be recomputed from the
+     * sessions. See `legacyNumbering`.
+     */
+    const expected = twoWorkouts();
+    await AsyncStorage.setItem(
+      LEGACY_STORAGE_KEY,
+      JSON.stringify({
+        state: { workouts: expected, numbering: { workoutId: expected[0].id, number: 91 } },
+        version: 1,
+      }),
+    );
+    useWorkoutHistory.getState().clearHistory();
+
+    await migrateHistoryIfNeeded();
+
+    expect(useWorkoutHistory.getState().workouts).toHaveLength(2);
+    expect(useWorkoutHistory.getState().numbering).toEqual({
+      workoutId: expected[0].id,
+      number: 91,
+    });
+  });
+
+  it('drops a legacy pin pointing at a workout that did not survive', async () => {
+    // Validated against what actually landed, not against what the blob claimed:
+    // a pin onto a workout the guard dropped is a pin onto nothing.
+    const expected = twoWorkouts();
+    await AsyncStorage.setItem(
+      LEGACY_STORAGE_KEY,
+      JSON.stringify({
+        state: { workouts: expected, numbering: { workoutId: 'w_never_existed', number: 91 } },
+        version: 1,
+      }),
+    );
+    useWorkoutHistory.getState().clearHistory();
+
+    await migrateHistoryIfNeeded();
+
+    expect(useWorkoutHistory.getState().workouts).toHaveLength(2);
+    expect(useWorkoutHistory.getState().numbering).toBeNull();
   });
 
   it('NEVER deletes the old key, on success or otherwise', async () => {
