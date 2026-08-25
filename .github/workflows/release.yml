@@ -54,7 +54,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 22 for `node:sqlite` — see the note in ci.yml. The tests below cannot
+          # even load the history suites on 20.
+          node-version: '22'
           cache: npm
 
       # The APK ships a compiled JS bundle, so the tests are the last chance to
