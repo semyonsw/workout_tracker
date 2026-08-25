@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  UnreadableLogError,
   applyBackup,
   currentSnapshot,
   exportBackupText,
@@ -355,5 +356,45 @@ describe('the pinned workout number rides along', () => {
 
     // The one fact in the app that cannot be recomputed from the sessions.
     expect(useWorkoutHistory.getState().numbering).toEqual({ workoutId: workout.id, number: 91 });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * THE PATH THAT TURNS A FAILED READ INTO A REAL LOSS.
+ *
+ * Exporting is what a careful person does first when the app looks wrong. If the
+ * log could not be read, the snapshot's `workouts` is empty for a reason that has
+ * nothing to do with what is on disk — and a file with `"workouts": []` in it is
+ * one `Replace everything from a file` away from making the loss permanent and
+ * unrecoverable.
+ */
+describe('a backup is refused when the log could not be read', () => {
+  it('throws instead of writing a file with the log missing', () => {
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    // The state a failed read leaves: nothing in memory, everything on disk.
+    useWorkoutHistory.setState({ workouts: [], loadFailed: true });
+
+    expect(() => exportBackupText()).toThrow(UnreadableLogError);
+  });
+
+  it('exports normally once the log has been read', () => {
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    useWorkoutHistory.setState({ loadFailed: false });
+
+    const parsed = parseBackup(exportBackupText());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.counts.workouts).toBe(1);
+  });
+
+  it('still exports an empty log that is genuinely empty', () => {
+    // A fresh install has nothing to back up and that is not an error: the file is
+    // valid, it just has no workouts in it.
+    useWorkoutHistory.getState().clearHistory();
+    useWorkoutHistory.setState({ loadFailed: false });
+
+    expect(() => exportBackupText()).not.toThrow();
   });
 });

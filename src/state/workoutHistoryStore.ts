@@ -82,6 +82,7 @@ import {
 import type { DraftSession } from '../lib/draft';
 import {
   clearAllWorkouts,
+  countWorkoutRows,
   deleteWorkoutRow,
   migrateFromAsyncStorage,
   readAllWorkouts,
@@ -96,6 +97,16 @@ import type { CountUnit, ID, LoadMode, RecentSessionSummary, SetHistory } from '
 interface WorkoutHistoryState {
   /** Finished workouts, newest first. */
   workouts: CompletedWorkout[];
+  /**
+   * The log could not be READ, which is not the same as the log being empty.
+   *
+   * True only when a read threw. Every screen that renders an empty state has to
+   * tell the two apart — "you have not finished a workout yet" and "your workouts
+   * are on disk and I could not open them" are different sentences, and printing
+   * the first one over the second is how an app looks like it lost a year of
+   * training. See `loadWorkouts`.
+   */
+  loadFailed: boolean;
   /**
    * The one pinned workout number, or null for "the oldest one is 1".
    *
@@ -132,6 +143,13 @@ interface WorkoutHistoryState {
    */
   deleteWorkoutSet: (workoutId: ID, setId: ID) => boolean;
   clearHistory: () => void;
+  /**
+   * Re-read the log from disk and adopt it. Returns how many workouts are now in
+   * memory. The recovery path for a launch whose first read failed.
+   */
+  reloadHistory: () => number;
+  /** How many workouts are on disk, or null if the database cannot be asked. */
+  countOnDisk: () => number | null;
   /**
    * Pin one workout's number. Everything before and after renumbers from it.
    *
@@ -190,12 +208,30 @@ interface WorkoutHistoryState {
  * `ErrorBoundary` exists, which is the exact failure mode `App.tsx` wraps its
  * notification handler against. An empty log is recoverable; a process that dies
  * at import is not, and the AsyncStorage key is still on disk either way.
+ *
+ * ── BUT A FAILED READ IS NOT AN EMPTY LOG ──────────────────────────────────
+ *
+ * This used to return `[]` on a throw and say nothing, and those two outcomes are
+ * indistinguishable to every screen: "you have never finished a workout" and "I
+ * could not open the file your workouts are in" render as the same empty list.
+ * Reported as "the app forgot my history", which is exactly what it looks like.
+ *
+ * It matters at module scope specifically, because that is the one moment when a
+ * native module may not be ready yet — a release build resolves its TurboModules
+ * lazily, and the log is read during bundle evaluation, before anything has
+ * mounted. So the throw is not hypothetical, and if it happens EVERY launch reads
+ * nothing while every `Finish` writes fine: the database fills up and the app
+ * never shows any of it.
+ *
+ * Hence the flag and `reloadHistory` below. The failure is now recoverable (try
+ * again once React is running) and visible (Settings states it) rather than a
+ * silent empty screen.
  */
-function loadWorkouts(): CompletedWorkout[] {
+function loadWorkouts(): { workouts: CompletedWorkout[]; failed: boolean } {
   try {
-    return sanitizeWorkouts(readAllWorkouts(), []);
+    return { workouts: sanitizeWorkouts(readAllWorkouts(), []), failed: false };
   } catch {
-    return [];
+    return { workouts: [], failed: true };
   }
 }
 
@@ -233,11 +269,49 @@ function persistNumbering(anchor: WorkoutNumberAnchor | null): WorkoutNumberAnch
   return anchor;
 }
 
-const initialWorkouts = loadWorkouts();
+const initial = loadWorkouts();
 
 export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
-  workouts: initialWorkouts,
-  numbering: loadNumbering(initialWorkouts),
+  workouts: initial.workouts,
+  numbering: loadNumbering(initial.workouts),
+  loadFailed: initial.failed,
+
+  /**
+   * Read the log off disk again, and adopt what is there.
+   *
+   * Called once from `App.tsx` after mount, which is the whole point: by then React
+   * is running and every native module is up, so a module-scope read that threw —
+   * see `loadWorkouts` — gets a second chance from a state where it cannot. On a
+   * launch where the first read worked this is a few milliseconds of re-reading
+   * rows the store already has, which is a price worth paying for never showing an
+   * empty log to somebody who has one.
+   *
+   * ON FAILURE IT KEEPS WHAT IS IN MEMORY. A failed read says nothing about the
+   * log; overwriting the array with `[]` because a query threw is the bug this
+   * function exists to fix, not a thing to do twice.
+   */
+  reloadHistory: () => {
+    const { workouts, failed } = loadWorkouts();
+    if (failed) {
+      set({ loadFailed: true });
+      return get().workouts.length;
+    }
+    set({ workouts, numbering: loadNumbering(workouts), loadFailed: false });
+    return workouts.length;
+  },
+
+  /**
+   * How many workouts are on disk right now, or null if the database cannot be
+   * asked. Never throws — it is a diagnostic, and one that crashes Settings is
+   * worse than none.
+   */
+  countOnDisk: () => {
+    try {
+      return countWorkoutRows();
+    } catch {
+      return null;
+    }
+  },
 
   saveSession: (session, endedAt) => {
     /*

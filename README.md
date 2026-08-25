@@ -13,7 +13,7 @@ set that repeats last session costs one tap.**
 ```bash
 npm ci                   # exactly the locked tree — see BUILD_ANDROID.md
 npx expo start           # dev server
-npm test                 # 670+ tests: ladders, timers, overload, trends, stores, backups, migration
+npm test                 # 690+ tests: ladders, timers, overload, cold starts, stores, backups, migration
 npm run typecheck
 npm run lint             # also what CI runs, on every push
 ```
@@ -39,6 +39,7 @@ npm run lint             # also what CI runs, on every push
 | Overload nudges | derived from your own set history: a weight, a hold or a rep count that has been the same for N days over M sessions, with the suggestion applied to every unlogged set in one tap. Planks and push-ups get the same treatment as the barbell — `3× at 2:00 — try 2:15`. Silent on an exercise running a ladder: two systems prescribing one exercise's reps is one of them being wrong |
 | Plate maths | `20 + 2×10 + 2×2.5` under the weight cell of a barbell lift. It informs and never rounds: a weight your plates cannot make shows no line rather than the nearest one |
 | History | every finished workout, newest first, by month: date, duration, sets, volume, each exercise in the app's shorthand **and its total** — `+40 kg · 4 4 4` with `12 reps total` under it. Tapping a workout anywhere in the app opens that workout |
+| The log is the log | it lives in SQLite, it is read before the first frame, and it survives the process being killed — `close all` included. If it ever cannot be READ, the app says so and states how many workouts are on disk rather than showing you an empty list, and it refuses to write a backup that would be missing them |
 | Workout numbers | every workout carries an ordinal — `Workout 92`. Pin the number on any one session (`Set the workout number` inside it) and every other workout counts from there, backwards and forwards, so a log that starts at 91 because ninety happened before this app says so |
 | Graphs | `History → Graphs`: reps per workout and kilograms per workout over time, or pick one exercise for its reps per session and top weight per session. Each line states its own direction — `up 34 reps since 11 Jun` — because the shape is visible but the arithmetic isn't |
 | Sets per cluster | pull 42 · push 31 · legs 8, over 4 weeks, 12 weeks or all of it. Counts and bars, and a zero is the point |

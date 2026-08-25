@@ -71,6 +71,7 @@ import {
   Segmented,
   SelectChip,
   Separator,
+  SettingRow,
   TextButton,
   Toggle,
 } from '../components/primitives';
@@ -184,6 +185,14 @@ export function SettingsScreen() {
   const workouts = useWorkoutHistory((s) => s.workouts);
   const workoutCount = workouts.length;
   /*
+   * Counted from the DATABASE, once per render of this screen, rather than from the
+   * array above — the whole point is to be able to disagree with it. Cheap: one
+   * `COUNT(*)` over an indexed table, on a screen nobody opens mid-set.
+   */
+  const onDisk = useWorkoutHistory((s) => s.countOnDisk)();
+  /** "The log could not be READ" — see `workoutHistoryStore.loadFailed`. */
+  const loadFailed = useWorkoutHistory((s) => s.loadFailed);
+  /*
    * What the user ACTUALLY rests, from the timer's own measurements. Null until
    * there are enough samples to mean anything — see `restHistory.ts` — and the
    * rows below render nothing at all in that case rather than hedging.
@@ -272,7 +281,17 @@ export function SettingsScreen() {
     try {
       const rows = workouts.reduce((n, w) => n + w.sets.length, 0);
       if (rows === 0) {
-        setDataStatus({ tone: 'quiet', text: 'There are no logged sets to export yet.' });
+        /*
+         * An empty log and an unreadable one produce the same zero here, and telling
+         * somebody they have never logged a set when their log is on disk is the
+         * failure this release is about. `loadFailed` is what tells them apart.
+         */
+        setDataStatus({
+          tone: 'quiet',
+          text: loadFailed
+            ? 'The log could not be read, so there is nothing to write. Close the app and open it again.'
+            : 'There are no logged sets to export yet.',
+        });
         return;
       }
       const outcome = await saveCsvFile(csvBaseName(), workoutsToCsv(workouts));
@@ -599,7 +618,30 @@ export function SettingsScreen() {
               into a folder you pick. `Import data` opens the phone's file browser
               so you can find that file and read it back. What each one did is
               stated underneath, by name and by count. */}
+          {/*
+            WHAT IS ACTUALLY ON DISK, stated as a fact.
+        
+            The log lives in SQLite (`historyDb.ts`) and the app holds a copy of it
+            in memory. Those two can disagree in exactly one direction — a read that
+            failed leaves the copy empty while the file is untouched — and when they
+            do, every screen shows an empty History and it looks precisely like a
+            year of training being deleted. One line here is the difference between
+            that and knowing better: it counts the rows in the file, not the array on
+            screen, and it says so when the two do not match.
+          */}
           <View className="mx-lg mt-xxl overflow-hidden rounded-surface border border-hairline bg-surface">
+            <SettingRow
+              label="Workouts on disk"
+              value={
+                onDisk == null
+                  ? 'Cannot read the log'
+                  : onDisk === workoutCount
+                    ? `${onDisk}`
+                    : `${onDisk} on disk · ${workoutCount} loaded`
+              }
+              valueTone={onDisk == null || onDisk !== workoutCount ? 'muted' : 'faint'}
+            />
+            <Separator inset={0} />
             <TextButton label="Export data" tone="green" onPress={() => void exportData()} />
             <Separator inset={0} />
             <TextButton label="Export sets as CSV" tone="green" onPress={() => void exportSets()} />

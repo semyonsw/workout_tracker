@@ -25,11 +25,11 @@ node_modules/
 # on CI or opening a browser. One file, replaced in place each release rather than
 # accumulating: the Releases page is still where old versions live.
 #
-# Earlier APKs (0.10.0, 0.12.0) are still in git history. Removing them from
+# Earlier APKs (0.10.0, 0.12.0, 1.0.0) are still in git history. Removing them from
 # history is a rewrite, which is the repo owner's call and not a side effect of a
 # release change.
 *.apk
-!workout-tracker-1.0.0.apk
+!workout-tracker-1.0.1.apk
 *.aab
 dist/
 web-build/

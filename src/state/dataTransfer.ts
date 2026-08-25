@@ -61,8 +61,43 @@ export function currentSnapshot(): BackupPayload {
   };
 }
 
-/** The file's text, ready to write or share. */
+/**
+ * Thrown by `exportBackupText` rather than writing a backup that is missing the
+ * log. Carried as a class so the screen can tell it from a file-system error and
+ * say something true about it.
+ */
+export class UnreadableLogError extends Error {
+  constructor() {
+    /*
+     * Reaches the user verbatim through `describeError`, so it is written as the
+     * sentence they need: what happened, that nothing is lost, and the one thing
+     * that fixes it.
+     */
+    super(
+      'The log could not be read, so a backup would be missing it. Nothing is lost — close the app and open it again.',
+    );
+    this.name = 'UnreadableLogError';
+  }
+}
+
+/**
+ * The file's text, ready to write or share.
+ *
+ * ── IT REFUSES TO WRITE A BACKUP WITH THE LOG MISSING ──────────────────────
+ *
+ * `currentSnapshot` reads the stores, and the history store's array is empty in two
+ * very different situations: nothing has been logged, and the log could not be READ
+ * (see `workoutHistoryStore.loadFailed`). Exporting is what a careful person does
+ * FIRST when the app looks wrong, and in the second case that would hand them a
+ * file with `"workouts": []` in it — which `Replace everything from a file` will
+ * then faithfully restore over a database that was fine.
+ *
+ * That is the one path in this app that can turn a failed read into permanent loss,
+ * so it is closed here rather than warned about: a backup nobody can trust is worse
+ * than no backup, because the whole point of one is being trusted later.
+ */
 export function exportBackupText(now?: Date): string {
+  if (useWorkoutHistory.getState().loadFailed) throw new UnreadableLogError();
   return serializeBackup(currentSnapshot(), now);
 }
 

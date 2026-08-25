@@ -162,6 +162,11 @@ export function AppShell() {
   const discardSession = useActiveWorkout((s) => s.discardSession);
 
   const workouts = useWorkoutHistory((s) => s.workouts);
+  /*
+   * "The log could not be read", which is NOT "the log is empty" — see
+   * `workoutHistoryStore.loadFailed`. Only the History tab's empty state reads it.
+   */
+  const loadFailed = useWorkoutHistory((s) => s.loadFailed);
   const saveSession = useWorkoutHistory((s) => s.saveSession);
   const deleteWorkout = useWorkoutHistory((s) => s.deleteWorkout);
   const updateWorkoutSet = useWorkoutHistory((s) => s.updateWorkoutSet);
@@ -852,6 +857,7 @@ export function AppShell() {
         {tab === 'History' ? (
           <HistoryTab
             workouts={workouts}
+            loadFailed={loadFailed}
             numbers={numbers}
             historyByExerciseId={historyById}
             exercisesById={exercisesById}
@@ -920,6 +926,7 @@ export function AppShell() {
  */
 function HistoryTab({
   workouts,
+  loadFailed,
   numbers,
   historyByExerciseId: history,
   exercisesById,
@@ -932,6 +939,7 @@ function HistoryTab({
   onDeleteSet,
 }: {
   workouts: CompletedWorkout[];
+  loadFailed: boolean;
   numbers: Record<ID, number>;
   historyByExerciseId: Record<ID, SetHistory[]>;
   exercisesById: Record<ID, Exercise>;
@@ -982,6 +990,8 @@ function HistoryTab({
   return (
     <HistoryScreen
       workouts={workouts}
+      /* So an unreadable log says so, instead of reading as an empty one. */
+      loadFailed={loadFailed}
       numbers={numbers}
       exercisesById={exercisesById}
       focusWorkoutId={focusWorkoutId}

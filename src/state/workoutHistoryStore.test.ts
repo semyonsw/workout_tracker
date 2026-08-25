@@ -9,6 +9,7 @@ import {
 } from './workoutHistoryStore';
 import {
   LEGACY_STORAGE_KEY,
+  USER_CLEARED_FLAG,
   __closeDb,
   countSetRows,
   db,
@@ -70,6 +71,9 @@ beforeEach(async () => {
   __closeDb();
   await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
   useWorkoutHistory.getState().clearHistory();
+  // `loadFailed` is state like any other, and one test that simulates an
+  // unreadable database would otherwise leave it set for every test after it.
+  useWorkoutHistory.setState({ loadFailed: false });
 });
 
 /* ------------------------------------------------------------------ */
@@ -956,11 +960,92 @@ describe('migrating the log out of AsyncStorage', () => {
     expect((readAllWorkouts() as CompletedWorkout[]).map((w) => w.id)).toEqual([expected[1].id]);
   });
 
-  it('records a fresh install as done rather than asking forever', async () => {
+  /**
+   * Forget that this suite's fixtures deleted anything.
+   *
+   * `twoWorkouts` and `clearHistory` leave the marker that tells the recovery an
+   * empty log was ASKED for (see `USER_CLEARED_FLAG`) — correct in the app, and in
+   * a test it is the fixture's fingerprint rather than the scenario's. These two
+   * tests are about a phone where nobody deleted anything.
+   */
+  function forgetFixtureDeletions() {
+    db().runSync('DELETE FROM meta WHERE key = ?', USER_CLEARED_FLAG);
+  }
+
+  it('records a fresh install as done, and stops asking once there is a log', async () => {
     await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+    forgetFixtureDeletions();
 
     expect((await migrateFromAsyncStorage(guard)).status).toBe('nothing-to-move');
+    /*
+     * Still 'nothing-to-move' rather than 'already-done', and that is deliberate:
+     * the flag is only TRUSTED once the database agrees with it. An empty log with
+     * a flag on it is the shape of the failure this recovery exists for, so it
+     * keeps looking — one null read of a key that is not there, per launch.
+     */
+    expect((await migrateFromAsyncStorage(guard)).status).toBe('nothing-to-move');
+
+    // One finished workout, and the question stops being asked.
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-20T17:00:00.000Z', 2));
     expect((await migrateFromAsyncStorage(guard)).status).toBe('already-done');
+  });
+
+  /**
+   * THE RECOVERY, and the reason the flag is not proof.
+   *
+   * A flag saying "migrated" on a database with nothing in it is the exact shape of
+   * a log that went missing — a replaced file, a restore that brought `meta` back
+   * without its rows, anything between the workouts and the disk. The legacy key is
+   * still there, because this code has never deleted it, and trusting the flag means
+   * abandoning the only copy while showing an empty History for good.
+   */
+  it('recovers the log when the flag says done and the database is empty', async () => {
+    const expected = twoWorkouts();
+    await legacyBlob(expected);
+    // Migrated once, successfully...
+    await migrateFromAsyncStorage(guard);
+    expect(readAllWorkouts()).toHaveLength(2);
+
+    // ...and then the rows are gone without anybody asking for it. Not through
+    // `clearAllWorkouts` — that is a decision, and the test below covers it — but
+    // the way a lost file looks: empty tables, flag intact.
+    db().execSync('DELETE FROM set_history; DELETE FROM workouts;');
+    expect(readAllWorkouts()).toHaveLength(0);
+    forgetFixtureDeletions();
+
+    const outcome = await migrateFromAsyncStorage(guard);
+
+    expect(outcome.status).toBe('migrated');
+    expect((readAllWorkouts() as CompletedWorkout[]).map((w) => w.id).sort()).toEqual(
+      expected.map((w) => w.id).sort(),
+    );
+  });
+
+  it('never resurrects a log the user deleted on purpose', async () => {
+    const expected = twoWorkouts();
+    await legacyBlob(expected);
+    await migrateFromAsyncStorage(guard);
+    expect(readAllWorkouts()).toHaveLength(2);
+
+    // `Delete all workout history`, in Settings. An empty log is now what was asked
+    // for, and a migration that brought it all back would be unstoppable.
+    useWorkoutHistory.getState().clearHistory();
+
+    expect((await migrateFromAsyncStorage(guard)).status).toBe('already-done');
+    expect(readAllWorkouts()).toHaveLength(0);
+  });
+
+  it('never resurrects the last workout deleted one at a time either', async () => {
+    const expected = twoWorkouts();
+    await legacyBlob(expected);
+    await migrateFromAsyncStorage(guard);
+    useWorkoutHistory.getState().importWorkouts(readAllWorkouts());
+
+    for (const workout of expected) useWorkoutHistory.getState().deleteWorkout(workout.id);
+    expect(readAllWorkouts()).toHaveLength(0);
+
+    expect((await migrateFromAsyncStorage(guard)).status).toBe('already-done');
+    expect(readAllWorkouts()).toHaveLength(0);
   });
 
   it('survives a corrupt blob without losing the database', async () => {
@@ -1087,5 +1172,91 @@ describe('workout numbering', () => {
 
     useWorkoutHistory.getState().importWorkouts(workouts, { workoutId: 'gone', number: 91 });
     expect(useWorkoutHistory.getState().numbering).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * "I CLOSED ALL MY APPS AND THE HISTORY IS GONE."
+ *
+ * The log is read once at module scope so History does not flicker on launch, and
+ * the read is wrapped because a throw there would be a crash before any
+ * `ErrorBoundary` exists. What the wrapper used to do with a throw was return `[]`
+ * and say nothing — which every screen renders as "Nothing finished yet", and which
+ * is indistinguishable from the log having been deleted.
+ *
+ * Module scope is also the one moment a native module may not be up yet: a release
+ * build resolves its TurboModules lazily and nothing has mounted. So a failed read
+ * at launch is not hypothetical, and if it happens the app writes every new workout
+ * to a database it never manages to read back.
+ *
+ * These are the two halves of the fix: the read is retried from a point where that
+ * cannot happen, and until it succeeds the failure is a FACT the app holds rather
+ * than an empty list it shows.
+ */
+describe('a log that could not be read is not an empty log', () => {
+  it('reloads what is on disk, recovering a launch whose first read failed', () => {
+    const saved = useWorkoutHistory
+      .getState()
+      .saveSession(loggedDraft('2026-08-24T17:00:00.000Z', 3));
+    expect(saved).not.toBeNull();
+
+    // The state a failed module-scope read leaves behind: nothing in memory, the
+    // whole log on disk.
+    useWorkoutHistory.setState({ workouts: [], loadFailed: true });
+    expect(useWorkoutHistory.getState().workouts).toHaveLength(0);
+
+    const count = useWorkoutHistory.getState().reloadHistory();
+
+    expect(count).toBe(1);
+    expect(useWorkoutHistory.getState().workouts.map((w) => w.id)).toEqual([saved!.id]);
+    // ...and the app stops claiming there is a problem, because there no longer is.
+    expect(useWorkoutHistory.getState().loadFailed).toBe(false);
+  });
+
+  it('brings the pinned workout number back with it', () => {
+    const saved = useWorkoutHistory
+      .getState()
+      .saveSession(loggedDraft('2026-08-24T17:00:00.000Z', 2));
+    useWorkoutHistory.getState().setWorkoutNumber(saved!.id, 91);
+
+    useWorkoutHistory.setState({ workouts: [], numbering: null, loadFailed: true });
+    useWorkoutHistory.getState().reloadHistory();
+
+    expect(useWorkoutHistory.getState().numbering).toEqual({ workoutId: saved!.id, number: 91 });
+  });
+
+  it('keeps the log it has when the read fails, rather than emptying it', () => {
+    const saved = useWorkoutHistory
+      .getState()
+      .saveSession(loggedDraft('2026-08-24T17:00:00.000Z', 3));
+    expect(useWorkoutHistory.getState().workouts).toHaveLength(1);
+
+    // An unreadable database: the tables are gone from under the open handle, which
+    // is what "no such table" looks like from a half-opened file.
+    db().execSync('DROP TABLE set_history; DROP TABLE workouts;');
+
+    const count = useWorkoutHistory.getState().reloadHistory();
+
+    // The workout stays on screen and the failure is recorded. Overwriting the
+    // array with `[]` because a query threw is the bug, not the fallback.
+    expect(count).toBe(1);
+    expect(useWorkoutHistory.getState().workouts.map((w) => w.id)).toEqual([saved!.id]);
+    expect(useWorkoutHistory.getState().loadFailed).toBe(true);
+  });
+
+  it('reports the count on disk, and null when it cannot be read', () => {
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-24T17:00:00.000Z', 2));
+    useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-25T17:00:00.000Z', 2));
+
+    // The number Settings states — from the FILE, so it can disagree with the
+    // array in memory. That disagreement is the whole diagnostic.
+    expect(useWorkoutHistory.getState().countOnDisk()).toBe(2);
+    useWorkoutHistory.setState({ workouts: [] });
+    expect(useWorkoutHistory.getState().countOnDisk()).toBe(2);
+
+    db().execSync('DROP TABLE workouts;');
+    expect(useWorkoutHistory.getState().countOnDisk()).toBeNull();
   });
 });

@@ -22,6 +22,9 @@
  *     sound belongs to the channel and not to the notification
  *   • the audio session, so the countdown's beeps play over their music and
  *     through a silent switch
+ *   • the HISTORY RE-READ, which gives the log a second chance to load from a point
+ *     where every native module is up — see the note on it below, and
+ *     `workoutHistoryStore.loadWorkouts`
  *   • the HISTORY MIGRATION, which brings a log written by 0.10.0 or earlier out of
  *     AsyncStorage and into the database. It runs once, it never deletes the old
  *     key, and it stays quiet either way: a migration that could not run tries
@@ -43,7 +46,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { AppShell } from './src/navigation/AppShell';
 import { prepareAudio } from './src/lib/beeper';
 import { ensureTimerChannels, requestNotificationPermission } from './src/lib/notify';
-import { migrateHistoryIfNeeded } from './src/state/workoutHistoryStore';
+import { migrateHistoryIfNeeded, useWorkoutHistory } from './src/state/workoutHistoryStore';
 
 /*
  * Timer alerts — rest ending, and the bell on a timed hold.
@@ -83,6 +86,22 @@ export default function App() {
     // Warmed here rather than on the first beep, so 0:05 of a plank isn't where
     // the audio session gets configured.
     void prepareAudio();
+    /*
+     * READ THE LOG AGAIN, now that React is running.
+     *
+     * The log is read once at module scope, during bundle evaluation, so that
+     * History does not flicker from empty to full on every launch — see
+     * `historyDb.ts`. The cost of reading it that early is that it is the one
+     * moment a native module may not be ready: a release build resolves its
+     * TurboModules lazily, nothing has mounted, and if the open throws there is
+     * nobody to tell. The store caught that throw and started empty, which is
+     * indistinguishable on screen from having never trained.
+     *
+     * This is the second attempt, from a point where that cannot happen. It is a
+     * no-op-shaped few milliseconds when the first read worked, and it is the
+     * difference between "the app forgot my history" and not, when it did not.
+     */
+    useWorkoutHistory.getState().reloadHistory();
     /*
      * Once, on the first launch after upgrading. In an effect rather than at module
      * scope because it is async and it touches two storage systems, and a side

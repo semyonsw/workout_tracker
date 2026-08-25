@@ -141,6 +141,15 @@ const MONTHS = [
 
 export interface HistoryScreenProps {
   workouts: CompletedWorkout[];
+  /**
+   * The log could not be READ off disk — see `workoutHistoryStore.loadFailed`.
+   *
+   * Changes the empty state and nothing else, which is the whole reason it is a
+   * prop: "you have not finished a workout yet" and "your workouts are on disk and
+   * I could not open them" are different facts, and one screen printing the first
+   * over the second is what makes an app look like it lost a year of training.
+   */
+  loadFailed?: boolean;
   /** Every workout's ordinal, keyed by id — see `workoutNumbers`. */
   numbers: Record<ID, number>;
   /** The library, for the muscles behind the cluster counts. */
@@ -178,6 +187,7 @@ export interface HistoryScreenProps {
 
 export function HistoryScreen({
   workouts,
+  loadFailed,
   exercisesById,
   focusWorkoutId,
   onFocusHandled,
@@ -288,7 +298,7 @@ export function HistoryScreen({
         </ScreenHeader>
 
         {workouts.length === 0 ? (
-          <Empty />
+          <Empty loadFailed={loadFailed} />
         ) : (
           <ScrollView
             ref={scrollRef}
@@ -815,7 +825,30 @@ function LoggedSetRow({
   );
 }
 
-function Empty() {
+/**
+ * Nothing to show — and WHICH nothing, because they are not the same.
+ *
+ * An empty log is the normal state of a new install and reads as an invitation. A
+ * log that could not be opened is a fault, the workouts are still on disk, and the
+ * worst thing the screen can do is describe it as an empty log: that is the app
+ * telling somebody their training is gone when it is not. So it says what happened
+ * and what to do about it — reopening the app re-reads the file, and the number of
+ * workouts actually on disk is stated in Settings.
+ */
+function Empty({ loadFailed = false }: { loadFailed?: boolean }) {
+  if (loadFailed) {
+    return (
+      <View className="flex-1 items-center justify-center px-xl">
+        <Text className="text-title font-medium text-ink">Couldn't open your log</Text>
+        <Text className="mt-sm text-center text-body text-ink-muted">
+          Your workouts are still on disk — this is a failure to READ them, not a loss. Close the
+          app and open it again. Settings states how many are down there, and `Export data` still
+          works.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 items-center justify-center px-xl">
       <Text className="text-title font-medium text-ink">Nothing finished yet</Text>

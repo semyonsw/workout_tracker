@@ -4,6 +4,48 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
+## 1.0.1 — the History tab going empty after "close all"
+
+`versionCode` 14, and it is a fix release: **a log that could not be READ was
+being shown as a log that was EMPTY.**
+
+Clearing the recents list kills the process, so the next launch rebuilds the store
+from disk. The log is read at module scope — during bundle evaluation, before
+anything has mounted — which is the one moment a native module may still be
+resolving in a release build. That read was wrapped (a throw there would be a
+crash with no screen to report it on) and the wrapper returned an empty list and
+said nothing. Every screen renders that as "Nothing finished yet", which is
+indistinguishable from the workouts being gone — while `Finish` kept writing new
+ones to a database the app never managed to read back.
+
+Nothing was ever lost on disk. What changed:
+
+- **The read is retried after mount**, from a point where no native module can be
+  missing. A launch that failed the first read now fills History a frame later
+  instead of never.
+- **`db()` no longer caches a half-opened database.** It used to store the handle
+  and then create the tables, so a throw in the second step left a tableless
+  handle cached for the rest of the process — every query after it failing with
+  "no such table", swallowed into the same empty list.
+- **A failed read is a stated fact, not an empty list.** History says it could not
+  open the log and that nothing is lost; **Settings → `Workouts on disk`** counts
+  the rows in the file, so "94 on disk · 0 loaded" is readable at a glance.
+- **`Export data` refuses to write a backup while the log is unreadable.** That
+  was the one path that could turn a bad read into permanent loss: exporting an
+  empty log and then restoring it over a database that was fine.
+- **The migration off AsyncStorage no longer deletes what is already in the
+  database**, and it no longer trusts its own "done" flag when the log is empty —
+  if the old key is still there and nothing was deleted on purpose, it brings the
+  log back. Deliberate deletions are recorded, so nothing you deleted is ever
+  resurrected.
+- **`PRAGMA synchronous = FULL`**, so a commit survives the phone losing power and
+  not just the app being killed. One fsync per `Finish`.
+
+The suite could not have caught this: `test/expoSqliteStub.ts` opened every
+database as `:memory:`, so "write it, close the handle, read it back" passed
+whatever the code did. The stub is file-backed now and
+`src/state/coldStart.test.ts` kills the process between writes.
+
 ## 1.0.0 — what changed on the phone
 
 `versionCode` 13. **It needs a prebuild**, but only because `app.json` carries the

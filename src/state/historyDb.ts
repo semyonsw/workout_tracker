@@ -82,6 +82,32 @@ export const LEGACY_STORAGE_KEY = 'workout-history';
 /** A `meta` row recording that the AsyncStorage log has been brought across. */
 const MIGRATED_FLAG = 'migrated_from_async_storage';
 
+/**
+ * A `meta` row recording that the USER has removed workouts from this log.
+ *
+ * Written by every deliberate deletion — one workout, the whole log, or a restore
+ * that replaced it — and read by exactly one thing: the migration's decision about
+ * whether an EMPTY database means "I never received the log" or "the log is empty
+ * because that is what was asked for".
+ *
+ * Without it the recovery below cannot tell those apart, and the friendly reading
+ * of an empty log is the wrong one half the time: somebody who taps
+ * `Delete all workout history` and relaunches would watch every workout come back.
+ * A log that resurrects what you deleted is worse than one that needs a manual
+ * import, because you cannot tell it to stop.
+ */
+export const USER_CLEARED_FLAG = 'history_cleared_by_user';
+
+/** Remember that a deletion was a decision, not a failure. Never throws. */
+function recordUserDeletion(): void {
+  try {
+    writeMeta(USER_CLEARED_FLAG, new Date().toISOString());
+  } catch {
+    // A marker that could not be written costs a resurrected log at worst, and
+    // throwing here would cost the deletion itself.
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Schema                                                              */
 /* ------------------------------------------------------------------ */
@@ -100,6 +126,16 @@ const MIGRATED_FLAG = 'migrated_from_async_storage';
  */
 const SCHEMA = `
 PRAGMA journal_mode = WAL;
+/*
+ * FULL, not WAL's default NORMAL.
+ *
+ * NORMAL does not fsync on commit: the write is in the OS page cache, which
+ * survives the app being killed — "close all", a swipe away, an out-of-memory
+ * kill — but not the phone losing power or being force-rebooted mid-write. That
+ * is a small window and this app writes once per Finish, so the cost is one fsync
+ * a workout and the thing being protected is a training log.
+ */
+PRAGMA synchronous = FULL;
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -153,11 +189,27 @@ let handle: Db | null = null;
  *
  * Lazy rather than at module scope so importing this file — which the tests and
  * the type checker both do — is not itself a native call.
+ *
+ * ── A HALF-OPENED DATABASE IS NEVER CACHED ─────────────────────────────────
+ *
+ * This used to assign `handle` and THEN apply the schema, which meant a throw from
+ * `execSync` left a handle cached that no table had been created in. Every call
+ * after it returned that handle happily and every query against it failed with
+ * "no such table: workouts" — and because the two callers at launch swallow their
+ * errors into an empty log, the app would report a lifetime of training as
+ * "Nothing finished yet" until the process was restarted, on a database whose
+ * bytes were fine the whole time.
+ *
+ * A local until both steps are done. A failed open now throws, is not remembered,
+ * and the NEXT call tries again from nothing — which is what makes
+ * `reloadHistory` able to recover a launch where the native module was not ready
+ * yet.
  */
 export function db(): Db {
   if (handle) return handle;
-  handle = openDatabaseSync(DB_NAME);
-  handle.execSync(SCHEMA);
+  const opened = openDatabaseSync(DB_NAME);
+  opened.execSync(SCHEMA);
+  handle = opened;
   return handle;
 }
 
@@ -314,6 +366,7 @@ export function deleteWorkoutRow(id: string): void {
     database.runSync('DELETE FROM set_history WHERE session_id = ?', id);
     database.runSync('DELETE FROM workouts WHERE id = ?', id);
   });
+  recordUserDeletion();
 }
 
 /** Everything, gone. The Settings action, and nothing else. */
@@ -323,6 +376,7 @@ export function clearAllWorkouts(): void {
     database.runSync('DELETE FROM set_history');
     database.runSync('DELETE FROM workouts');
   });
+  recordUserDeletion();
 }
 
 /**
@@ -338,6 +392,9 @@ export function replaceAllWorkouts(workouts: readonly CompletedWorkout[]): void 
     database.runSync('DELETE FROM workouts');
     for (const workout of workouts) writeWorkoutIn(database, workout);
   });
+  // A restore is a decision about what the log is, including when the file was
+  // empty. See `USER_CLEARED_FLAG`.
+  recordUserDeletion();
 }
 
 /**
@@ -397,6 +454,15 @@ export function countSetRows(): number {
   return db().getFirstSync<{ n: number }>('SELECT COUNT(*) AS n FROM set_history')?.n ?? 0;
 }
 
+/**
+ * How many workouts are on disk, whatever the store currently holds in memory.
+ *
+ * Declared here since the move to SQLite and read by nothing until now, which is
+ * the one kind of dead code worth keeping honest about: it is the number Settings
+ * states. An app saying "Nothing finished yet" when the database holds 94 workouts
+ * looks exactly like an app that lost them, and this is the fastest way to know it
+ * did not.
+ */
 export function countWorkoutRows(): number {
   return db().getFirstSync<{ n: number }>('SELECT COUNT(*) AS n FROM workouts')?.n ?? 0;
 }
@@ -443,7 +509,36 @@ export async function migrateFromAsyncStorage(
 ): Promise<MigrationOutcome> {
   const none: MigrationOutcome = { status: 'nothing-to-move', workouts: 0, sets: 0 };
 
-  if (readMeta(MIGRATED_FLAG) != null) {
+  /*
+   * ── THE FLAG IS NOT PROOF, AND THAT IS THE POINT ─────────────────────────
+   *
+   * "Already done" used to end this function, and it is the right answer nearly
+   * always: the log came across, the DB has it, asking AsyncStorage again every
+   * launch forever is a cost with no upside.
+   *
+   * It is the wrong answer in exactly one situation, and it is the situation
+   * somebody only ever hits after losing a year of training: the flag is set and
+   * the database is EMPTY. That can happen if the file was replaced, if a
+   * reinstall left the flag in a restored `meta` table without its rows, or if
+   * anything else got between the log and the disk. Trusting the flag there means
+   * the legacy key — which this code has never deleted, deliberately, for exactly
+   * this — sits on the phone holding the only copy of the log while the app shows
+   * an empty History for good.
+   *
+   * So the flag is believed when the database agrees with it — OR when the user has
+   * deleted workouts themselves, which is the other honest reason for an empty log
+   * and the one thing this recovery must never override (see `USER_CLEARED_FLAG`).
+   * Zero workouts, nothing deleted, and a legacy key still on disk is worth one
+   * more attempt; the attempt is additive and idempotent (see `writeWorkouts`
+   * below), so the cost of being wrong about it is nothing.
+   *
+   * The price of the recovery is one `getItem` per launch on a phone that has a
+   * flag, an empty log and no deletions — a fresh install, until its first workout.
+   * That is a null read of a key that is not there, once, against never abandoning
+   * somebody's log on the strength of a boolean.
+   */
+  const flagged = readMeta(MIGRATED_FLAG) != null;
+  if (flagged && (countWorkoutRows() > 0 || readMeta(USER_CLEARED_FLAG) != null)) {
     return { ...none, status: 'already-done' };
   }
 
@@ -489,7 +584,19 @@ export async function migrateFromAsyncStorage(
   const expectedSets = workouts.reduce((n, w) => n + w.sets.length, 0);
 
   try {
-    replaceAllWorkouts(workouts);
+    /*
+     * ADDITIVE, and it matters: this used to be `replaceAllWorkouts`, which begins
+     * `DELETE FROM workouts`.
+     *
+     * The migration runs on every launch until it manages to record success, so it
+     * is not guaranteed to be looking at an empty database — a launch where the
+     * legacy read failed, then a week of training, then a launch where it works,
+     * and the delete would take that week with it. `writeWorkouts` is one
+     * transaction of `INSERT OR REPLACE`, so a workout that came across before is
+     * rewritten rather than duplicated, and one that never lived in AsyncStorage is
+     * left alone.
+     */
+    writeWorkouts(workouts);
   } catch {
     // The transaction rolled back, so the database is as it was. Nothing recorded.
     return { ...none, status: 'failed' };
