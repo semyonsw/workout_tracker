@@ -13,6 +13,7 @@ import type {
   Exercise,
   ID,
   OverloadPolicy,
+  RepLadder,
   Routine,
   SetHistory,
   UnitSystem,
@@ -21,6 +22,7 @@ import { countUnitLabel, effectiveLoadKg, formatDuration } from './units';
 import { resolveItemRest } from './routinePlan';
 import { summarizeSessionSets } from './history';
 import { evaluateOverload, type OverloadVerdict } from './progressiveOverload';
+import { LADDER_SETS, describeLadder, ladderOf, ladderTargets } from './repLadder';
 
 /* ------------------------------------------------------------------ */
 /* Draft shapes (in-memory, screen-local)                              */
@@ -90,6 +92,22 @@ export interface DraftEntry {
    * so there is nothing it could be overriding.
    */
   restSecondsOverride?: number;
+  /**
+   * The rep ladder this exercise is running, copied off the library row at build
+   * time. Absent = it isn't running one, which is every exercise until somebody
+   * switches it on.
+   *
+   * A COPY, deliberately, and the same decision `supersetGroup` above is: the live
+   * session is what the cards and `completeSet` read, and a store action reaching
+   * back into the library to ask what the max is would tie today's plan to a row
+   * the user may have edited since — including the row this very session is about
+   * to advance on `Finish`.
+   *
+   * The per-set targets are NOT stored beside it. They are `ladderTargets(ladder,
+   * working set count)`, derived wherever they are needed, because a stored copy is
+   * a second answer that goes stale the moment a set is added or removed.
+   */
+  ladder?: RepLadder;
   sets: DraftSet[];
   /** Computed once at session start — history doesn't change mid-workout. */
   overload: OverloadVerdict;
@@ -190,19 +208,35 @@ export function summarizeLastSession(
 }
 
 /**
- * "4 × 4–6 reps" / "12 × 3 min" — the target line under an exercise name.
+ * "4 × 4–6 reps" / "12 × 3 min" / "16 + 10 + 8 + 8 + 6" — the target line under
+ * an exercise name.
  *
  * Time-based work states the per-set duration rather than a rep range, because
  * "12 × 180 reps" is not a thing anyone has ever said about a boxing round.
+ *
+ * A LADDER STATES EVERY SET, because that is what a ladder is: five different
+ * numbers, and "5 × 16 reps" would be a lie about four of them. It is also exactly
+ * how the user writes the session down themselves, which is the strongest argument
+ * a format ever gets. The count comes from the rows the session actually has, so
+ * adding or removing a set reshapes the line under the thumb that did it.
  */
 export function formatTarget(entry: {
   targetSets: number;
   targetRepsMin?: number;
   targetRepsMax?: number;
   exercise: Exercise;
+  ladder?: RepLadder;
+  /** The session's own rows, when there are any — see the ladder note above. */
+  sets?: readonly Pick<DraftSet, 'isWarmup'>[];
 }): string {
   const { targetSets, targetRepsMin, targetRepsMax, exercise } = entry;
   const unit = exercise.countUnit;
+
+  const ladder = entry.ladder ? ladderOf({ ...exercise, ladder: entry.ladder }) : null;
+  if (ladder) {
+    const working = entry.sets?.filter((s) => !s.isWarmup).length;
+    return describeLadder(ladderTargets(ladder, working && working > 0 ? working : targetSets));
+  }
 
   if (unit === 'seconds' || unit === 'rounds') {
     const perSet = targetRepsMax ?? targetRepsMin ?? 0;
@@ -257,8 +291,17 @@ export function defaultTargetCount(exercise: Pick<Exercise, 'countUnit' | 'defau
  * Per unit, because "four" means different things: four sets of reps, twelve
  * rounds on a bag, three holds of a plank (nobody plans four two-minute planks),
  * and one swim — a distance is done once.
+ *
+ * A LADDER ASKS FOR FIVE, because five is the scheme: it is what every published
+ * version of that table is written for, and it is what makes the session total
+ * come out at three times the max. The routine can still plan four or six and the
+ * ladder will shape them (`ladderForMax` generalises), but a ladder that starts
+ * life at four sets starts life as a different program.
  */
-export function defaultTargetSets(exercise: Pick<Exercise, 'countUnit'>): number {
+export function defaultTargetSets(
+  exercise: Pick<Exercise, 'countUnit'> & { ladder?: RepLadder },
+): number {
+  if (ladderOf(exercise)) return LADDER_SETS;
   if (exercise.countUnit === 'rounds') return 12;
   if (exercise.countUnit === 'seconds') return 3;
   if (exercise.countUnit === 'meters') return 1;
@@ -360,13 +403,44 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
    */
   const startingWeightKg = finiteOrNull(exercise.defaultWeightKg);
   const startingCount = finiteOrNull(exercise.defaultCount);
-  const plannedSets = Math.max(1, params.plannedSetCount ?? Math.max(targetSets, previous.length));
+
+  /*
+   * A LADDER OVERRIDES THE PREFILL, and it is the one thing that does.
+   *
+   * Every other row in this app is prefilled from last session, because repeating
+   * last session is the common case and it costs one tap. A ladder is the opposite
+   * claim: the whole point of switching one on is that the app will NOT hand you
+   * last session back — it hands you last session plus one rep, on the set the
+   * scheme says earns it. Copying history over that would quietly delete the
+   * progression the user turned on.
+   *
+   * The set COUNT is the plan's too, not widened to whatever last session did. On
+   * every other exercise that widening is a kindness (five sets last time means
+   * five prefilled rows this time); here it would silently reshape the ladder,
+   * because a five-set ladder and a six-set ladder are different numbers.
+   *
+   * WEIGHT still comes from history. The ladder owns reps and nothing else, so
+   * weighted pull-ups keep the belt they were loaded with last time.
+   */
+  const ladder = ladderOf(exercise);
+  const plannedSets = Math.max(
+    1,
+    params.plannedSetCount ?? (ladder ? targetSets : Math.max(targetSets, previous.length)),
+  );
+  const ladderPlan = ladder ? ladderTargets(ladder, plannedSets) : null;
+
   const sets: DraftSet[] = Array.from({ length: plannedSets }, (_, i) => {
     const reference = previous[i] ?? previous[previous.length - 1];
     return {
       localId: uid('set'),
       weightKg: exercise.requiresWeight ? (reference?.weightKg ?? startingWeightKg) : null,
-      count: reference?.count ?? targetRepsMax ?? targetRepsMin ?? startingCount ?? 10,
+      count:
+        ladderPlan?.[i] ??
+        reference?.count ??
+        targetRepsMax ??
+        targetRepsMin ??
+        startingCount ??
+        10,
       isWarmup: false,
       isCompleted: false,
       completedAt: null,
@@ -380,6 +454,7 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
     targetSets,
     targetRepsMin,
     targetRepsMax,
+    ...(ladder ? { ladder } : {}),
     restSeconds,
     transitionRestSeconds,
     ...(params.restSecondsOverride != null

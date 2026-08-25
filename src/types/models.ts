@@ -134,6 +134,33 @@ export type TimerMode = 'manual' | 'countdown' | 'countup';
  * How the logged weight relates to the load on the body.
  * Matters for e1RM math and for how the weight is rendered ("+30 kg" vs "80 kg").
  */
+/**
+ * A rep ladder: a whole session's reps derived from one max.
+ *
+ *   { max: 16, earned: 0 }  →  16 + 10 + 8 + 8 + 6
+ *   { max: 16, earned: 2 }  →  16 + 10 + 9 + 8 + 7
+ *   { max: 17, earned: 0 }  →  17 + 10 + 9 + 8 + 7   ← the third met session
+ *
+ * TWO NUMBERS, not a list of targets, because the list is derived and a stored one
+ * would be a second answer that can disagree with `lib/repLadder.ts`. The whole
+ * scheme — the shape of the backoffs, which set earns the next rep, when the max
+ * moves — is arithmetic over these two.
+ *
+ *  `max`    the top set: an all-out effort, and the number everything else is a
+ *           fraction of.
+ *  `earned` single reps added to the backoff sets since that max was set. Reset to
+ *           zero by a promotion, and by the user setting a new max by hand — reps
+ *           earned against 16 say nothing about 17.
+ *
+ * PRESENT MEANS ON. There is no `isActive`: a ladder the user switched off is a
+ * ladder that is not there, and a flag would leave the app deciding what a stale
+ * max means.
+ */
+export interface RepLadder {
+  max: number;
+  earned: number;
+}
+
 export type LoadMode =
   | 'external' // barbell, dumbbell, machine stack — the number IS the load
   | 'added_bodyweight' // dips / pull-ups with a belt — bodyweight + number
@@ -207,6 +234,22 @@ export interface Exercise {
    */
   defaultWeightKg?: number;
   defaultCount?: number;
+
+  /**
+   * The rep ladder this movement runs, if it runs one. Absent = off.
+   *
+   * ON THE EXERCISE, not on the routine item, and the reason is that a max is a
+   * fact about the lifter and the movement — you have one pull-up max, not one per
+   * routine that contains pull-ups. Putting it on the item would give the same
+   * exercise two ladders in two routines, both of them advancing separately and
+   * neither of them your actual max, and would leave an exercise added mid-session
+   * with no ladder at all.
+   *
+   * What the ROUTINE still owns is how many sets: the ladder shapes whatever set
+   * count the plan asks for. Only rep-counted work can carry one — see
+   * `ladderOf`, which is the gate every read goes through.
+   */
+  ladder?: RepLadder;
 
   defaultRestSeconds?: number;
 

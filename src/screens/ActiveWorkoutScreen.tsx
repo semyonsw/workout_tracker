@@ -116,6 +116,7 @@ import { SetTimerPill } from '../components/SetTimerPill';
 import type { DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
 import { dropIndex, liftIndex, type CardLayout } from '../lib/reorder';
+import { describeLadderOutcomes, ladderOutcomes } from '../lib/repLadder';
 import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import { supersetPosition } from '../lib/superset';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
@@ -288,6 +289,21 @@ export function ActiveWorkoutScreen({
     [routineItems, session?.entries, session?.routineId],
   );
 
+  /**
+   * What the ladders in this session earned, computed from the LIVE session for
+   * the same reason `planChanges` is: the draft is gone by the time the finish has
+   * run, so this cannot be derived afterwards.
+   *
+   * Read-only here. The sheet states it and `AppShell` is what writes the new max
+   * back to the library — a screen whose job is logging sets does not get to edit
+   * the exercise library, and recomputing it there means the write lands on the
+   * row as the STORE has it rather than on the snapshot this line rendered.
+   */
+  const ladderChange = useMemo(
+    () => describeLadderOutcomes(ladderOutcomes(session?.entries ?? [])),
+    [session?.entries],
+  );
+
   const commitFinish = useCallback(
     async (updatePlan = false) => {
       setConfirming(null);
@@ -322,13 +338,25 @@ export function ActiveWorkoutScreen({
 
   const handleFinish = useCallback(() => {
     if (!session) return;
-    // Unlogged sets are an intention, not history. Say so, then let them go.
-    if (progress.total - progress.done > 0) {
+    /*
+     * The sheet appears for either of two reasons.
+     *
+     *  1. UNLOGGED SETS are an intention, not history. Say so, then let them go.
+     *  2. A LADDER MOVED. Nothing is being asked — the rep is earned either way —
+     *     but the number that just changed is the reason the user turned the
+     *     ladder on, and a new max that only shows up next Tuesday when the card
+     *     is opened is a progression the app forgot to mention. One tap, on the
+     *     button the thumb is already going for.
+     *
+     * Neither is a nag: with nothing unlogged and no ladder in the session, Finish
+     * still finishes in one tap, exactly as it always did.
+     */
+    if (progress.total - progress.done > 0 || ladderChange) {
       setConfirming('finish');
       return;
     }
     void commitFinish();
-  }, [commitFinish, progress.done, progress.total, session]);
+  }, [commitFinish, ladderChange, progress.done, progress.total, session]);
 
   /* --- empty states --------------------------------------------------- */
   /*
@@ -532,6 +560,7 @@ export function ActiveWorkoutScreen({
           unloggedCount={progress.total - progress.done}
           loggedCount={progress.done}
           planChange={describePlannedSetDiff(planChanges)}
+          ladderChange={ladderChange}
           onConfirm={() => void commitFinish()}
           onConfirmAndUpdatePlan={() => void commitFinish(true)}
           onDismiss={() => setConfirming(null)}

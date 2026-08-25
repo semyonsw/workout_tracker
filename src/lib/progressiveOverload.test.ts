@@ -445,3 +445,74 @@ describe('a heavy warm-up single does not become the top working weight', () => 
     expect(verdict.status).not.toBe('due_weight');
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * A LADDER SILENCES THIS ENGINE.
+ *
+ * Both of them read the same history and both answer "what should the next session
+ * be", and on a laddered exercise they answer it differently: the nudge says "3
+ * sessions at 16 — try 17" while the ladder has already decided that this
+ * session's rep goes on the fourth set. Two suggestions on one card, one of them
+ * wrong, for a prescription the user switched on so they would not have to think
+ * about it.
+ */
+describe('a running ladder stands this engine down', () => {
+  /** Bodyweight pull-ups, stuck on 16 for three sessions across three weeks. */
+  const history = [
+    ...sets('ex_pullups', 's80', '2026-07-21', null, [16, 10, 8, 8, 6]),
+    ...sets('ex_pullups', 's83', '2026-07-30', null, [16, 10, 8, 8, 6]),
+    ...sets('ex_pullups', 's87', '2026-08-11', null, [16, 10, 8, 8, 6]),
+  ];
+  const pullUps = {
+    id: 'ex_pullups',
+    requiresWeight: false,
+    incrementKg: undefined,
+    countUnit: 'reps' as const,
+  };
+
+  it('nudges without one — the plateau is real', () => {
+    const verdict = evaluateOverload({ exercise: pullUps, history, now: NOW });
+    expect(verdict.status).toBe('due_count');
+    expect(verdict.shouldNudge).toBe(true);
+  });
+
+  it('says nothing at all with one', () => {
+    const verdict = evaluateOverload({
+      exercise: { ...pullUps, ladder: { max: 16, earned: 1 } },
+      history,
+      now: NOW,
+    });
+    expect(verdict.status).toBe('insufficient_data');
+    expect(verdict.shouldNudge).toBe(false);
+    expect(verdict.suggestedCount).toBeNull();
+  });
+
+  it("stands down on the weight axis too — one rep at a time is the ladder's job", () => {
+    const weighted = { ...weightedExercise, ladder: { max: 16, earned: 0 } };
+    const heavy = [
+      ...sets('ex_situps', 's80', '2026-07-21', 25, [8, 8, 8]),
+      ...sets('ex_situps', 's83', '2026-07-30', 25, [8, 8, 8]),
+      ...sets('ex_situps', 's87', '2026-08-11', 25, [8, 8, 8]),
+    ];
+    expect(evaluateOverload({ exercise: weighted, history: heavy, now: NOW }).shouldNudge).toBe(
+      false,
+    );
+    // ...and the same history without a ladder still fires, so the silence above
+    // is the ladder and not the fixture.
+    expect(
+      evaluateOverload({ exercise: weightedExercise, history: heavy, now: NOW }).shouldNudge,
+    ).toBe(true);
+  });
+
+  it('ignores a ladder on a unit that cannot run one', () => {
+    const verdict = evaluateOverload({
+      exercise: { ...pullUps, countUnit: 'meters' as const, ladder: { max: 16, earned: 0 } },
+      history: history.map((s) => ({ ...s, countUnit: 'meters' as const })),
+      now: NOW,
+    });
+    // A ladder of metres is not a scheme, so the engine keeps its own opinion.
+    expect(verdict.status).not.toBe('insufficient_data');
+  });
+});

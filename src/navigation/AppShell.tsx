@@ -51,7 +51,8 @@ import {
   recentlyUsedExerciseIds,
   workoutNumbers,
 } from '../lib/completedWorkout';
-import { buildDraftEntry, defaultTargetCount } from '../lib/draft';
+import { buildDraftEntry, defaultTargetCount, defaultTargetSets } from '../lib/draft';
+import { ladderOf, ladderOutcomes } from '../lib/repLadder';
 import { applyPlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import {
   applyDraftToExercise,
@@ -552,12 +553,18 @@ export function AppShell() {
    * of the entry is built by the SAME function the routine path uses, so the
    * prefills, the overload verdict and the last-session lines are identical to what
    * a planned exercise would have shown.
+   *
+   * ONE EXCEPTION: an exercise running a LADDER arrives with the ladder's whole
+   * shape. A ladder is not a set, it is a session — one rung of `16 + 10 + 8 + 8 +
+   * 6` is a max effort with nothing after it — and the user who switched it on
+   * chose that shape already. `defaultTargetSets` is where "how many" lives.
    */
   const addExerciseToSession = useCallback(
     (exercise: Exercise) => {
       const workout = useActiveWorkout.getState();
       if (!workout.session) return;
       const settings = useSettings.getState();
+      const ladderSets = ladderOf(exercise) ? defaultTargetSets(exercise) : null;
 
       workout.addEntry(
         buildDraftEntry({
@@ -567,9 +574,9 @@ export function AppShell() {
           unitSystem: settings.unitSystem,
           restSeconds: settings.restSecondsBetweenSets,
           transitionRestSeconds: settings.restSecondsBetweenExercises,
-          targetSets: 1,
+          targetSets: ladderSets ?? 1,
           targetRepsMax: defaultTargetCount(exercise),
-          plannedSetCount: 1,
+          plannedSetCount: ladderSets ?? 1,
         }),
       );
     },
@@ -608,6 +615,30 @@ export function AppShell() {
             // gets recorded. A session with nothing logged saves nothing, and a
             // workout from some other routine is not this step being done.
             if (saved) advanceSequence(saved.routineId);
+
+            /*
+             * ...and every ladder that met its target moves up, one rep, without
+             * being asked.
+             *
+             * AUTOMATIC, unlike the routine's set count below it, and the
+             * difference is what the two things are: a routine is a template the
+             * user wrote, so rewriting it is a question, while a ladder is a
+             * progression they switched on precisely so it would advance on its
+             * own. A dialog asking permission to add the rep after every workout
+             * would be the app asking whether the user meant to train.
+             *
+             * `ladderOutcomes` is the whole decision — which sessions count as met,
+             * which set earns the rep, when the max itself moves — and it produces
+             * nothing at all for a session that came up short. The write goes
+             * against the row as the STORE has it rather than the snapshot the
+             * session was built from, so an exercise renamed mid-workout keeps its
+             * new name and only its ladder changes.
+             */
+            for (const outcome of ladderOutcomes(finished.entries)) {
+              const current = exercisesById[outcome.exerciseId];
+              if (!current) continue;
+              updateExercise(current.id, { ...current, ladder: outcome.after });
+            }
 
             /*
              * ...and only if the user asked, the plan learns what actually

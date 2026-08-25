@@ -5,6 +5,7 @@ import {
   buildDraftSession,
   defaultTargetCount,
   defaultTargetSets,
+  formatTarget,
   sessionVolume,
   workingSetLabels,
   type DraftSession,
@@ -418,5 +419,120 @@ describe('workingSetLabels', () => {
 
   it('is empty for an empty list', () => {
     expect(workingSetLabels([])).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * A LADDER OVERRIDES THE PREFILL — the one thing that does.
+ *
+ * Every other row in this app is prefilled from last session, because repeating
+ * last session is the common case. A ladder is the opposite claim: the user
+ * switched it on so the app would hand them last session PLUS ONE REP, on the set
+ * the scheme says earns it. Copying history over that would silently delete the
+ * progression.
+ */
+describe('a ladder in a draft session', () => {
+  const pullUps: Exercise = {
+    id: 'ex_pullups',
+    ownerId: null,
+    name: 'Wide pull-ups',
+    muscleGroups: ['back'],
+    requiresWeight: false,
+    countUnit: 'reps',
+    loadMode: 'none',
+    isUnilateral: false,
+    ladder: { max: 16, earned: 2 },
+    isArchived: false,
+    createdAt: '2026-08-17T00:00:00.000Z',
+  };
+
+  const lastSession = [10, 10, 10, 10, 10].map((count, setIndex) =>
+    loggedSet({
+      id: `sh_${setIndex}`,
+      exerciseId: pullUps.id,
+      setIndex,
+      count,
+      weightKg: null,
+      loadMode: 'none',
+    }),
+  );
+
+  it('prefills every set from the ladder, not from last session', () => {
+    const session = build(pullUps, lastSession, routineFor(pullUps.id, 5));
+    expect(session.entries[0].sets.map((s) => s.count)).toEqual([16, 10, 9, 8, 7]);
+  });
+
+  it('carries the ladder onto the entry so the session can reshape itself', () => {
+    const session = build(pullUps, lastSession, routineFor(pullUps.id, 5));
+    expect(session.entries[0].ladder).toEqual({ max: 16, earned: 2 });
+  });
+
+  it('takes its set count from the plan, not from what last session did', () => {
+    // Five logged sets last time, four planned now: a five-set ladder and a
+    // four-set ladder are different numbers, so the widening other exercises get
+    // would silently reshape the scheme.
+    const session = build(pullUps, lastSession, routineFor(pullUps.id, 4));
+    expect(session.entries[0].sets.map((s) => s.count)).toEqual([16, 10, 9, 7]);
+  });
+
+  it('still prefills the WEIGHT from history — the ladder owns reps only', () => {
+    const weighted: Exercise = { ...pullUps, requiresWeight: true, loadMode: 'added_bodyweight' };
+    const history = lastSession.map((s) => ({
+      ...s,
+      weightKg: 20,
+      loadMode: 'added_bodyweight' as const,
+    }));
+    const session = build(weighted, history, routineFor(weighted.id, 5));
+    expect(session.entries[0].sets.map((s) => s.weightKg)).toEqual([20, 20, 20, 20, 20]);
+    expect(session.entries[0].sets.map((s) => s.count)).toEqual([16, 10, 9, 8, 7]);
+  });
+
+  it('leaves an exercise with no ladder exactly as it was', () => {
+    const session = build(machine, [loggedSet({ count: 8, setIndex: 0 })]);
+    expect(session.entries[0].ladder).toBeUndefined();
+    expect(session.entries[0].sets[0].count).toBe(8);
+  });
+
+  it('refuses to run on a hold, however the row was edited', () => {
+    const plank: Exercise = { ...pullUps, countUnit: 'seconds', defaultCount: 120 };
+    const session = build(plank, [], routineFor(plank.id, 3));
+    expect(session.entries[0].ladder).toBeUndefined();
+    expect(session.entries[0].sets.map((s) => s.count)).toEqual([120, 120, 120]);
+  });
+
+  it('plans five sets by default, because five is the scheme', () => {
+    expect(defaultTargetSets({ countUnit: 'reps', ladder: { max: 16, earned: 0 } })).toBe(5);
+    // ...and a ladder that cannot run does not change the answer.
+    expect(defaultTargetSets({ countUnit: 'seconds', ladder: { max: 16, earned: 0 } })).toBe(3);
+  });
+});
+
+describe('formatTarget with a ladder', () => {
+  const entry = {
+    targetSets: 5,
+    exercise: { countUnit: 'reps' } as Exercise,
+    ladder: { max: 16, earned: 0 },
+  };
+
+  it('states every set, because that is what a ladder is', () => {
+    expect(formatTarget(entry)).toBe('16 + 10 + 8 + 8 + 6');
+  });
+
+  it('follows the rows the session actually has', () => {
+    const sets = [{ isWarmup: false }, { isWarmup: false }, { isWarmup: false }];
+    expect(formatTarget({ ...entry, sets })).toBe('16 + 10 + 6');
+  });
+
+  it('does not let a warm-up take a rung', () => {
+    const sets = [{ isWarmup: true }, { isWarmup: false }, { isWarmup: false }];
+    expect(formatTarget({ ...entry, sets })).toBe('16 + 10');
+  });
+
+  it('falls back to the ordinary target line without a ladder', () => {
+    expect(formatTarget({ targetSets: 4, targetRepsMax: 8, exercise: entry.exercise })).toBe(
+      '4 × 8 reps',
+    );
   });
 });

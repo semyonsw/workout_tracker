@@ -275,7 +275,22 @@ describe('monthKey', () => {
     expect(monthKey('2026-08-17T17:00:00.000Z')).toBe('2026-08');
     expect(monthKey('2026-08-01T00:00:00.000Z')).toBe('2026-08');
     expect(monthKey('2026-09-01T00:00:00.000Z')).toBe('2026-09');
-    expect(monthKey('2025-12-31T23:00:00.000Z')).toBe('2025-12');
+  });
+
+  /**
+   * THE MONTH IS THE PHONE'S, not UTC — the same rule that stopped a workout
+   * finished after midnight being listed under the previous day.
+   *
+   * So the boundary case has to be built in local time. Asserting that
+   * `2025-12-31T23:00Z` buckets under `2025-12` bakes in a UTC machine: east of
+   * Greenwich that instant is already January, the function is right to say so, and
+   * the suite failed on the author's own laptop (UTC+4) while passing in CI.
+   */
+  it("buckets by the phone's calendar month, across a year boundary", () => {
+    const lastMinuteOfTheYear = new Date(2025, 11, 31, 23, 0, 0);
+    expect(monthKey(lastMinuteOfTheYear.toISOString())).toBe('2025-12');
+    const firstMinuteOfTheNext = new Date(2026, 0, 1, 0, 30, 0);
+    expect(monthKey(firstMinuteOfTheNext.toISOString())).toBe('2026-01');
   });
 });
 

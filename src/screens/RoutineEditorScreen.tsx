@@ -44,6 +44,13 @@
  * off, so one chip both opens and closes the range and there is no second control
  * for a thing that is either on or off.
  *
+ * A LADDER TAKES THE REP ROWS' PLACE. An exercise running one (`lib/repLadder.ts`)
+ * derives every set's reps from a single max, so `Reps` and `Down to` under it
+ * would be controls that quietly do nothing — this screen's whole lesson. The panel
+ * states the ladder instead — `16 + 10 + 8 + 8 + 6`, for this item's set count —
+ * and `Sets` re-shapes it live, because how many sets a routine plans is still the
+ * routine's business.
+ *
  * SUPERSETS ARE ONE TOGGLE: "with the exercise above". `supersetGroup` is a
  * string, and a UI that let people NAME groups would need a group-name concept, a
  * picker, and an answer for two groups that share a name — for a feature whose
@@ -129,6 +136,7 @@ import {
   toggleSupersetWithAbove,
 } from '../lib/routinePlan';
 import { moveToIndex } from '../lib/reorder';
+import { describeLadder, ladderOf, ladderTargets, ladderTotal } from '../lib/repLadder';
 import { countUnitLabel, formatClock, formatDuration } from '../lib/units';
 import { palette } from '../theme/tokens';
 import type { Exercise, ID, Routine, RoutineItem } from '../types/models';
@@ -585,6 +593,15 @@ function ItemEditor({
   const countDelta = targetCountStep(countUnit);
   const rest = resolveItemRest(item, settingsRestSeconds);
   const target = item.targetRepsMax ?? item.targetRepsMin ?? 0;
+  /*
+   * A ladder replaces the rep controls rather than sitting beside them: it decides
+   * every set's reps from one max, so a `Reps` stepper under it would be a control
+   * that quietly does nothing — the exact failure this screen's rest row exists to
+   * undo. What the routine still owns is `Sets`, and the ladder re-shapes itself
+   * around whatever that says, live, one row below.
+   */
+  const ladder = ladderOf(exercise);
+  const ladderPlan = ladder ? ladderTargets(ladder, item.targetSets) : null;
 
   /*
    * A hold or a round reads as a clock, a distance as metres, reps as a number.
@@ -602,26 +619,50 @@ function ItemEditor({
         onDecrease={() => onPatch((i) => bumpTargetSets(i, -1))}
         onIncrease={() => onPatch((i) => bumpTargetSets(i, 1))}
       />
-      <Separator inset={40} />
-      <ItemStepper
-        label={timed ? 'Each one' : 'Reps'}
-        value={showCount}
-        onDecrease={() => onPatch((i) => bumpTargetCount(i, countUnit, -countDelta))}
-        onIncrease={() => onPatch((i) => bumpTargetCount(i, countUnit, countDelta))}
-      />
-
-      {/* The low end of the rep range, and only where a range means something: a
-          plan of "3 × 1:45–2:00 plank" is a number nobody holds to. */}
-      {timed ? null : (
+      {ladderPlan ? (
+        <>
+          <Separator inset={40} />
+          {/* Stated, not offered. The max is a fact about the lifter and lives on
+              the EXERCISE — one pull-up max, not one per routine that contains
+              pull-ups — so it is set in the exercise editor, which `Open its
+              history` at the bottom of this panel leads to. */}
+          <View className="min-h-[56px] py-sm pl-xxl pr-lg">
+            <View className="flex-row items-center">
+              <Text className="flex-1 pr-md text-label font-medium text-ink">Ladder</Text>
+              <Text className="text-body font-semibold tabular-nums text-ink">
+                {describeLadder(ladderPlan)}
+              </Text>
+            </View>
+            <Text className="mt-[2px] text-micro text-ink-faint">
+              Max {ladderPlan[0]} · {ladderTotal(ladderPlan)} reps · one rep is added every session
+              you meet it
+            </Text>
+          </View>
+        </>
+      ) : (
         <>
           <Separator inset={40} />
           <ItemStepper
-            label="Down to"
-            hint={item.targetRepsMin == null ? 'Off — the plan is one number' : undefined}
-            value={item.targetRepsMin == null ? '—' : String(item.targetRepsMin)}
-            onDecrease={() => onPatch((i) => bumpTargetMin(i, countUnit, -1))}
-            onIncrease={() => onPatch((i) => bumpTargetMin(i, countUnit, 1))}
+            label={timed ? 'Each one' : 'Reps'}
+            value={showCount}
+            onDecrease={() => onPatch((i) => bumpTargetCount(i, countUnit, -countDelta))}
+            onIncrease={() => onPatch((i) => bumpTargetCount(i, countUnit, countDelta))}
           />
+
+          {/* The low end of the rep range, and only where a range means something: a
+              plan of "3 × 1:45–2:00 plank" is a number nobody holds to. */}
+          {timed ? null : (
+            <>
+              <Separator inset={40} />
+              <ItemStepper
+                label="Down to"
+                hint={item.targetRepsMin == null ? 'Off — the plan is one number' : undefined}
+                value={item.targetRepsMin == null ? '—' : String(item.targetRepsMin)}
+                onDecrease={() => onPatch((i) => bumpTargetMin(i, countUnit, -1))}
+                onIncrease={() => onPatch((i) => bumpTargetMin(i, countUnit, 1))}
+              />
+            </>
+          )}
         </>
       )}
 
@@ -786,7 +827,12 @@ function StepChip({
 function summarizeItem(item: RoutineItem, exercise: Exercise, settingsRestSeconds: number): string {
   const parts: string[] = [];
 
-  if (exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds') {
+  const ladder = ladderOf(exercise);
+  if (ladder) {
+    // A ladder states every set, because that is what it is: five numbers, not a
+    // count times a target. Same line the session's card shows.
+    parts.push(describeLadder(ladderTargets(ladder, item.targetSets)));
+  } else if (exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds') {
     parts.push(`${item.targetSets} × ${formatDuration(item.targetRepsMax ?? 0)}`);
   } else {
     const { targetRepsMin: min, targetRepsMax: max } = item;

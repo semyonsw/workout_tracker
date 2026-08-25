@@ -30,6 +30,14 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { Kicker, ListCard, Separator } from '../components/primitives';
 import { TrendChart } from '../components/TrendChart';
 import { describeHistory, sessionRows, topWeightSeries } from '../lib/history';
+import {
+  LADDER_SETS,
+  describeLadder,
+  ladderOf,
+  ladderTargets,
+  ladderTotal,
+  sessionsToNextMax,
+} from '../lib/repLadder';
 import type { OverloadVerdict } from '../lib/progressiveOverload';
 import { formatShortDate } from '../lib/units';
 import type { Exercise, ID, SetHistory } from '../types/models';
@@ -70,6 +78,14 @@ export function ExerciseHistoryScreen({
    */
   const plateauDays = verdict && verdict.sessionsInRun >= 2 ? verdict.plateauDays : null;
   const loadPrefix = exercise.loadMode === 'added_bodyweight' ? '+' : '';
+  /*
+   * The ladder, if this exercise runs one. Shown at five sets — the scheme's own
+   * shape — because this screen is about the exercise and not about any one
+   * routine's set count.
+   */
+  const ladder = ladderOf(exercise);
+  const ladderPlan = ladder ? ladderTargets(ladder, LADDER_SETS) : null;
+  const untilPR = ladder ? sessionsToNextMax(ladder, LADDER_SETS) : 0;
 
   return (
     <View className="flex-1 bg-bg">
@@ -88,6 +104,31 @@ export function ExerciseHistoryScreen({
         <Text className="mx-lg mt-xs text-label tabular-nums text-ink-muted">
           {describeHistory(rows, plateauDays, loadPrefix)}
         </Text>
+
+        {/*
+          THE LADDER, above the chart, because it is the only thing on this screen
+          that says what to do NEXT. Everything below it is what already happened.
+
+          It answers the one question a scheme like this gets asked — how far to the
+          next max — in sessions rather than in weeks, because a ladder does not
+          advance on a calendar. It moves when you meet it.
+        */}
+        {ladder && ladderPlan ? (
+          <>
+            <Kicker tone="green" className="mx-lg mt-xl">
+              Ladder · max {ladder.max}
+            </Kicker>
+            <Text className="mx-lg mt-sm text-title font-medium tabular-nums text-ink">
+              {describeLadder(ladderPlan)}
+            </Text>
+            <Text className="mx-lg mt-xs text-label tabular-nums text-ink-muted">
+              {ladderTotal(ladderPlan)} reps ·{' '}
+              {untilPR === 1
+                ? `meet it and the max becomes ${ladder.max + 1}`
+                : `${untilPR} met sessions to a max of ${ladder.max + 1}`}
+            </Text>
+          </>
+        ) : null}
 
         {series.length >= 2 ? (
           <>

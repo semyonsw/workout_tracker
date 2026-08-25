@@ -1271,3 +1271,154 @@ describe('rest actually taken', () => {
     expect(rows[0].restTakenSeconds).toBe(100);
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * THE LADDER, IN FLIGHT.
+ *
+ * A ladder is built from a max, and the max is a guess until the top set has
+ * actually happened. So the moment it is logged, everything under it is rebuilt
+ * off what the body did: eighteen when the plan said sixteen means the backoffs
+ * were written for a lighter day, and fourteen means they were written for a day
+ * that did not turn up.
+ *
+ * All of the arithmetic is `lib/repLadder.ts` and tested there. What is tested
+ * here is the part only a store can get wrong: which rows it is allowed to touch,
+ * and when.
+ */
+describe('the ladder reshaping a session in flight', () => {
+  const ladderExercise = (over: Partial<Exercise> = {}): Exercise => ({
+    ...seedExercises[0],
+    id: 'ex_ladder_pullups',
+    name: 'Wide pull-ups',
+    requiresWeight: false,
+    countUnit: 'reps',
+    loadMode: 'none',
+    ladder: { max: 16, earned: 0 },
+    ...over,
+  });
+
+  function startLadder(over: Partial<Exercise> = {}) {
+    const exercise = ladderExercise(over);
+    useActiveWorkout.getState().discardSession();
+    useActiveWorkout.getState().startSession({
+      routine: {
+        id: 'r_ladder',
+        ownerId: 'u1',
+        name: 'Pull',
+        items: [{ id: 'ri1', exerciseId: exercise.id, order: 0, targetSets: 5 }],
+        createdAt: '2026-08-20T00:00:00.000Z',
+        updatedAt: '2026-08-20T00:00:00.000Z',
+      } satisfies Routine,
+      exercisesById: { [exercise.id]: exercise },
+      historyByExerciseId: {},
+      policy: DEFAULT_OVERLOAD_POLICY,
+      unitSystem: 'metric',
+      defaultRestSeconds: 120,
+      defaultTransitionRestSeconds: 150,
+    });
+    const session = useActiveWorkout.getState().session;
+    if (!session) throw new Error('the ladder routine built no session');
+    return session.entries[0];
+  }
+
+  const countsOf = (entryId: ID) =>
+    selectEntry(entryId)(useActiveWorkout.getState())?.sets.map((s) => s.count);
+
+  it('opens on the ladder for the stored max', () => {
+    const entry = startLadder();
+    expect(entry.sets.map((s) => s.count)).toEqual([16, 10, 8, 8, 6]);
+  });
+
+  it('rebuilds the day when the top set beats the plan', () => {
+    const entry = startLadder();
+    const store = useActiveWorkout.getState();
+    store.patchSet(entry.localId, entry.sets[0].localId, { count: 18 });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(countsOf(entry.localId)).toEqual([18, 11, 9, 9, 7]);
+  });
+
+  it('rebuilds it when the top set misses', () => {
+    const entry = startLadder();
+    const store = useActiveWorkout.getState();
+    store.patchSet(entry.localId, entry.sets[0].localId, { count: 14 });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(countsOf(entry.localId)).toEqual([14, 9, 7, 7, 5]);
+  });
+
+  it('changes nothing when the top set matches the max it was built from', () => {
+    const entry = startLadder({ ladder: { max: 16, earned: 2 } });
+    expect(entry.sets.map((s) => s.count)).toEqual([16, 10, 9, 8, 7]);
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+    // The two earned reps are part of today's plan and must survive the top set.
+    expect(countsOf(entry.localId)).toEqual([16, 10, 9, 8, 7]);
+  });
+
+  it('never rewrites a row the user edited by hand', () => {
+    const entry = startLadder();
+    const store = useActiveWorkout.getState();
+    // "I know I only have 6 in me on the third set today."
+    store.patchSet(entry.localId, entry.sets[2].localId, { count: 6 });
+    store.patchSet(entry.localId, entry.sets[0].localId, { count: 18 });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(countsOf(entry.localId)).toEqual([18, 11, 6, 9, 7]);
+  });
+
+  it('never rewrites a logged row', () => {
+    const entry = startLadder();
+    const store = useActiveWorkout.getState();
+    store.completeSet(entry.localId, entry.sets[0].localId); // 16, on plan
+    store.completeSet(entry.localId, entry.sets[1].localId); // 10, logged
+    // Now the top set is corrected upwards after the fact.
+    store.uncompleteSet(entry.localId, entry.sets[0].localId);
+    store.patchSet(entry.localId, entry.sets[0].localId, { count: 18 });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+
+    const after = selectEntry(entry.localId)(useActiveWorkout.getState());
+    expect(after?.sets[1].count).toBe(10); // history, untouched
+    expect(after?.sets.map((s) => s.count)).toEqual([18, 10, 9, 9, 7]);
+  });
+
+  it('re-shapes when a set is added, because six sets is a different ladder', () => {
+    const entry = startLadder();
+    useActiveWorkout.getState().addSet(entry.localId);
+    expect(countsOf(entry.localId)).toEqual([16, 10, 8, 8, 8, 6]);
+  });
+
+  it('re-shapes when a set is removed', () => {
+    const entry = startLadder();
+    useActiveWorkout.getState().removeLastSet(entry.localId);
+    expect(countsOf(entry.localId)).toEqual([16, 10, 8, 6]);
+  });
+
+  it('follows a top set corrected after it was logged', () => {
+    const entry = startLadder();
+    const store = useActiveWorkout.getState();
+    store.completeSet(entry.localId, entry.sets[0].localId); // 16, on plan
+    // "I actually got 18" — the correction flow inside an open workout.
+    store.patchSet(entry.localId, entry.sets[0].localId, { count: 18 });
+
+    expect(countsOf(entry.localId)).toEqual([18, 11, 9, 9, 7]);
+  });
+
+  it('leaves an exercise with no ladder completely alone', () => {
+    const entry = startLadder({ ladder: undefined, defaultCount: 12 });
+    const store = useActiveWorkout.getState();
+    const before = entry.sets.map((s) => s.count);
+    store.patchSet(entry.localId, entry.sets[0].localId, { count: 18 });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(countsOf(entry.localId)).toEqual([18, ...before.slice(1)]);
+  });
+
+  it('survives a ladder that came back from disk as nonsense', () => {
+    const entry = startLadder({ ladder: { max: Number.NaN, earned: 0 } });
+    const store = useActiveWorkout.getState();
+    expect(() => store.completeSet(entry.localId, entry.sets[0].localId)).not.toThrow();
+  });
+});
