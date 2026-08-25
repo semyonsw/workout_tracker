@@ -214,26 +214,38 @@ export function HistoryScreen({
    * it immediately and asks for the scroll on the next frame, by which time the
    * expanded row's `onLayout` has run and `rowOffsets` knows where it is.
    *
+   * `onFocusHandled` IS CALLED FROM INSIDE THE FRAME, and that is not a detail.
+   * Calling it beside `setOpenId` clears the parent's id, which changes this
+   * effect's deps, which runs its CLEANUP — and the cleanup cancels the frame that
+   * has not fired yet. The row opened and never scrolled, which is the half of this
+   * feature that is hard to notice in a list short enough to fit on screen.
+   * Deferring the callback keeps the deps stable until the scroll has happened.
+   *
    * An id that does not resolve is handled and forgotten rather than treated as an
    * error: the workout may have been deleted between the tap and this render, and
    * landing at the top of History is the right outcome for that.
    */
   useEffect(() => {
     if (!focusWorkoutId) return;
-    const exists = workouts.some((w) => w.id === focusWorkoutId);
-    if (exists) setOpenId(focusWorkoutId);
-    onFocusHandled?.();
 
-    if (!exists) return;
+    if (!workouts.some((w) => w.id === focusWorkoutId)) {
+      onFocusHandled?.();
+      return;
+    }
+    setOpenId(focusWorkoutId);
+
     const frame = requestAnimationFrame(() => {
       const row = rowOffsets.current[focusWorkoutId];
-      if (row == null) return;
-      const y =
-        (monthOffsets.current[row.monthKey] ?? 0) +
-        (cardOffsets.current[row.monthKey] ?? 0) +
-        row.y;
-      // −8 so the row is not flush against the header's hairline.
-      scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+      if (row != null) {
+        const y =
+          (monthOffsets.current[row.monthKey] ?? 0) +
+          (cardOffsets.current[row.monthKey] ?? 0) +
+          row.y;
+        // −8 so the row is not flush against the header's hairline.
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+      }
+      // Only now: see above.
+      onFocusHandled?.();
     });
     return () => cancelAnimationFrame(frame);
   }, [focusWorkoutId, onFocusHandled, workouts]);
