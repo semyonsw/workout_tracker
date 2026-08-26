@@ -7,12 +7,30 @@
  *   │ 80 kg · 8 6 5 5                            │
  *   └────────────────────────────────────────────┘
  *
- * Expanded (current exercise): header + overload nudge + set rows + a footer of
- * `Add set` / `Remove set`, and `Rest` under them.
+ * Expanded: header + overload nudge + set rows + a footer of `Add set` /
+ * `Remove set`, and `Rest` under them.
  *
- * Only one card is expanded at a time. That is the whole navigation model of the
- * logging screen — no tabs, no per-exercise route, no back button. The user
- * moves down the list as they move through the gym.
+ * At most one card is expanded at a time, and NONE is a legal answer — tapping the
+ * open card's header shuts it. That is the whole navigation model of the logging
+ * screen: no tabs, no per-exercise route, no back button. The user moves down the
+ * list as they move through the gym, and can shut the list down to eight names when
+ * what they want is the shape of the session rather than the numbers in it.
+ *
+ * ── OPEN IS NOT THE SAME AS CURRENT ─────────────────────────────────────────
+ *
+ * `isExpanded` is "this card is showing its sets". `isCurrent` is "the set you
+ * should be doing is in this exercise" — the session's cursor, which the screen
+ * owns. They usually agree, and the two moments they do not are exactly the two
+ * moments the distinction earns itself: the user has shut the card they are on, and
+ * the user is reading a card further down the list.
+ *
+ * A CURRENT CARD IS MARKED IN GREEN, and it is the same green in both states:
+ *
+ *   • Shut — the name goes `green-bright` and the card takes a green ring. With
+ *     everything closed this is the only thing on screen saying where you are.
+ *   • Open — the ring is not repeated (the open card is obviously the subject);
+ *     the mark moves INSIDE, onto the one set row that should happen next. See
+ *     `SetRow`'s `isUpNext`.
  *
  * The collapsed signal for a waiting overload suggestion is a single 6px dot.
  * Not a badge, not a chip, not a count: the suggestion is not urgent, it just
@@ -56,7 +74,7 @@ import { tap, undo } from '../lib/feedback';
 import { isTimed as isTimedExercise } from '../lib/setTimer';
 import { formatClock } from '../lib/units';
 import type { ID, UnitSystem } from '../types/models';
-import { palette } from '../theme/tokens';
+import { glow as GLOW, palette } from '../theme/tokens';
 import { Icon } from './Icon';
 import { OverloadNudge } from './OverloadNudge';
 import { QuickAdjust } from './QuickAdjust';
@@ -64,7 +82,13 @@ import { SetRow, type SetField } from './SetRow';
 
 interface ExerciseCardProps {
   entry: DraftEntry;
-  isActive: boolean;
+  /** This card is showing its sets. At most one card in the list is. */
+  isExpanded: boolean;
+  /**
+   * The session's cursor is on this exercise — the next set to do is one of these.
+   * Not the same question as `isExpanded`; see the file header.
+   */
+  isCurrent: boolean;
   unitSystem: UnitSystem;
   /**
    * Where this card sits in a superset run. Computed by the screen, which is the
@@ -83,7 +107,8 @@ interface ExerciseCardProps {
   isLifted?: boolean;
   /** Another card is being dragged, so this one is not the subject right now. */
   dimmed?: boolean;
-  onActivate: () => void;
+  /** Tap: open this card, or shut it when it is already the open one. */
+  onToggleExpanded: () => void;
   /** Long press — the screen turns this into a drag. Absent = not reorderable. */
   onLift?: () => void;
   onToggleSet: (setId: ID) => void;
@@ -112,14 +137,15 @@ interface ExerciseCardProps {
 
 function ExerciseCardComponent({
   entry,
-  isActive,
+  isExpanded,
+  isCurrent,
   unitSystem,
   superset = 'none',
   availablePlatesKg,
   timingSetId = null,
   isLifted = false,
   dimmed = false,
-  onActivate,
+  onToggleExpanded,
   onLift,
   onToggleSet,
   onPatchSet,
@@ -156,21 +182,43 @@ function ExerciseCardComponent({
   /* ---------------------------------------------------------------- */
   /* Collapsed                                                         */
   /* ---------------------------------------------------------------- */
-  if (!isActive) {
+  if (!isExpanded) {
+    /*
+     * The glow. Only on the CURRENT exercise, only while it still has a set left,
+     * and only while nothing is being dragged — a green ring on a dimmed card in a
+     * list where another card is in the air is two signals fighting.
+     *
+     * `boxShadow` is the app's one deliberate exception to "exactly one shadow"
+     * (`theme/tokens.ts`), and it is spent here because this mark has to be
+     * findable at arm's length on a bench. It is decoration on top of the border,
+     * never instead of it: on a renderer that ignores it the green ring and the
+     * green name still say everything.
+     */
+    const glowing = isCurrent && !allDone && !isLifted && !dimmed;
     return (
       <Pressable
-        onPress={onActivate}
+        onPress={onToggleExpanded}
         onLongPress={onLift}
         delayLongPress={280}
         accessibilityRole="button"
+        accessibilityState={{ expanded: false }}
         accessibilityLabel={`${entry.exercise.name}, ${completed} of ${total} sets done${
-          nudgeWaiting ? ', suggestion waiting' : ''
-        }${superset === 'none' ? '' : ', part of a superset'}`}
+          glowing ? ', your next set is in here' : ''
+        }${nudgeWaiting ? ', suggestion waiting' : ''}${
+          superset === 'none' ? '' : ', part of a superset'
+        }`}
         accessibilityHint={onLift ? 'Long press, then slide to reorder' : undefined}
-        style={dimmed ? { opacity: 0.4 } : undefined}
+        style={[
+          dimmed ? { opacity: 0.4 } : null,
+          glowing ? { boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 14, color: GLOW }] } : null,
+        ]}
         className={[
           'mx-lg mb-sm rounded-surface border p-lg',
-          isLifted ? 'border-green-dim bg-surface-alt' : 'border-hairline bg-surface',
+          isLifted
+            ? 'border-green-dim bg-surface-alt'
+            : glowing
+              ? 'border-green-bright bg-surface-alt'
+              : 'border-hairline bg-surface',
           /*
            * The bracket, as a left border rather than an extra View: a collapsed
            * card is one Pressable and threading a sibling through it would mean
@@ -183,7 +231,10 @@ function ExerciseCardComponent({
         <View className="flex-row items-center">
           <Text
             numberOfLines={1}
-            className={`flex-1 text-body font-semibold ${allDone ? 'text-ink-faint' : 'text-ink'}`}
+            className={[
+              'flex-1 text-body font-semibold',
+              glowing ? 'text-green-bright' : allDone ? 'text-ink-faint' : 'text-ink',
+            ].join(' ')}
           >
             {entry.exercise.name}
           </Text>
@@ -229,20 +280,34 @@ function ExerciseCardComponent({
           the expanded card's grab handle: long-pressing a set row would fight the
           row's own controls, and this is the one part of the card that isn't one. */}
       <Pressable
+        onPress={onToggleExpanded}
         onLongPress={onLift}
         delayLongPress={280}
-        accessibilityRole={onLift ? 'button' : 'header'}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: true }}
         accessibilityLabel={entry.exercise.name}
-        accessibilityHint={onLift ? 'Long press, then slide to reorder' : undefined}
+        accessibilityHint={
+          onLift
+            ? 'Tap to close its sets. Long press, then slide to reorder'
+            : 'Tap to close its sets'
+        }
         className="mx-lg mb-md"
       >
-        <Text
-          className={['text-title font-medium', isLifted ? 'text-green-bright' : 'text-ink'].join(
-            ' ',
-          )}
-        >
-          {entry.exercise.name}
-        </Text>
+        <View className="flex-row items-center">
+          <Text
+            className={[
+              'flex-1 text-title font-medium',
+              isLifted ? 'text-green-bright' : 'text-ink',
+            ].join(' ')}
+          >
+            {entry.exercise.name}
+          </Text>
+          {/* The affordance for shutting it. `chevron-down` is what the routine
+              editor's open row uses, for the same "this closes" meaning. */}
+          <View className="ml-md">
+            <Icon name="chevron-down" size={18} color={palette.inkFaint} />
+          </View>
+        </View>
         <Text className="mt-xs text-label tabular-nums text-ink-muted">
           {formatTarget(entry)}
           {entry.exercise.isUnilateral ? (
@@ -283,6 +348,10 @@ function ExerciseCardComponent({
               exercise={entry.exercise}
               unitSystem={unitSystem}
               isNext={set.localId === nextSetId}
+              /* The mark for "do this one". Only in the exercise the session's
+                 cursor is on — every card has a next row, only one has THE next
+                 row, and outlining all of them would mark nothing. */
+              isUpNext={isCurrent && set.localId === nextSetId}
               focusedField={focus?.setId === set.localId ? focus.field : null}
               isTimed={isTimed}
               isTiming={timingSetId === set.localId}

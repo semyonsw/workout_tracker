@@ -34,6 +34,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { defaultTargetCount, defaultTargetSets } from '../lib/draft';
+import { autoLadderFor, isAutoLadder, ladderOf } from '../lib/repLadder';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import type {
   Exercise,
@@ -63,6 +64,11 @@ interface LibraryState {
    * this existed — silently orphans all of it.
    */
   updateExercise: (exerciseId: ID, next: Exercise) => void;
+  /**
+   * `Make every exercise a rep ladder`, applied to the library — see the Settings
+   * flag of the same name. Reversible, and that is the whole design of it.
+   */
+  setLadderOnAllExercises: (on: boolean) => void;
   /** Removes the exercise and every routine item pointing at it. */
   deleteExercise: (exerciseId: ID) => void;
   /**
@@ -154,6 +160,50 @@ export const useLibrary = create<LibraryState>()(
             e.id === exerciseId ? { ...next, id: exerciseId } : e,
           ),
         }),
+
+      /**
+       * Put an `auto` ladder on every rep-counted exercise, or take back exactly
+       * the ones that were put there.
+       *
+       * THREE things it refuses to touch, and each is a bug it would otherwise be:
+       *
+       *  1. An exercise that already runs a ladder. Its max is a number the user
+       *     tested and its earned reps are sessions they trained; overwriting that
+       *     with a seed would throw away the progression this feature is FOR.
+       *  2. Anything that is not rep-counted. A plank does not have a ladder —
+       *     `ladderOf` is the gate and `autoLadderFor` goes through it, so a hold,
+       *     a round and a distance are all left alone rather than handed a rep
+       *     prescription in the wrong unit.
+       *  3. On the way back off: a ladder that has earned a rep. It stopped being
+       *     the setting's to remove the moment a session met it — see
+       *     `isAutoLadder`.
+       *
+       * The `set` is skipped entirely when nothing changed, so toggling this on a
+       * library of planks does not rewrite the blob on disk for no reason.
+       */
+      setLadderOnAllExercises: (on) => {
+        const { exercises } = get();
+        let changed = false;
+
+        const next = exercises.map((exercise) => {
+          if (on) {
+            // Already running one: rule 1. `autoLadderFor` would hand the existing
+            // ladder straight back, but as a fresh object — writing it would mark
+            // the library dirty for a change that isn't one.
+            if (ladderOf(exercise)) return exercise;
+            const ladder = autoLadderFor(exercise);
+            if (!ladder) return exercise; // not rep-counted: rule 2
+            changed = true;
+            return { ...exercise, ladder };
+          }
+          if (!isAutoLadder(ladderOf(exercise))) return exercise;
+          changed = true;
+          const { ladder: _dropped, ...rest } = exercise;
+          return rest as Exercise;
+        });
+
+        if (changed) set({ exercises: next });
+      },
 
       deleteExercise: (exerciseId) => {
         const { exercises, routines } = get();

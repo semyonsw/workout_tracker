@@ -130,8 +130,9 @@ export function emptyExerciseDraft(
   name: string,
   muscle?: MuscleGroup,
   restSeconds = 120,
+  ladderOn = false,
 ): ExerciseDraft {
-  return {
+  const draft: ExerciseDraft = {
     name,
     muscleGroups: muscle ? [muscle] : [],
     requiresWeight: true,
@@ -144,12 +145,20 @@ export function emptyExerciseDraft(
     durationSeconds: 180,
     incrementKg: 2.5,
     restSeconds,
-    // Off, and with no max remembered yet: switching it on seeds one from the
-    // target reps rather than from a constant here. See `toggleLadder`.
+    /*
+     * Off here, and switched on below when the caller says so — `Make every
+     * exercise a rep ladder` in Settings, read by the caller because a `lib/`
+     * function does not get to reach into a store.
+     */
     ladderOn: false,
     ladderMax: 0,
     ladderEarned: 0,
   };
+
+  // Through `toggleLadder` rather than by setting the two fields here, so a
+  // ladder that arrives switched on gets its max seeded exactly the way one
+  // switched on by hand does — see the comment above.
+  return ladderOn ? toggleLadder(draft, true) : draft;
 }
 
 /**

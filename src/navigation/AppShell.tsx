@@ -540,7 +540,16 @@ export function AppShell() {
         ...s,
         {
           name: 'createExercise',
-          draft: emptyExerciseDraft(name, muscle, useSettings.getState().restSecondsBetweenSets),
+          /* A new exercise inherits the library-wide ladder setting: turning it
+             on and then finding tomorrow's exercise without one is the setting
+             quietly having stopped applying. Still a starting point — the create
+             screen's own toggle is right there. */
+          draft: emptyExerciseDraft(
+            name,
+            muscle,
+            useSettings.getState().restSecondsBetweenSets,
+            useSettings.getState().ladderAllExercises,
+          ),
           addToSession: current?.name === 'addExercise' && current.target === 'session',
         },
       ];

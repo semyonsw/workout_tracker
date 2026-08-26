@@ -82,12 +82,28 @@
  * time. A routine editor that shows every field inline is a form, and nobody
  * scrolls a form in a gym.
  *
- * Reorder (state 10) is a mode, not a screen. Long-press lifts a row out of the
- * list to follow the finger; the list dims to half and loses its chevrons,
- * because nothing in it is tappable while a row is in the air. The gap the row
- * will fall into is drawn as a `green-dim` rule — the only place in the app
- * green marks a target rather than a fact. And the lifted row has NO SHADOW:
- * the app's one elevation belongs to the rest timer.
+ * ── REORDER IS LONG PRESS, THEN SLIDE ───────────────────────────────────────
+ *
+ * The same gesture as the session's exercise cards, and now literally the same
+ * code: `hooks/useDragReorder.ts`. It was not, for two releases — this screen
+ * lifted a row and then asked the user to TAP where it should go, while the logging
+ * screen dragged. Two muscle memories for one job, decided by which screen you
+ * happened to be on, and the tap version was the worse one: it made moving an
+ * exercise two deliberate acts instead of one continuous motion.
+ *
+ * It is still a MODE rather than a gesture in flight. The long press lifts the row
+ * and leaves it lifted, so a finger that slips does not drop the row somewhere
+ * nobody chose, and `Drop` in the header is always a way out. While a row is up:
+ * the list dims to half and loses its chevrons, because nothing in it is tappable;
+ * the ScrollView stops scrolling, so the two gestures cannot fight; and the header
+ * reads the position the row would land in, because the list does not shuffle
+ * underneath the finger to show it.
+ *
+ * The lifted row has NO SHADOW: the app's one elevation belongs to the rest timer.
+ * It is marked with the `green-dim` rule instead — the same vocabulary the superset
+ * bracket uses, and for the same reason. What it DOES need is for the card around
+ * it to stop clipping (`ListCard clip={false}`), or it is sliced off at the top and
+ * bottom of the list the moment it moves.
  *
  * ── THE DRAFT IS COMMITTED BEFORE THIS SCREEN NAVIGATES AWAY ────────────────
  *
@@ -106,8 +122,8 @@
  * typed name and losing it.
  */
 
-import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -121,7 +137,8 @@ import {
   TextButton,
   Toggle,
 } from '../components/primitives';
-import { commit, tap, undo } from '../lib/feedback';
+import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
+import { tap, undo } from '../lib/feedback';
 import {
   ITEM_REST_LIMITS,
   bumpItemRest,
@@ -204,24 +221,54 @@ export function RoutineEditorScreen({
    * form, and the point of expanding in place is that the list stays readable.
    */
   const [openId, setOpenId] = useState<ID | null>(null);
-  /** The row in the air, and where it would land. null = not reordering. */
-  const [moving, setMoving] = useState<{ id: ID; targetIndex: number } | null>(null);
   /** The item the user asked to remove, held while the sheet asks. */
   const [removing, setRemoving] = useState<RoutineItem | null>(null);
 
-  const movingIndex = moving ? items.findIndex((i) => i.id === moving.id) : -1;
-  const movingItem = movingIndex >= 0 ? items[movingIndex] : null;
-  const movingExercise = movingItem ? exercisesById[movingItem.exerciseId] : null;
+  /**
+   * Where each row sits and how tall it is, captured on layout. Offsets are
+   * relative to the list wrapper, which is all the drag maths compares them to.
+   */
+  const rowLayouts = useRef<Record<ID, CardLayout>>({});
+  const itemIds = useMemo(() => items.map((i) => i.id), [items]);
+
+  /**
+   * Splice the lifted row into the gap the finger stopped over, and renumber.
+   *
+   * The splice is `lib/reorder.ts`, shared with the session's drag-reorder — and
+   * `toIndex` is a position in the list WITHOUT the moved row, which is exactly what
+   * a drop position on screen is, so there is no off-by-one correction and dropping
+   * a row back where it came from is a no-op.
+   *
+   * The renumber is this screen's own: `order` is a persisted field and the list
+   * sorts by it, so it has to stay a dense 0..n. A gap in it turns the next reorder
+   * into a drag that jumps.
+   */
+  const commitMove = (itemId: ID, toIndex: number) => {
+    setItems((current) =>
+      moveToIndex(current, (i) => i.id === itemId, toIndex).map((item, order) => ({
+        ...item,
+        order,
+      })),
+    );
+  };
+
+  const { lifted, dragY, targetIndex, panHandlers, lift, drop } = useDragReorder(
+    itemIds,
+    rowLayouts,
+    commitMove,
+  );
+  const liftedExercise = lifted
+    ? (exercisesById[items.find((i) => i.id === lifted)?.exerciseId ?? ''] ?? null)
+    : null;
 
   /** What this screen would save right now. Handed to anything that navigates. */
   const draft = (): RoutineDraft => ({ name, items });
 
-  const lift = (item: RoutineItem, index: number) => {
-    commit();
+  const handleLift = (item: RoutineItem) => {
     // A row cannot be open and in the air at once: the editor's chips would be
     // under a finger that is dragging.
     setOpenId(null);
-    setMoving({ id: item.id, targetIndex: index });
+    lift(item.id);
   };
 
   /**
@@ -239,32 +286,6 @@ export function RoutineEditorScreen({
   };
 
   /**
-   * Release: splice the lifted row into the marked gap and renumber.
-   *
-   * The splice is `lib/reorder.ts`, shared with the session's drag-reorder. The two
-   * screens choose a drop position completely differently — a finger dragging over
-   * card midpoints there, a tap on a row here — and then do exactly the same thing
-   * with the index, which was written out twice.
-   *
-   * The renumber is this screen's own: `order` is a persisted field and the list
-   * sorts by it, so it has to stay a dense 0..n. A gap in it turns the next reorder
-   * into a drag that jumps.
-   */
-  const drop = () => {
-    if (!moving || movingIndex < 0) return setMoving(null);
-    undo();
-
-    // The gap index counts the list WITHOUT the lifted row, which is what the
-    // rendered drop band already represents — no off-by-one correction needed.
-    const next = moveToIndex(items, (i) => i.id === moving.id, moving.targetIndex).map(
-      (item, order) => ({ ...item, order }),
-    );
-
-    setItems(next);
-    return setMoving(null);
-  };
-
-  /**
    * Take one exercise out of the routine, and renumber what is left so `order`
    * stays a dense 0..n — the field the list sorts by, and a gap in it turns the
    * reorder into a drag that jumps.
@@ -277,7 +298,6 @@ export function RoutineEditorScreen({
     onCommit({ name, items: next });
   };
 
-  const rest = items.filter((i) => (moving ? i.id !== moving.id : true));
   const dimmed = removing != null;
 
   return (
@@ -285,30 +305,34 @@ export function RoutineEditorScreen({
       <View className="flex-1" style={dimmed ? { opacity: 0.28 } : undefined}>
         <ScreenHeader
           kicker={
-            moving && movingExercise
-              ? `Moving · ${movingExercise.name}`
+            lifted && liftedExercise
+              ? `Moving · ${liftedExercise.name}`
               : isNew
                 ? 'New routine'
                 : 'Edit routine'
           }
-          kickerTone={moving ? 'green' : 'faint'}
-          onBack={moving ? undefined : onBack}
-          action={{
-            label: 'Save',
-            // Demoted mid-move: saving is not the thing to do with a row in the air.
-            tone: moving ? 'muted' : 'primary',
-            onPress: moving ? drop : () => onSave(draft()),
-          }}
+          kickerTone={lifted ? 'green' : 'faint'}
+          /* Where it would land, because the list does not shuffle under the
+             finger to show it. Same readout as the logging screen's. */
+          subtitle={
+            lifted ? `Slide to move it · position ${targetIndex + 1} of ${items.length}` : undefined
+          }
+          onBack={lifted ? undefined : onBack}
+          action={
+            lifted
+              ? { label: 'Drop', onPress: drop }
+              : { label: 'Save', onPress: () => onSave(draft()) }
+          }
         />
 
         <ScrollView
           className="flex-1"
           contentContainerStyle={{ paddingTop: 24, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
-          scrollEnabled={!moving && !dimmed}
+          scrollEnabled={!lifted && !dimmed}
         >
           {/* The name field hides while reordering: one thing at a time. */}
-          {moving ? null : (
+          {lifted ? null : (
             <>
               <Kicker className="mx-lg mb-sm">Routine name</Kicker>
               <View className="mx-lg">
@@ -324,85 +348,95 @@ export function RoutineEditorScreen({
             </>
           )}
 
-          <Kicker className={`mx-lg mb-sm ${moving ? '' : 'mt-xl'}`}>
+          <Kicker className={`mx-lg mb-sm ${lifted ? '' : 'mt-xl'}`}>
             Exercises · {items.length}
           </Kicker>
 
-          <ListCard className="mx-lg">
-            {rest.map((item, index) => {
-              const exercise = exercisesById[item.exerciseId];
-              if (!exercise) return null;
-              const showGapBefore = moving?.targetIndex === index;
+          {/* The drag surface — its own View around the card rather than the card
+              itself, because `ListCard` takes props it understands and would drop
+              these on the floor. It claims a touch only while a row is lifted, so
+              every tap, every chip and the scroll itself are untouched until then.
+              `clip={false}` only while one is up: see the file header. */}
+          <View {...panHandlers}>
+            <ListCard className="mx-lg" clip={!lifted}>
+              {items.map((item, index) => {
+                const exercise = exercisesById[item.exerciseId];
+                if (!exercise) return null;
+                const isLifted = item.id === lifted;
 
-              return (
-                <View key={item.id}>
-                  {showGapBefore ? <DropGap /> : null}
-                  {/* Hairlines inset 40 — past the handle, so the rule starts
-                    where the text does. */}
-                  {index > 0 && !showGapBefore ? <Separator inset={40} /> : null}
-                  <RoutineRow
-                    exercise={exercise}
-                    dimmed={moving != null}
-                    isOpen={openId === item.id}
-                    superset={supersetRunPosition(rest, index)}
-                    summary={summarizeItem(item, exercise, defaultRestSeconds)}
-                    onPress={() => {
-                      if (moving) return setMoving({ ...moving, targetIndex: index });
-                      tap();
-                      return setOpenId((current) => (current === item.id ? null : item.id));
-                    }}
-                    onLongPress={() => (moving ? undefined : lift(item, index))}
-                    onRemove={
-                      moving
-                        ? undefined
-                        : () => {
-                            tap();
-                            setRemoving(item);
-                          }
+                return (
+                  <Animated.View
+                    key={item.id}
+                    // While a row is in the air NOTHING in the list is tappable: a
+                    // finger sliding a row across a ✕ must not remove an exercise.
+                    pointerEvents={lifted ? 'none' : 'auto'}
+                    style={
+                      isLifted
+                        ? { transform: [{ translateY: dragY }], zIndex: 2, elevation: 2 }
+                        : undefined
                     }
-                  />
-
-                  {openId === item.id && !moving ? (
-                    <ItemEditor
-                      item={item}
+                    onLayout={(e) => {
+                      const { y, height } = e.nativeEvent.layout;
+                      rowLayouts.current[item.id] = { y, height };
+                    }}
+                  >
+                    {/* Hairlines inset 40 — past the handle, so the rule starts
+                    where the text does. */}
+                    {index > 0 ? <Separator inset={40} /> : null}
+                    <RoutineRow
                       exercise={exercise}
-                      settingsRestSeconds={defaultRestSeconds}
-                      /* The first row has nothing above it to pair with. */
-                      supersetWithAbove={index === 0 ? null : isSupersettedWithAbove(rest, index)}
-                      onPatch={(fn) => patchItem(item.id, fn)}
-                      onToggleSuperset={() => {
+                      dimmed={lifted != null && !isLifted}
+                      isLifted={isLifted}
+                      isOpen={openId === item.id}
+                      superset={supersetRunPosition(items, index)}
+                      summary={summarizeItem(item, exercise, defaultRestSeconds)}
+                      onPress={() => {
                         tap();
-                        setItems((current) => {
-                          const at = current.findIndex((i) => i.id === item.id);
-                          return at <= 0 ? current : toggleSupersetWithAbove(current, at);
-                        });
+                        setOpenId((current) => (current === item.id ? null : item.id));
                       }}
-                      onOpenHistory={() => onOpenItem(item, draft())}
+                      // One exercise cannot be reordered, and the gesture would only
+                      // ever end where it started.
+                      onLongPress={items.length > 1 ? () => handleLift(item) : undefined}
+                      onRemove={() => {
+                        tap();
+                        setRemoving(item);
+                      }}
                     />
-                  ) : null}
-                </View>
-              );
-            })}
 
-            {/* The gap can also be the very end of the list. */}
-            {moving?.targetIndex === rest.length ? <DropGap /> : null}
+                    {openId === item.id && !lifted ? (
+                      <ItemEditor
+                        item={item}
+                        exercise={exercise}
+                        settingsRestSeconds={defaultRestSeconds}
+                        /* The first row has nothing above it to pair with. */
+                        supersetWithAbove={
+                          index === 0 ? null : isSupersettedWithAbove(items, index)
+                        }
+                        onPatch={(fn) => patchItem(item.id, fn)}
+                        onToggleSuperset={() => {
+                          tap();
+                          setItems((current) => {
+                            const at = current.findIndex((i) => i.id === item.id);
+                            return at <= 0 ? current : toggleSupersetWithAbove(current, at);
+                          });
+                        }}
+                        onOpenHistory={() => onOpenItem(item, draft())}
+                      />
+                    ) : null}
+                  </Animated.View>
+                );
+              })}
 
-            {moving ? null : (
-              <>
-                <Separator inset={0} />
-                <AddRow label="Add exercise" onPress={() => onAddExercise(draft())} />
-              </>
-            )}
-          </ListCard>
+              {lifted ? null : (
+                <>
+                  <Separator inset={0} />
+                  <AddRow label="Add exercise" onPress={() => onAddExercise(draft())} />
+                </>
+              )}
+            </ListCard>
+          </View>
 
-          {moving && movingItem && movingExercise ? (
-            <LiftedRow
-              exercise={movingExercise}
-              position={moving.targetIndex + 1}
-              total={items.length}
-              onPress={drop}
-            />
-          ) : (
+          {lifted ? null : (
             <View className="mx-lg mt-xl">
               <TextButton label="Delete routine" onPress={onDelete} />
             </View>
@@ -429,6 +463,7 @@ export function RoutineEditorScreen({
 function RoutineRow({
   exercise,
   dimmed,
+  isLifted,
   isOpen,
   superset,
   summary,
@@ -437,19 +472,30 @@ function RoutineRow({
   onRemove,
 }: {
   exercise: Exercise;
+  /** Another row is in the air, so this one is not the subject right now. */
   dimmed: boolean;
+  /** THIS row is in the air: it follows the finger and marks itself. */
+  isLifted: boolean;
   isOpen: boolean;
   /** Where this row sits in a superset run — drives the rule down its left edge. */
   superset: 'none' | 'start' | 'continue';
   /** Built by the screen, which is the only place that knows the live setting. */
   summary: string;
   onPress: () => void;
-  onLongPress: () => void;
-  /** Absent while reordering — nothing in the list is actionable then. */
+  /** Absent on a one-row list — there is nowhere for a drag to end. */
+  onLongPress?: () => void;
   onRemove?: () => void;
 }) {
   return (
-    <View className="flex-row items-center" style={dimmed ? { opacity: 0.5 } : undefined}>
+    <View
+      className={[
+        'flex-row items-center',
+        // `surface-alt` on a `green-dim` hairline while it is up — the same
+        // treatment the session's lifted card gets, and no shadow.
+        isLifted ? 'rounded-surface border border-green-dim bg-surface-alt' : '',
+      ].join(' ')}
+      style={dimmed ? { opacity: 0.5 } : undefined}
+    >
       {/* The bracket. A 2 dp `green-dim` rule down the left edge of every member,
           so a run reads as one block without a second hue or a label. */}
       <View
@@ -471,13 +517,18 @@ function RoutineRow({
         ]
           .filter(Boolean)
           .join(', ')}
-        accessibilityHint="Long press to reorder"
+        accessibilityHint={onLongPress ? 'Long press, then slide to reorder' : undefined}
         className="h-row-lg flex-1 flex-row items-center pl-md"
       >
-        <DragHandle color={palette.inkFaint} />
+        <DragHandle color={isLifted ? palette.greenBright : palette.inkFaint} />
 
         <View className="ml-md flex-1">
-          <Text numberOfLines={1} className="text-body font-medium text-ink">
+          <Text
+            numberOfLines={1}
+            className={['text-body font-medium', isLifted ? 'text-green-bright' : 'text-ink'].join(
+              ' ',
+            )}
+          >
             {exercise.name}
           </Text>
           <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
@@ -513,50 +564,6 @@ function RoutineRow({
         <View className="w-lg" />
       )}
     </View>
-  );
-}
-
-/** The gap the lifted row will fall into. `bg` + two green-dim rules, 64 high. */
-function DropGap() {
-  return (
-    <View className="h-row-lg items-center justify-center border-y border-green-dim bg-bg">
-      <Kicker tone="dim">drop here</Kicker>
-    </View>
-  );
-}
-
-/**
- * The row in the air. `surface-alt` on a `green-dim` hairline, handle and
- * position line in `green-bright`, and no shadow — see the file header.
- */
-function LiftedRow({
-  exercise,
-  position,
-  total,
-  onPress,
-}: {
-  exercise: Exercise;
-  position: number;
-  total: number;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${exercise.name}, position ${position} of ${total}. Tap to drop.`}
-      className="mx-lg mt-lg h-row-lg flex-row items-center rounded-surface border border-green-dim bg-surface-alt pl-md pr-lg"
-    >
-      <DragHandle color={palette.greenBright} />
-      <View className="ml-md flex-1">
-        <Text numberOfLines={1} className="text-body font-semibold text-ink">
-          {exercise.name}
-        </Text>
-        <Text className="mt-[2px] text-label tabular-nums text-green-bright">
-          position {position} of {total}
-        </Text>
-      </View>
-    </Pressable>
   );
 }
 

@@ -513,3 +513,73 @@ describe('a sequence that runs out of steps', () => {
     expect(useLibrary.getState().sequence.isActive).toBe(false);
   });
 });
+
+/*
+ * `Make every exercise a rep ladder` in Settings. The flag is the settings store's;
+ * these are the library's half — and every one of them is a rule about what the
+ * switch must NOT touch, because that is where a bulk edit does its damage.
+ */
+describe('setLadderOnAllExercises', () => {
+  const only = (...exercises: Exercise[]) => useLibrary.setState({ exercises });
+  const byId = (id: string) => useLibrary.getState().exercises.find((e) => e.id === id);
+
+  it('gives every rep-counted exercise a ladder, seeded from its own target reps', () => {
+    only(newExercise({ id: 'a', defaultCount: 20 }), newExercise({ id: 'b' }));
+
+    useLibrary.getState().setLadderOnAllExercises(true);
+
+    expect(byId('a')?.ladder).toEqual({ max: 20, earned: 0, auto: true });
+    // No `defaultCount` — the seed, not zero and not a broken ladder.
+    expect(byId('b')?.ladder).toEqual({ max: 12, earned: 0, auto: true });
+  });
+
+  it('leaves a ladder the user set up alone', () => {
+    only(newExercise({ id: 'a', defaultCount: 8, ladder: { max: 16, earned: 2 } }));
+
+    useLibrary.getState().setLadderOnAllExercises(true);
+
+    expect(byId('a')?.ladder).toEqual({ max: 16, earned: 2 });
+  });
+
+  it('leaves everything that is not rep-counted alone', () => {
+    only(
+      newExercise({ id: 'plank', countUnit: 'seconds', defaultCount: 60 }),
+      newExercise({ id: 'bag', countUnit: 'rounds' }),
+      newExercise({ id: 'swim', countUnit: 'meters' }),
+    );
+
+    useLibrary.getState().setLadderOnAllExercises(true);
+
+    for (const id of ['plank', 'bag', 'swim']) expect(byId(id)?.ladder).toBeUndefined();
+  });
+
+  it('takes back exactly the ladders it added', () => {
+    only(newExercise({ id: 'auto' }), newExercise({ id: 'mine', ladder: { max: 16, earned: 0 } }));
+    useLibrary.getState().setLadderOnAllExercises(true);
+
+    useLibrary.getState().setLadderOnAllExercises(false);
+
+    expect(byId('auto')?.ladder).toBeUndefined();
+    // Never the setting's to remove: the user typed that max.
+    expect(byId('mine')?.ladder).toEqual({ max: 16, earned: 0 });
+  });
+
+  it('keeps an auto ladder that has earned a rep', () => {
+    // A rep earned is a session that happened, and a switch does not delete one.
+    only(newExercise({ id: 'a', ladder: { max: 12, earned: 1, auto: true } }));
+
+    useLibrary.getState().setLadderOnAllExercises(false);
+
+    expect(byId('a')?.ladder).toEqual({ max: 12, earned: 1, auto: true });
+  });
+
+  it('writes nothing when nothing changes', () => {
+    only(newExercise({ id: 'plank', countUnit: 'seconds' }));
+    const before = useLibrary.getState().exercises;
+
+    useLibrary.getState().setLadderOnAllExercises(true);
+
+    // Same array, so a library of holds does not get rewritten to disk for nothing.
+    expect(useLibrary.getState().exercises).toBe(before);
+  });
+});

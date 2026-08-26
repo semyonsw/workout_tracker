@@ -10,6 +10,7 @@ import {
   currentSettings,
   sanitizeSettings,
   useSettings,
+  type Settings,
 } from './settingsStore';
 
 afterEach(() => {
@@ -224,5 +225,37 @@ describe('the plate list', () => {
     expect(sanitizeSettings(undefined).availablePlatesKg).toEqual(
       DEFAULT_SETTINGS.availablePlatesKg,
     );
+  });
+});
+
+/*
+ * The one flag that defaults OFF, which makes `!== false` — the test every other
+ * flag in `sanitizeSettings` uses — exactly the wrong one for it. A device that
+ * upgraded has no such key, and reading that absence as "on" would have it rewrite
+ * its whole exercise library on first launch.
+ */
+describe('make every exercise a rep ladder', () => {
+  it('is off by default and off when the key is missing', () => {
+    expect(DEFAULT_SETTINGS.ladderAllExercises).toBe(false);
+    expect(sanitizeSettings({}).ladderAllExercises).toBe(false);
+    expect(sanitizeSettings(undefined).ladderAllExercises).toBe(false);
+  });
+
+  it('is on only for a literal true', () => {
+    expect(sanitizeSettings({ ladderAllExercises: true }).ladderAllExercises).toBe(true);
+    for (const value of [1, 'true', {}, []]) {
+      expect(
+        sanitizeSettings({ ladderAllExercises: value } as unknown as Partial<Settings>)
+          .ladderAllExercises,
+      ).toBe(false);
+    }
+  });
+
+  it('round-trips through the store', () => {
+    useSettings.getState().setFlag('ladderAllExercises', true);
+    expect(currentSettings().ladderAllExercises).toBe(true);
+
+    useSettings.getState().setFlag('ladderAllExercises', false);
+    expect(currentSettings().ladderAllExercises).toBe(false);
   });
 });

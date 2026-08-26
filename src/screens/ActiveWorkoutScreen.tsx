@@ -64,45 +64,43 @@
  *   • LONG PRESS, THEN SLIDE to reorder. The order you planned is not the order the
  *     machines are free in.
  *
- * ── HOW THE DRAG WORKS, AND WHY IT IS BUILT THIS WAY ────────────────────────
+ * ── ONE CARD OPEN, OR NONE ──────────────────────────────────────────────────
  *
- * `react-native-gesture-handler` is not a dependency and this is not worth adding
- * one for, so the reorder is plain `PanResponder`, arranged around the one thing
- * that is genuinely awkward without a gesture library: a long press and the slide
- * that follows it are ONE touch, and the press is owned by the card while the slide
- * has to be owned by the list.
+ * Two different questions used to share one answer, and that is what made the list
+ * feel stuck:
  *
- *   1. The long press sets `lifted`. That is a MODE, not a gesture in flight — the
- *      same model the routine editor's reorder uses. So releasing the finger
- *      without moving leaves the card in the air rather than dropping it somewhere
- *      the user never chose, and `Drop` in the header is always a way out.
- *   2. One `PanResponder` wraps the whole list and claims the touch on MOVE, but
- *      only while something is lifted. Before that it claims nothing, so every ✓,
- *      every value cell and the scroll itself behave exactly as they always did.
- *   3. While lifted the cards stop accepting touches entirely (`pointerEvents`),
- *      because a finger sliding a card over a ✓ must not log a set, and the
- *      ScrollView stops scrolling so the two gestures can't fight.
- *   4. The lifted card follows the finger through an `Animated.Value` driven
- *      natively — a `useState` per touch-move would re-render eighteen set rows at
- *      60 Hz to move one card.
+ *   • WHICH EXERCISE AM I ON? — the cursor, `activeEntryId` in the store. It is
+ *     what `completeSet` advances, what `Rest` belongs to, and what the auto-scroll
+ *     follows. It always points somewhere while the session has exercises.
+ *   • WHICH CARD IS OPEN? — a view state, and it is allowed to be NOTHING. Tapping
+ *     the open card's header shuts it; tapping any other card opens that one and
+ *     moves the cursor to it, because tapping an exercise is saying "I'm doing this
+ *     now".
  *
- * The drop index is computed from the CARD MIDPOINTS captured on layout, not from
- * a row height: the expanded card is four times the height of a collapsed one, so
- * anything that divides a distance by a constant lands on the wrong exercise. That
- * arithmetic is `lib/reorder.ts` and not this file — it is the one genuinely
- * tricky calculation in the reorder, it has four edge cases, and none of them can
- * be reached from a test that has to render a screen. What stays here is the
- * gesture.
+ * So `collapsedId` below is not a second cursor. It records the one thing the
+ * store has no business knowing: that the user has shut the card they are on. The
+ * moment the cursor moves — a finished exercise, an exercise added mid-session —
+ * the new card opens, which is the behaviour that made one-card-at-a-time worth
+ * having in the first place.
  *
- * One honest limitation of doing it this way: the list does not scroll while a card
- * is in the air, so a single slide can only reach as far as the finger can. Moving
- * an exercise past the edge of the screen is two moves — drop, scroll, lift again —
- * which is what the mode makes natural, and is the reason `Drop` is always in the
- * header rather than only under the finger.
+ * A SHUT CARD THAT IS THE CURRENT ONE GLOWS. It has to: with everything closed the
+ * list is eight names and nothing else, and "where was I" is then a question the
+ * user has to answer by remembering. `isCurrent` is that mark — the name goes
+ * green-bright and the card takes a green ring, the same green the next set's row
+ * outline uses inside the open card, because both mean THIS IS THE WORK.
+ *
+ * ── HOW THE DRAG WORKS ──────────────────────────────────────────────────────
+ *
+ * LONG PRESS, THEN SLIDE — `hooks/useDragReorder.ts`, shared with the routine
+ * editor so the gesture is the same one in both lists. This screen supplies the
+ * three things only it knows: the card ids in order, the layouts captured on each
+ * card's `onLayout`, and `moveEntry` to commit. What it renders for the mode is
+ * here — the lifted card following `dragY`, every other card dimmed, and the whole
+ * list refusing touches so a finger sliding a card across a ✓ does not log a set.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
@@ -115,7 +113,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
 import type { DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
-import { dropIndex, liftIndex, type CardLayout } from '../lib/reorder';
+import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
 import { describeLadderOutcomes, ladderOutcomes } from '../lib/repLadder';
 import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import { supersetPosition } from '../lib/superset';
@@ -181,6 +179,16 @@ export function ActiveWorkoutScreen({
   /** Where the list wrapper starts inside the scroll content. */
   const listTop = useRef(0);
   const [confirming, setConfirming] = useState<'finish' | 'clock' | 'discard' | null>(null);
+  /**
+   * The card the user has SHUT, when it is the one the cursor is on.
+   *
+   * Screen-local and deliberately not persisted: reopening the app should show you
+   * the exercise you are on, not the fact that you closed it at some point. It is
+   * compared against the live cursor rather than cleared when the cursor moves, so
+   * a finished exercise opens the next one without a second piece of bookkeeping —
+   * see the file header.
+   */
+  const [collapsedId, setCollapsedId] = useState<ID | null>(null);
 
   /* --- store bindings: one selector per slice, never the whole store --- */
   const session = useActiveWorkout((s) => s.session);
@@ -233,6 +241,10 @@ export function ActiveWorkoutScreen({
    */
   const availablePlatesKg = useSettings((s) => s.availablePlatesKg);
 
+  /** The one open card, or null when the user has shut the one they are on. */
+  const expandedEntryId =
+    activeEntryId != null && activeEntryId === collapsedId ? null : activeEntryId;
+
   const isStarted = session?.startedAt != null;
   const elapsedMinutes = useElapsedMinutes(session?.startedAt ?? null);
 
@@ -241,7 +253,7 @@ export function ActiveWorkoutScreen({
     () => (session?.entries ?? []).map((e) => e.localId),
     [session?.entries],
   );
-  const reorder = useCardReorder(entryIds, cardLayouts, moveEntry);
+  const reorder = useDragReorder(entryIds, cardLayouts, moveEntry);
   const { lifted, dragY, panHandlers, lift, drop } = reorder;
   const liftedName = lifted
     ? (session?.entries.find((e) => e.localId === lifted)?.exercise.name ?? '')
@@ -249,14 +261,34 @@ export function ActiveWorkoutScreen({
 
   /* --- keep the active card in view ---------------------------------- */
   useEffect(() => {
-    if (!activeEntryId || lifted) return;
-    const layout = cardLayouts.current[activeEntryId];
+    if (!expandedEntryId || lifted) return;
+    const layout = cardLayouts.current[expandedEntryId];
     if (layout == null) return;
     // -8 so the card header isn't flush against the header hairline.
     scrollRef.current?.scrollTo({ y: Math.max(0, listTop.current + layout.y - 8), animated: true });
-  }, [activeEntryId, lifted]);
+  }, [expandedEntryId, lifted]);
 
   /* --- handlers ------------------------------------------------------ */
+  /**
+   * Tapping a card: open it, or — if it is already the open one — shut it.
+   *
+   * Opening one also moves the CURSOR to it. That is not an extra: the cursor is
+   * "which exercise am I on", and reaching past three cards to open the fourth is
+   * how a user says they are on the fourth.
+   */
+  const handleToggleCard = useCallback(
+    (entryId: ID) => {
+      tap();
+      if (entryId === expandedEntryId) {
+        setCollapsedId(entryId);
+        return;
+      }
+      setCollapsedId(null);
+      if (entryId !== activeEntryId) setActiveEntry(entryId);
+    },
+    [activeEntryId, expandedEntryId, setActiveEntry],
+  );
+
   const handleToggleSet = useCallback(
     (entryId: ID, setId: ID, isCompleted: boolean) => {
       if (isCompleted) uncompleteSet(entryId, setId);
@@ -500,7 +532,10 @@ export function ActiveWorkoutScreen({
                 >
                   <ExerciseCard
                     entry={entry}
-                    isActive={entry.localId === activeEntryId}
+                    isExpanded={entry.localId === expandedEntryId}
+                    /* The cursor, which is not the same question as "is it open" —
+                       a shut card that is the current one is what glows. */
+                    isCurrent={entry.localId === activeEntryId}
                     unitSystem={unitSystem}
                     /* The bracket down a superset's left edge. Computed here
                        because only the screen can see the cards either side. */
@@ -511,7 +546,7 @@ export function ActiveWorkoutScreen({
                     dimmed={lifted != null && !isLifted}
                     restSeconds={restSeconds}
                     onStartRest={entry.localId === activeEntryId ? startRestNow : undefined}
-                    onActivate={() => setActiveEntry(entry.localId)}
+                    onToggleExpanded={() => handleToggleCard(entry.localId)}
                     // One exercise cannot be reordered, and the gesture would only
                     // ever end where it started.
                     onLift={entryIds.length > 1 ? () => lift(entry.localId) : undefined}
@@ -645,138 +680,6 @@ function SessionChip({
       </Text>
     </Pressable>
   );
-}
-
-interface Reorder {
-  /** The card in the air, or null. */
-  lifted: ID | null;
-  /** Native-driven offset for the lifted card. */
-  dragY: Animated.Value;
-  /** Where it would land, as an index into the list without it. */
-  targetIndex: number;
-  panHandlers: ReturnType<typeof PanResponder.create>['panHandlers'];
-  lift: (entryId: ID) => void;
-  drop: () => void;
-}
-
-/**
- * Long-press-then-slide reordering, in `PanResponder` and one `Animated.Value`.
- *
- * The refs are not an optimisation: `PanResponder.create` is called once (its
- * handlers close over whatever was in scope then), so every handler reads the
- * CURRENT lift, target and geometry out of a ref rather than a captured value.
- * Rebuilding the responder on each state change instead would drop the gesture
- * mid-drag, because the responder that was granted the touch is the one that no
- * longer exists.
- *
- * `targetIndex` is state as well as a ref because the header reads it. It only
- * changes when the finger crosses a card's midpoint — a handful of renders per
- * drag rather than one per pixel.
- */
-function useCardReorder(
-  entryIds: readonly ID[],
-  layouts: React.MutableRefObject<Record<ID, CardLayout>>,
-  moveEntry: (entryId: ID, toIndex: number) => void,
-): Reorder {
-  const [lifted, setLifted] = useState<ID | null>(null);
-  const [targetIndex, setTargetIndex] = useState(0);
-
-  const liftedRef = useRef<ID | null>(null);
-  const targetRef = useRef(0);
-  const idsRef = useRef(entryIds);
-  idsRef.current = entryIds;
-  const moveRef = useRef(moveEntry);
-  moveRef.current = moveEntry;
-
-  const dragY = useRef(new Animated.Value(0)).current;
-
-  const lift = useCallback(
-    (entryId: ID) => {
-      commit();
-      const index = liftIndex(idsRef.current, entryId);
-      liftedRef.current = entryId;
-      // The card starts where it already is, so its own index is the first target.
-      targetRef.current = index;
-      setTargetIndex(index);
-      setLifted(entryId);
-      dragY.setValue(0);
-    },
-    [dragY],
-  );
-
-  const drop = useCallback(() => {
-    const entryId = liftedRef.current;
-    liftedRef.current = null;
-    dragY.setValue(0);
-    setLifted(null);
-    if (!entryId) return;
-    undo();
-    moveRef.current(entryId, targetRef.current);
-  }, [dragY]);
-
-  /**
-   * Which gap the lifted card is over. The maths is `lib/reorder.ts`.
-   *
-   * All this does is hand it the four things only a component knows — the current
-   * ids, the layouts captured on layout, which card is in the air, and where it
-   * came from — and it reads them out of refs so the `PanResponder` built once at
-   * mount never sees a stale copy.
-   */
-  const targetFor = useCallback(
-    (dy: number): number => {
-      const entryId = liftedRef.current;
-      if (!entryId) return 0;
-      return dropIndex({
-        ids: idsRef.current,
-        liftedId: entryId,
-        layouts: layouts.current,
-        dy,
-        fallbackIndex: targetRef.current,
-      });
-    },
-    [layouts],
-  );
-
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        // Nothing is claimed until a card is lifted: taps, scrolls and the ✓ all
-        // behave exactly as they do when this hook isn't doing anything.
-        onStartShouldSetPanResponder: () => false,
-        onStartShouldSetPanResponderCapture: () => false,
-        onMoveShouldSetPanResponder: () => liftedRef.current != null,
-        // Capture, so the list wins the slide even though the card under the finger
-        // is what the touch started on.
-        onMoveShouldSetPanResponderCapture: () => liftedRef.current != null,
-        onPanResponderMove: (_event, gesture) => {
-          if (!liftedRef.current) return;
-          dragY.setValue(gesture.dy);
-          const next = targetFor(gesture.dy);
-          if (next !== targetRef.current) {
-            targetRef.current = next;
-            setTargetIndex(next);
-          }
-        },
-        onPanResponderRelease: () => drop(),
-        // A drag cut short by the OS (a call, a notification shade) still has to
-        // put the card down somewhere, and where the finger left it is the only
-        // honest answer.
-        onPanResponderTerminate: () => drop(),
-        onPanResponderTerminationRequest: () => false,
-      }),
-    [dragY, drop, targetFor],
-  );
-
-  /* A card that left the session (removed, or the session ended) is not liftable. */
-  useEffect(() => {
-    if (lifted && !entryIds.includes(lifted)) {
-      liftedRef.current = null;
-      dragY.setValue(0);
-      setLifted(null);
-    }
-  }, [dragY, entryIds, lifted]);
-
-  return { lifted, dragY, targetIndex, panHandlers: responder.panHandlers, lift, drop };
 }
 
 /**

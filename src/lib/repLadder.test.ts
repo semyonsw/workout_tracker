@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AUTO_LADDER_SEED_REPS,
   LADDER_MAX_LIMITS,
   LADDER_SETS,
+  autoLadderFor,
   describeLadder,
   describeLadderOutcomes,
   ladderAdvance,
@@ -15,6 +17,7 @@ import {
   ladderSpread,
   ladderTargets,
   ladderTotal,
+  isAutoLadder,
   normalizeLadder,
   performedLadderCounts,
   reshapeLadderSets,
@@ -506,5 +509,67 @@ describe('the words', () => {
       'Wide pull-ups · new max 17 · 17 + 10 + 9 + 8 + 7 next time',
     );
     expect(describeLadderOutcomes([])).toBeNull();
+  });
+});
+
+/*
+ * `Make every exercise a rep ladder` is a bulk edit, and a bulk edit that cannot be
+ * undone is a trap. `auto` is the whole of the undo: it marks a ladder the setting
+ * put there and nothing has happened to since, and these are the four ways that
+ * mark is allowed to come off.
+ */
+describe('auto ladders', () => {
+  it('keeps the auto mark through a round-trip, and only when it is true', () => {
+    expect(normalizeLadder({ max: 16, earned: 0, auto: true })).toEqual({
+      max: 16,
+      earned: 0,
+      auto: true,
+    });
+    // Absent, not `false`: a hand-made ladder round-trips as exactly `{max, earned}`.
+    expect(normalizeLadder({ max: 16, earned: 0 })).toEqual({ max: 16, earned: 0 });
+    expect(normalizeLadder({ max: 16, earned: 0, auto: 'yes' })).toEqual({ max: 16, earned: 0 });
+  });
+
+  it('seeds the max from the exercise\u2019s own target reps', () => {
+    expect(autoLadderFor({ countUnit: 'reps', defaultCount: 20 })).toEqual({
+      max: 20,
+      earned: 0,
+      auto: true,
+    });
+  });
+
+  it('falls back to the seed when the exercise has never said what it targets', () => {
+    expect(autoLadderFor({ countUnit: 'reps' })).toEqual({
+      max: AUTO_LADDER_SEED_REPS,
+      earned: 0,
+      auto: true,
+    });
+  });
+
+  it('hands back the ladder an exercise already runs, rather than a fresh seed', () => {
+    // The point of rule 1 in `setLadderOnAllExercises`: a tested max and the reps
+    // earned against it are what the feature is FOR, not something to overwrite.
+    expect(
+      autoLadderFor({ countUnit: 'reps', defaultCount: 8, ladder: { max: 16, earned: 2 } }),
+    ).toEqual({ max: 16, earned: 2 });
+  });
+
+  it('refuses every unit that is not reps', () => {
+    for (const countUnit of ['seconds', 'rounds', 'meters'] as const) {
+      expect(autoLadderFor({ countUnit, defaultCount: 60 })).toBeNull();
+    }
+  });
+
+  it('stops being the setting\u2019s to remove once a rep has been earned', () => {
+    expect(isAutoLadder({ max: 12, earned: 0, auto: true })).toBe(true);
+    expect(isAutoLadder({ max: 12, earned: 1, auto: true })).toBe(false);
+    expect(isAutoLadder({ max: 12, earned: 0 })).toBe(false);
+    expect(isAutoLadder(null)).toBe(false);
+  });
+
+  it('drops the mark the moment the ladder advances', () => {
+    // `ladderAdvance` rebuilds the object, so one met session turns an auto ladder
+    // into a fact the setting will not take away.
+    expect(ladderAdvance({ max: 12, earned: 0, auto: true }).auto).toBeUndefined();
   });
 });

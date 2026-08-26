@@ -129,6 +129,51 @@ export function supportsLadder(countUnit: CountUnit): boolean {
   return countUnit === 'reps';
 }
 
+/**
+ * Where a max starts when nobody has typed one — the seed for a ladder switched on
+ * in bulk rather than exercise by exercise.
+ *
+ * The exercise's own `defaultCount` first, which is the closest thing the user has
+ * ever told the app to a max for that movement: a lift they said they do twelve of
+ * has a max nearer twelve than any constant here would pick. Twelve is the fallback
+ * because it is what a blank exercise starts at (`emptyExerciseDraft`), so the two
+ * paths into a new ladder agree.
+ *
+ * It is a STARTING POINT, and the app says so: the create screen's max stepper is
+ * one tap away, the first met session moves it, and the whole scheme is built to
+ * walk a wrong max to a right one.
+ */
+export const AUTO_LADDER_SEED_REPS = 12;
+
+/**
+ * The ladder `Make every exercise a rep ladder` would put on this exercise, or null
+ * where the scheme does not apply.
+ *
+ * Marked `auto` so switching the setting off can take back exactly what switching
+ * it on gave — see `RepLadder.auto`. Never overwrites: an exercise that already
+ * carries a usable ladder keeps the one it has, max, earned reps and all.
+ */
+export function autoLadderFor(
+  exercise: LadderSubject & { defaultCount?: number },
+): RepLadder | null {
+  if (!supportsLadder(exercise.countUnit)) return null;
+  const existing = ladderOf(exercise);
+  if (existing) return existing;
+  return { max: clampMax(exercise.defaultCount ?? AUTO_LADDER_SEED_REPS), earned: 0, auto: true };
+}
+
+/**
+ * Is this a ladder the bulk setting put here and nothing has happened to since?
+ *
+ * The `earned` half is the whole reason this is a function rather than a field
+ * read: a rep earned against a ladder is a session the user trained, and switching
+ * a setting off must not delete one. Such a ladder stays, and stops being `auto`
+ * the first time `ladderAdvance` rebuilds it.
+ */
+export function isAutoLadder(ladder: RepLadder | null | undefined): boolean {
+  return ladder?.auto === true && (ladder.earned ?? 0) === 0;
+}
+
 /** A usable `{ max, earned }` out of anything at all, or null for "no ladder". */
 export function normalizeLadder(value: unknown): RepLadder | null {
   if (typeof value !== 'object' || value === null) return null;
@@ -140,7 +185,9 @@ export function normalizeLadder(value: unknown): RepLadder | null {
     typeof raw.earned === 'number' && Number.isFinite(raw.earned) && raw.earned > 0
       ? Math.min(Math.round(raw.earned), MAX_EARNED)
       : 0;
-  return { max, earned };
+  // Present only when true, so a hand-made ladder round-trips as `{ max, earned }`
+  // and the flag costs nothing on disk. See `RepLadder.auto`.
+  return raw.auto === true ? { max, earned, auto: true } : { max, earned };
 }
 
 /**

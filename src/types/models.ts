@@ -159,6 +159,17 @@ export type TimerMode = 'manual' | 'countdown' | 'countup';
 export interface RepLadder {
   max: number;
   earned: number;
+  /**
+   * This ladder was switched on in bulk by `Make every exercise a rep ladder` in
+   * Settings, and nobody has touched its numbers since.
+   *
+   * It exists so that switching that setting back OFF is an undo rather than a
+   * second mass edit. A ladder the user set up by hand, and one that has since
+   * earned a rep, are FACTS — `ladderAdvance` and `draftToExercise` both rebuild
+   * the object without this flag, so the first session or the first edit is what
+   * turns an auto ladder into one the app will not take away again.
+   */
+  auto?: boolean;
 }
 
 export type LoadMode =

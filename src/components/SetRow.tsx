@@ -10,6 +10,13 @@
  *   └──────────────────────────────────────────────┘
  *
  * Interaction contract:
+ *   • THE SET THAT SHOULD HAPPEN NEXT IS RINGED IN GREEN. One row in the whole
+ *     session carries it — the first unlogged row of the exercise the cursor is
+ *     on — and it is the answer to "I pressed Start, now what". It is drawn as an
+ *     ABSOLUTE overlay rather than as a border on the row, because a border is 2 dp
+ *     of box the row does not have: the numbers under a thumb must not shift
+ *     sideways when the ring arrives, and they must not shift back when the ✓
+ *     lands and it moves to the row below.
  *   • The row arrives PRE-FILLED with last session's numbers, rendered faint
  *     ("ghost") on a lifted `surface-alt` background. That is the visual promise
  *     of "tap ✓ if nothing changed" — logging an identical set costs ONE tap.
@@ -51,7 +58,7 @@ import type { DraftSet } from '../lib/draft';
 import type { Exercise, UnitSystem } from '../types/models';
 import { describePlates, platesFor } from '../lib/plates';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
-import { palette } from '../theme/tokens';
+import { glow as GLOW, palette } from '../theme/tokens';
 import { Icon } from './Icon';
 
 export type SetField = 'weight' | 'count';
@@ -70,6 +77,11 @@ interface SetRowProps {
   unitSystem: UnitSystem;
   /** The next uncompleted set — lifted onto `surface-alt` so the eye lands on it. */
   isNext: boolean;
+  /**
+   * THE next set of the whole session: this row is `isNext` AND its exercise is the
+   * one the cursor is on. Rings the row in green — see the file header.
+   */
+  isUpNext?: boolean;
   /** Which field (if any) is currently open in the inline editor. */
   focusedField: SetField | null;
   /** This exercise is clock-driven: render the ▶. */
@@ -94,6 +106,7 @@ function SetRowComponent({
   exercise,
   unitSystem,
   isNext,
+  isUpNext = false,
   focusedField,
   isTimed = false,
   isTiming = false,
@@ -103,6 +116,11 @@ function SetRowComponent({
   onPressTimer,
 }: SetRowProps) {
   const done = set.isCompleted;
+  /*
+   * A logged set is not "up next" however the card labels it: the ring means DO
+   * THIS, and the row it belongs on moves the instant the ✓ lands.
+   */
+  const ring = isUpNext && !done;
   // Ghost = a value carried over from last session that the user hasn't touched.
   const ghost = set.isPrefilled && !done;
   const valueTone = ghost ? 'text-ink-faint' : 'text-ink';
@@ -231,6 +249,29 @@ function SetRowComponent({
       >
         <Icon name="check" size={20} color={done ? palette.ink : palette.inkFaint} />
       </Pressable>
+
+      {/*
+        The ring. Last child so it paints over the row, `pointerEvents="none"` so it
+        takes nothing from the ✓ under it, and inset 6/4 so it reads as a ring
+        AROUND the row rather than as the card's own edge. Zero layout cost: see the
+        file header on why this is not a border.
+      */}
+      {ring ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 6,
+            right: 6,
+            top: 4,
+            bottom: 4,
+            borderRadius: 14,
+            borderWidth: 2,
+            borderColor: palette.greenBright,
+            boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 12, color: GLOW }],
+          }}
+        />
+      ) : null}
     </View>
   );
 }

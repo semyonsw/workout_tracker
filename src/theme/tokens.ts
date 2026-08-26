@@ -13,7 +13,8 @@
  *    sizes and is for fills. Text on a `green` fill is `ink` at 600.
  *  - TWO radii (14 for surfaces, pill for the rest), both in `tailwind.config.js`.
  *  - Elevation is hairlines + surface steps. Exactly ONE real shadow exists,
- *    under the timer pill.
+ *    under the timer pill, and exactly ONE glow (`glow`), behind the two marks
+ *    that say "this is the work". Neither carries meaning on its own.
  *  - Numbers are always tabular. A weight that shifts by a pixel when it goes
  *    from 9 to 10 reps is the difference between "app" and "instrument".
  */
@@ -65,6 +66,18 @@ export const size = {
   /** Bottom tab bar — exists only outside a session. */
   tabBar: 64,
 } as const;
+
+/**
+ * The one GLOW, and the only thing in the app that is not a hairline or a surface
+ * step doing the job of elevation.
+ *
+ * `green-bright` at a third, spread behind two marks and no others: the current
+ * exercise's card while it is shut, and the row of the set that should happen next.
+ * Both marks are complete without it — a `green-bright` border and a `green-bright`
+ * name carry the meaning — so a renderer that drops `boxShadow` loses gloss and not
+ * information. That is the condition on which it is allowed to exist.
+ */
+export const glow = 'rgba(63,169,108,0.34)';
 
 /**
  * The app's ONLY shadow. It belongs to the timer pill and nothing else — the

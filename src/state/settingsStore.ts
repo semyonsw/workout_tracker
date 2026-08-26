@@ -60,6 +60,21 @@ export interface Settings {
   keepAwakeEnabled: boolean;
   /** Fire a local notification when a timer ends, for a phone in a pocket. */
   notifyOnTimerEnd: boolean;
+  /**
+   * EVERY rep-counted exercise runs a rep ladder.
+   *
+   * The ladder (`lib/repLadder.ts`) is a per-exercise fact — it derives a whole
+   * session's reps from one max, and the max belongs to the lifter and the
+   * movement. This setting does not change that; it is a BULK EDITOR with a memory.
+   * Switching it on puts an `auto` ladder on every rep-counted exercise that hasn't
+   * got one and makes new ones default to having a ladder; switching it off takes
+   * back exactly the ladders it gave and nothing else — see `RepLadder.auto`.
+   *
+   * So it is a flag about the LIBRARY, kept here rather than derived, for one
+   * reason: without it, "should the exercise I create tomorrow have a ladder?" has
+   * no answer, and the setting would be a button that quietly stopped applying.
+   */
+  ladderAllExercises: boolean;
   unitSystem: UnitSystem;
   /**
    * The plates this gym has, in kilograms.
@@ -91,6 +106,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hapticsEnabled: true,
   keepAwakeEnabled: true,
   notifyOnTimerEnd: true,
+  ladderAllExercises: false,
   unitSystem: 'metric',
   availablePlatesKg: [...DEFAULT_PLATES_KG],
 };
@@ -225,6 +241,10 @@ export function sanitizeSettings(input: Partial<Settings> | undefined | null): S
     hapticsEnabled: raw.hapticsEnabled !== false,
     keepAwakeEnabled: raw.keepAwakeEnabled !== false,
     notifyOnTimerEnd: raw.notifyOnTimerEnd !== false,
+    // The one flag that defaults OFF, so `!== false` would be the wrong test: an
+    // upgraded device with no such key must not wake up having rewritten its
+    // whole library.
+    ladderAllExercises: raw.ladderAllExercises === true,
     unitSystem: raw.unitSystem === 'imperial' ? 'imperial' : 'metric',
     availablePlatesKg: clampPlates(raw.availablePlatesKg),
   };
@@ -236,7 +256,12 @@ interface SettingsState extends Settings {
   bumpNumber: (key: NumericSetting, delta: number) => void;
   setFlag: (
     key:
-      'autoStartRest' | 'soundEnabled' | 'hapticsEnabled' | 'keepAwakeEnabled' | 'notifyOnTimerEnd',
+      | 'autoStartRest'
+      | 'soundEnabled'
+      | 'hapticsEnabled'
+      | 'keepAwakeEnabled'
+      | 'notifyOnTimerEnd'
+      | 'ladderAllExercises',
     value: boolean,
   ) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;

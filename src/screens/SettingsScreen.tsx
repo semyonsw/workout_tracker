@@ -91,6 +91,7 @@ import {
   saveJsonFile,
 } from '../lib/backupFile';
 import { csvBaseName, workoutsToCsv } from '../lib/csv';
+import { LADDER_SETS, describeLadder, ladderForMax } from '../lib/repLadder';
 import { commit, countFinal, countTick, tap } from '../lib/feedback';
 import { restMedians } from '../lib/restHistory';
 import { formatClock, formatWeight, kgToLb, lbToKg, unitLabel, weightSteps } from '../lib/units';
@@ -100,6 +101,7 @@ import {
   exportBackupText,
   mergeBackupWorkouts,
 } from '../state/dataTransfer';
+import { useLibrary } from '../state/libraryStore';
 import { SETTING_LIMITS, useSettings, type NumericSetting } from '../state/settingsStore';
 import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
@@ -181,6 +183,13 @@ function onThisPhone(): BackupCounts {
 
 export function SettingsScreen() {
   const settings = useSettings();
+  /**
+   * The bulk half of `Make every exercise a rep ladder`. The flag lives in
+   * Settings, the ladders live on the exercises, and this row is the one place
+   * that keeps the two in step — see `libraryStore.setLadderOnAllExercises` for
+   * what it will and will not touch.
+   */
+  const setLadderOnAllExercises = useLibrary((s) => s.setLadderOnAllExercises);
   const clearHistory = useWorkoutHistory((s) => s.clearHistory);
   const workouts = useWorkoutHistory((s) => s.workouts);
   const workoutCount = workouts.length;
@@ -470,6 +479,37 @@ export function SettingsScreen() {
               onIncrease={() => bump('prepareSeconds', 1)}
             />
           </ListCard>
+
+          {/* ----------------------------------------------------------
+              REP LADDER — one switch, and it edits the LIBRARY.
+
+              Everything else on this screen is a number the app reads later. This
+              one reaches out and changes every rep-counted exercise you have, which
+              is exactly what makes it worth having: the ladder is per-exercise
+              because a max is per-movement, and turning it on thirty times through
+              thirty create screens is how a good scheme goes unused.
+
+              It is reversible, and the line under it says what "off" gives back:
+              the ladders this switch added and nothing else. A max you set yourself
+              and a ladder that has earned a rep are facts, and a setting does not
+              get to delete a fact. */}
+          <Kicker className="mx-lg mb-sm mt-xxl">Rep ladder</Kicker>
+          <ListCard className="mx-lg">
+            <SwitchRow
+              label="Make every exercise a rep ladder"
+              hint={`One max, ${LADDER_SETS} sets — ${describeLadder(ladderForMax(12, LADDER_SETS))} at a max of 12`}
+              value={settings.ladderAllExercises}
+              onChange={(v) => {
+                settings.setFlag('ladderAllExercises', v);
+                setLadderOnAllExercises(v);
+              }}
+            />
+          </ListCard>
+          <Text className="mx-lg mt-sm text-label text-ink-faint">
+            {settings.ladderAllExercises
+              ? 'Every rep-counted exercise runs a ladder, and new ones start with it on. Switching this off takes back only the ladders it added — a max you set yourself, and any ladder that has earned a rep, stay exactly as they are.'
+              : 'Switches the ladder on for every rep-counted exercise at once, seeded from each one’s target reps. Holds, rounds and distances are left alone — a ladder is a rep prescription.'}
+          </Text>
 
           {/* ---------------------------------------------------------- */}
           <Kicker className="mx-lg mb-sm mt-xxl">Countdown</Kicker>

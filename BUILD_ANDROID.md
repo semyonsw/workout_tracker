@@ -4,6 +4,42 @@ A sideloadable, self-contained release APK for a Galaxy S24 (or any arm64 Androi
 phone). No Expo account, no cloud build, no Metro server — the JS bundle is
 compiled into the APK, so it runs with the laptop switched off.
 
+## 1.0.2 — where you are in the workout, and one gesture for reordering
+
+`versionCode` 15. **It needs a prebuild**, but only because `app.json` carries the
+new version — no native dependency moved, so the set of native modules in this APK
+is identical to 1.0.1's.
+
+- **The set you should do next is ringed in green.** Press `Start workout` and the
+  first exercise's first row is outlined; the ring moves down as you log, and
+  across when an exercise finishes. Exactly one row in the session ever has it, so
+  "which one now" is never a question you answer by counting ✓s.
+- **Exercise cards close.** Tapping the open card's header — it has a `⌄` on it
+  now — shuts it, and you can shut every one of them. The list becomes eight names
+  when what you want is the shape of the session rather than the numbers in it.
+  Tapping any other card still opens that one and closes the last.
+- **The exercise you are on glows while it is shut.** Green name, green ring around
+  the card. With everything closed that is the only thing on screen saying where
+  you were, so closing the list never costs you your place.
+- **The routine editor reorders by dragging.** Long press a row and slide it, the
+  same gesture the exercise cards in a live workout have always had. It used to
+  lift the row and then ask you to TAP where it should go — two deliberate acts for
+  one movement, and a different muscle memory depending on which screen you were
+  on. Both screens now run the same code.
+- **`Settings → Rep ladder → Make every exercise a rep ladder`.** One switch, and
+  every rep-counted exercise in your library gets a ladder, seeded from its own
+  target reps. New exercises you create start with it on.
+  It is **reversible**: switching it off takes back only the ladders the switch
+  added. A max you set yourself, and any ladder that has already earned a rep, stay
+  exactly as they are — a setting does not get to delete a session you trained.
+  Holds, rounds and distances are never touched; a ladder is a rep prescription.
+  Note that an exercise running a ladder does not get progressive-overload nudges —
+  the ladder is the progression — so turning this on quietens those across the
+  board. That is the trade, and it is the same one the per-exercise toggle has
+  always made.
+
+712 tests.
+
 ## 1.0.1 — the History tab going empty after "close all"
 
 `versionCode` 14, and it is a fix release: **a log that could not be READ was

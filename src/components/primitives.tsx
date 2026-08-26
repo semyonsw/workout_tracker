@@ -63,14 +63,23 @@ export function Kicker({
 export function ListCard({
   children,
   className = '',
+  clip = true,
 }: {
   children: ReactNode;
   className?: string;
+  /**
+   * Clip children to the card's rounded box. On by default, and off for exactly one
+   * reason: a row lifted out of the list for reordering is translated past the
+   * card's own edges, and a clipped card cuts it in half on the way. Nothing else
+   * here overflows, so turning it off costs nothing while a drag is in flight.
+   */
+  clip?: boolean;
 }) {
   return (
     <View
       className={[
-        'overflow-hidden rounded-surface border border-hairline bg-surface',
+        clip ? 'overflow-hidden' : 'overflow-visible',
+        'rounded-surface border border-hairline bg-surface',
         className,
       ].join(' ')}
     >
