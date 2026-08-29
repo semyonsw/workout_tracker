@@ -196,14 +196,33 @@ export function PillClock({
   );
 }
 
-/** The micro label beside the clock: what this countdown is. */
-export function PillLabel({ children, tone }: { children: ReactNode; tone: PillTone }) {
+/**
+ * The micro label beside the clock — or under it: what this countdown is.
+ *
+ * `inline` is the default and puts it on the clock's baseline, which is where a
+ * two-control pill has room for it. The rest pill sets it false and stacks the
+ * label under the numerals, because it carries FOUR controls (−15, +15, pause,
+ * skip) and on a 360 dp phone they leave the inline label about fifteen points to
+ * live in — which renders as `BETW…`, a label that has stopped being one.
+ *
+ * Stacking rather than dropping it: `BETWEEN SETS` vs `NEXT EXERCISE` is how you
+ * check, mid-workout, that the two rest settings are doing what they say.
+ */
+export function PillLabel({
+  children,
+  tone,
+  inline = true,
+}: {
+  children: ReactNode;
+  tone: PillTone;
+  inline?: boolean;
+}) {
   return (
     <Text
       numberOfLines={1}
       allowFontScaling={false}
       style={{ color: tone.label }}
-      className="ml-md flex-1 text-micro font-semibold uppercase"
+      className={`text-micro font-semibold uppercase ${inline ? 'ml-md flex-1' : 'mt-xs'}`}
     >
       {children}
     </Text>

@@ -35,6 +35,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { defaultTargetCount, defaultTargetSets } from '../lib/draft';
 import { autoLadderFor, isAutoLadder, ladderOf } from '../lib/repLadder';
+import { clearExerciseRest } from '../lib/rest';
 import { seedExercises, seedRoutines, seedUser } from '../data/seed';
 import type {
   Exercise,
@@ -69,6 +70,11 @@ interface LibraryState {
    * flag of the same name. Reversible, and that is the whole design of it.
    */
   setLadderOnAllExercises: (on: boolean) => void;
+  /**
+   * Drop every per-exercise rest override, so the whole library follows the
+   * between-sets setting again. See `state/restSync.ts`.
+   */
+  followGlobalRestOnAllExercises: () => void;
   /** Removes the exercise and every routine item pointing at it. */
   deleteExercise: (exerciseId: ID) => void;
   /**
@@ -205,6 +211,34 @@ export const useLibrary = create<LibraryState>()(
         if (changed) set({ exercises: next });
       },
 
+      /**
+       * Every exercise goes back to following the between-sets setting.
+       *
+       * The library half of "setting the global rest sets it everywhere" — see
+       * `state/restSync.ts`, which is the only caller and which also reaches the
+       * live session. It CLEARS rather than writes the number into each row, and
+       * the difference matters: cleared exercises track the setting the next time
+       * it moves, while thirty copies of today's value would have to be rewritten
+       * again tomorrow.
+       *
+       * Same shape as `setLadderOnAllExercises` above, for the same reason: a
+       * setting that edits the library is worth having when doing it by hand thirty
+       * times is how a good default goes unused.
+       */
+      followGlobalRestOnAllExercises: () => {
+        const { exercises } = get();
+        let changed = false;
+
+        const next = exercises.map((exercise) => {
+          const cleared = clearExerciseRest(exercise);
+          if (cleared === exercise) return exercise;
+          changed = true;
+          return cleared;
+        });
+
+        if (changed) set({ exercises: next });
+      },
+
       deleteExercise: (exerciseId) => {
         const { exercises, routines } = get();
         set({
@@ -275,13 +309,12 @@ export const useLibrary = create<LibraryState>()(
        * beside `defaultTargetCount` — and the editor can change it afterwards,
        * which is what makes it a starting point rather than the answer.
        *
-       * `restSeconds` starts from the exercise's own `defaultRestSeconds` where it
-       * has one, which makes it an ITEM override: visible on the row, nudgeable,
-       * and clearable back to "follow Settings". That is the difference between
-       * this and the cascade it replaces — the old one read the same field but
-       * behind the user's back, where it silently shadowed the only rest control
-       * they could reach. An exercise with no default rest starts with no override,
-       * which is the honest default: follow Settings until told otherwise.
+       * NO REST IS COPIED. It used to seed `item.restSeconds` from the exercise,
+       * which froze that exercise's rest into the row at the moment it was added —
+       * so editing the exercise's rest afterwards changed nothing, and the shipped
+       * routines carried three-minute rests nobody had chosen. Rest is resolved
+       * from the exercise every time it starts (`lib/rest.ts`); a routine has no
+       * opinion about it.
        */
       appendToRoutine: (routineId, exerciseId) => {
         const { exercises, routines } = get();
@@ -305,16 +338,6 @@ export const useLibrary = create<LibraryState>()(
                       order: routine.items.length,
                       targetSets: sets,
                       targetRepsMax: target,
-                      // Spread conditionally rather than assigned: an exercise with
-                      // no default rest must have NO override, not one whose value
-                      // is `undefined` — `resolveItemRest` reads the two the same
-                      // way, but a persisted `"restSeconds": null` is a claim about
-                      // the format that isn't true.
-                      ...(typeof exercise.defaultRestSeconds === 'number' &&
-                      Number.isFinite(exercise.defaultRestSeconds) &&
-                      exercise.defaultRestSeconds >= 0
-                        ? { restSeconds: exercise.defaultRestSeconds }
-                        : {}),
                     },
                   ],
                 }
@@ -402,7 +425,26 @@ export const useLibrary = create<LibraryState>()(
     }),
     {
       name: 'library',
-      version: 1,
+      /*
+       * 2 — REST OVERRIDES ARE STRIPPED ON THE WAY IN, ONCE.
+       *
+       * Every device that ran an earlier build has a library full of rests nobody
+       * chose: `defaultRestSeconds` stamped onto every exercise the editor ever
+       * saved, and `restSeconds` on every routine item the shipped routines carried
+       * or `appendToRoutine` copied. Those are precisely what made `Between sets
+       * 1:30` produce a 3:00 countdown, and leaving them would mean the fix only
+       * arrived for someone who went and set the global rest a second time.
+       *
+       * Deleting user data in a migration is a serious thing to do, so: NONE of
+       * these values was ever entered by a user. There was no control anywhere in
+       * the app that set a per-exercise rest, and the only per-item control seeded
+       * itself from a number that came from the same place. What is being dropped
+       * is app-generated noise; what the user actually chose — the setting — is the
+       * thing that starts working. Both overrides are settable by hand from this
+       * version on, and those survive, because migrations run once.
+       */
+      version: 2,
+      migrate: stripInheritedRest,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         exercises: state.exercises,
@@ -429,6 +471,53 @@ export const useLibrary = create<LibraryState>()(
     },
   ),
 );
+
+/* ------------------------------------------------------------------ */
+/* Migrations                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * v1 → v2: drop every rest the app wrote behind the user's back. See the note on
+ * `version` above for why this is safe, and `lib/rest.ts` for what it fixes.
+ *
+ * Deliberately tolerant of shape — it runs on a raw blob from disk, before
+ * `merge` sanitizes anything, so an array that isn't one is left exactly as it is
+ * for the validator below to reject in the normal way.
+ *
+ * Exported for the test that pins it. It runs once per device and then never
+ * again, which is exactly the kind of code that is wrong for a year before anyone
+ * notices.
+ */
+export function stripInheritedRest(persisted: unknown): unknown {
+  if (typeof persisted !== 'object' || persisted === null) return persisted;
+  const state = persisted as { exercises?: unknown; routines?: unknown };
+
+  const exercises = Array.isArray(state.exercises)
+    ? state.exercises.map((exercise) =>
+        typeof exercise === 'object' && exercise !== null
+          ? clearExerciseRest(exercise as Exercise)
+          : exercise,
+      )
+    : state.exercises;
+
+  const routines = Array.isArray(state.routines)
+    ? state.routines.map((routine) => {
+        if (typeof routine !== 'object' || routine === null) return routine;
+        const items = (routine as { items?: unknown }).items;
+        if (!Array.isArray(items)) return routine;
+        return {
+          ...routine,
+          items: items.map((item) => {
+            if (typeof item !== 'object' || item === null) return item;
+            const { restSeconds: _dropped, ...rest } = item as Record<string, unknown>;
+            return rest;
+          }),
+        };
+      })
+    : state.routines;
+
+  return { ...state, exercises, routines };
+}
 
 /* ------------------------------------------------------------------ */
 /* Rehydration guards                                                  */

@@ -267,32 +267,34 @@ describe('appendToRoutine', () => {
   });
 
   /*
-   * The exercise's own default rest becomes an ITEM OVERRIDE, which is the whole
-   * difference between this and the cascade it replaces: the old one read the same
-   * field behind the user's back, where it silently shadowed the only rest control
-   * they could reach. Here it is on the row, nudgeable, and clearable.
+   * A routine has NO OPINION about rest any more. It used to copy the exercise's
+   * rest into the item at the moment it was added — which froze it, so editing the
+   * exercise afterwards changed nothing, and it put a number on a row the user had
+   * never typed. Rest is resolved from the exercise every time one starts.
    */
-  it("seeds the item's rest from the exercise, as a visible override", () => {
+  it('copies no rest onto the item, whatever the exercise says', () => {
     const routineId = seedRoutines[0].id;
-    const withRest = seedExercises.find((e) => (e.defaultRestSeconds ?? 0) > 0);
-    if (!withRest) throw new Error('no exercise with a default rest in the fixtures');
-
-    useLibrary.getState().appendToRoutine(routineId, withRest.id);
+    useLibrary.getState().addExercise(newExercise({ id: 'ex_own_rest', defaultRestSeconds: 240 }));
+    useLibrary.getState().appendToRoutine(routineId, 'ex_own_rest');
     const items = useLibrary.getState().routines.find((r) => r.id === routineId)?.items ?? [];
 
-    expect(items[items.length - 1].restSeconds).toBe(withRest.defaultRestSeconds);
+    expect(JSON.stringify(items[items.length - 1])).not.toContain('restSeconds');
   });
 
-  it('leaves an exercise with no default rest following Settings', () => {
-    const routineId = seedRoutines[0].id;
+  it('takes every per-exercise rest back when the global rest is set', () => {
+    /*
+     * The library half of "setting the general rest sets it everywhere". It CLEARS
+     * rather than writing today's value into thirty rows: a cleared exercise
+     * tracks the setting the next time it moves too.
+     */
     useLibrary
       .getState()
-      .addExercise(newExercise({ id: 'ex_no_rest', defaultRestSeconds: undefined }));
-    useLibrary.getState().appendToRoutine(routineId, 'ex_no_rest');
-    const items = useLibrary.getState().routines.find((r) => r.id === routineId)?.items ?? [];
+      .addExercise(newExercise({ id: 'ex_own_rest_2', defaultRestSeconds: 240 }));
+    useLibrary.getState().followGlobalRestOnAllExercises();
 
-    // No override at all, rather than a copy of whatever Settings says today.
-    expect('restSeconds' in items[items.length - 1]).toBe(false);
+    for (const exercise of useLibrary.getState().exercises) {
+      expect(exercise.defaultRestSeconds).toBeUndefined();
+    }
   });
 
   it('defaults rounds to twelve threes', () => {

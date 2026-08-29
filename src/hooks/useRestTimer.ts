@@ -22,6 +22,23 @@
  * PAUSE vs SKIP, since the pill offers both: pausing freezes rest where it
  * stands and keeps the pill; skipping ends rest and dismisses it. Only one of
  * them loses the timer, and it's the one with the destructive-sounding name.
+ *
+ * ── ± ON THE PILL CHANGES THE REST, NOT JUST THIS ONE ──────────────────────
+ *
+ * `add` moves the running countdown AND writes the new length back as the rest
+ * for every set that follows — through `state/restSync.ts`, so it lands in the
+ * setting, the library and the live session together.
+ *
+ * That is a deliberate reading of what the gesture means. Nobody decides mid-rest
+ * that this ONE gap should be 1:30 and the next one back to 2:00; they have
+ * discovered that 2:00 is wrong for today, and the useful outcome is that every
+ * rest afterwards is 1:30 without a trip to Settings between sets. The
+ * alternative — an adjustment that evaporates when the pill does — is a control
+ * you have to press again after every single set.
+ *
+ * Which number it writes follows which rest is running: `transition` is the
+ * between-exercises setting, anything else is between-sets. The pill says which
+ * one it is showing, so the two can't be confused.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -32,6 +49,7 @@ import { tap, undo } from '../lib/feedback';
 import { cancelTimerAlerts, scheduleTimerAlertPair } from '../lib/notify';
 import { useActiveWorkout, type RestSource } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
+import { setRestBetweenExercises, setRestBetweenSets } from '../state/restSync';
 import { useCountdownBeeps } from './useCountdownBeeps';
 
 const TICK_MS = 250;
@@ -55,6 +73,10 @@ export interface RestTimerApi {
   totalSeconds: number;
   /** The user's ± step, so the pill and Settings can never disagree. */
   stepSeconds: number;
+  /**
+   * Move the running rest by ±`seconds`, and make that the rest length from here
+   * on. See the file header — this is not a one-off nudge.
+   */
   add: (seconds: number) => void;
   pause: () => void;
   resume: () => void;
@@ -211,6 +233,14 @@ export function useRestTimer(): RestTimerApi {
     (seconds: number) => {
       tap();
       adjustRest(seconds);
+      /*
+       * The store has already clamped the new total (a `−15` on a 5 s rest cannot
+       * go negative), so the length is READ BACK rather than recomputed here —
+       * two clamps in two files is two answers waiting to disagree.
+       */
+      const { totalSeconds, source } = useActiveWorkout.getState().rest;
+      if (source === 'transition') setRestBetweenExercises(totalSeconds);
+      else setRestBetweenSets(totalSeconds);
     },
     [adjustRest],
   );

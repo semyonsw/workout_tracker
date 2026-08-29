@@ -12,7 +12,8 @@
  *   │ │      Sets                  4    ( − )( + )│ │  ← open
  *   │ │      Reps                  6    ( − )( + )│ │
  *   │ │      Down to                4   ( − )( + )│ │
- *   │ │      Rest · this exercise 3:00  ( − )( + )│ │
+ *   │ │      Rest                  3:00 ( − )( + )│ │
+ *   │ │      This movement, in every routine      │ │
  *   │ │      Follow the setting instead           │ │
  *   │ │      Superset with the one above  [ ●━ ]  │ │
  *   │ │      Open its history                     │ │
@@ -61,13 +62,22 @@
  * rather than "something is wrong".
  *
  * REST NAMES ITS SOURCE, and that is the point of the row rather than a detail of
- * it. `rest · setting` and `rest · this exercise` are two different facts, and
+ * it. `rest · setting` and a rest this movement owns are two different facts, and
  * telling them apart is exactly what was impossible before: a bare "3:00" could
  * be the user's own setting or a number the shipped routine carried, and when it
- * was the latter the Settings control silently did nothing. An item that is
- * following the setting follows it LIVE — `completeSet` re-reads Settings every
- * time it starts a rest — so `Follow the setting instead` is not "copy the current
- * value", it is "stop overriding", and the row says which state it is in.
+ * was the latter the Settings control silently did nothing. An exercise that is
+ * following the setting follows it LIVE — `completeSet` re-reads it every time it
+ * starts a rest — so `Follow the setting instead` is not "copy the current value",
+ * it is "stop overriding", and the row says which state it is in.
+ *
+ * THIS ROW EDITS THE EXERCISE, NOT THE ITEM, and it commits immediately. Rest used
+ * to be stored per routine row, which meant the same pull-up could rest 3:00 in
+ * one routine and 2:00 in another, neither of them a fact about pull-ups, and
+ * editing the exercise afterwards changed neither. It is one number on the
+ * movement now (`lib/rest.ts`), which is also why the hint says so: nudging it
+ * here changes that exercise everywhere it appears. Everything else on this panel
+ * belongs to the routine and waits for `Save`; this one has nothing in the draft
+ * to wait for.
  *
  * ✕ ON EVERY ROW TAKES THE EXERCISE OUT OF THE ROUTINE. It asks first, and it is
  * committed immediately rather than on `Save`: everything else that changes this
@@ -140,18 +150,15 @@ import {
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
 import { tap, undo } from '../lib/feedback';
 import {
-  ITEM_REST_LIMITS,
-  bumpItemRest,
   bumpTargetCount,
   bumpTargetMin,
   bumpTargetSets,
-  clearItemRest,
   isSupersettedWithAbove,
-  resolveItemRest,
   supersetRunPosition,
   targetCountStep,
   toggleSupersetWithAbove,
 } from '../lib/routinePlan';
+import { REST_LIMITS, bumpExerciseRest, clearExerciseRest, resolveRest } from '../lib/rest';
 import { moveToIndex } from '../lib/reorder';
 import { describeLadder, ladderOf, ladderTargets, ladderTotal } from '../lib/repLadder';
 import { countUnitLabel, formatClock, formatDuration } from '../lib/units';
@@ -190,6 +197,12 @@ interface RoutineEditorScreenProps {
    * goes through this, so the removal survives backing out — see the file header.
    */
   onCommit: (draft: RoutineDraft) => void;
+  /**
+   * Edit an exercise in the LIBRARY, from a row of this routine. Rest is the only
+   * thing that uses it, and it is committed on the spot rather than held in the
+   * draft — see the file header.
+   */
+  onPatchExercise: (exerciseId: ID, fn: (exercise: Exercise) => Exercise) => void;
   onDelete: () => void;
 }
 
@@ -209,6 +222,7 @@ export function RoutineEditorScreen({
   onOpenItem,
   onAddExercise,
   onCommit,
+  onPatchExercise,
   onDelete,
 }: RoutineEditorScreenProps) {
   /** Working name and order. Committed only on Save — this screen is a draft. */
@@ -413,6 +427,7 @@ export function RoutineEditorScreen({
                           index === 0 ? null : isSupersettedWithAbove(items, index)
                         }
                         onPatch={(fn) => patchItem(item.id, fn)}
+                        onPatchExercise={(fn) => onPatchExercise(exercise.id, fn)}
                         onToggleSuperset={() => {
                           tap();
                           setItems((current) => {
@@ -583,6 +598,7 @@ function ItemEditor({
   settingsRestSeconds,
   supersetWithAbove,
   onPatch,
+  onPatchExercise,
   onToggleSuperset,
   onOpenHistory,
 }: {
@@ -592,13 +608,18 @@ function ItemEditor({
   /** On / off, or null on the first row — which has nothing above it to pair with. */
   supersetWithAbove: boolean | null;
   onPatch: (fn: (item: RoutineItem) => RoutineItem) => void;
+  /**
+   * Edit the EXERCISE this row points at. Only rest uses it, and it lands in the
+   * library immediately rather than in the routine draft — see the file header.
+   */
+  onPatchExercise: (fn: (exercise: Exercise) => Exercise) => void;
   onToggleSuperset: () => void;
   onOpenHistory: () => void;
 }) {
   const { countUnit } = exercise;
   const timed = countUnit === 'seconds' || countUnit === 'rounds';
   const countDelta = targetCountStep(countUnit);
-  const rest = resolveItemRest(item, settingsRestSeconds);
+  const rest = resolveRest(exercise, settingsRestSeconds);
   const target = item.targetRepsMax ?? item.targetRepsMin ?? 0;
   /*
    * A ladder replaces the rep controls rather than sitting beside them: it decides
@@ -675,28 +696,33 @@ function ItemEditor({
 
       <Separator inset={40} />
       {/*
-        Rest names its source. See the file header: `3:00` alone cannot tell the
-        user's own setting from a number the routine carried, and that ambiguity
-        is what made the Settings control look broken.
+        Rest names its source, and it writes to the EXERCISE — see the file header
+        for both. `3:00` alone cannot tell the user's own setting from a number the
+        routine carried, and that ambiguity is what made the Settings control look
+        broken.
       */}
       <ItemStepper
         label="Rest"
         hint={
-          rest.source === 'item'
-            ? 'This exercise only'
+          rest.source === 'exercise'
+            ? 'This movement, in every routine that has it'
             : 'Following your setting — it moves when you change it'
         }
         value={rest.seconds > 0 ? formatClock(rest.seconds) : 'None'}
-        tone={rest.source === 'item' ? 'own' : 'inherited'}
-        onDecrease={() => onPatch((i) => bumpItemRest(i, -ITEM_REST_LIMITS.step, rest.seconds))}
-        onIncrease={() => onPatch((i) => bumpItemRest(i, ITEM_REST_LIMITS.step, rest.seconds))}
+        tone={rest.source === 'exercise' ? 'own' : 'inherited'}
+        onDecrease={() =>
+          onPatchExercise((e) => bumpExerciseRest(e, -REST_LIMITS.step, rest.seconds))
+        }
+        onIncrease={() =>
+          onPatchExercise((e) => bumpExerciseRest(e, REST_LIMITS.step, rest.seconds))
+        }
       />
 
-      {rest.source === 'item' ? (
+      {rest.source === 'exercise' ? (
         <>
           <Separator inset={40} />
           <Pressable
-            onPress={() => onPatch(clearItemRest)}
+            onPress={() => onPatchExercise(clearExerciseRest)}
             accessibilityRole="button"
             accessibilityLabel="Follow the rest setting instead of this exercise's own"
             className="h-hit justify-center pl-xxl pr-lg"
@@ -826,10 +852,9 @@ function StepChip({
  * One line, in the order you need it: how much work, then how long you wait,
  * then the one caveat that changes how you do it.
  *
- * Rest goes through `resolveItemRest`, so the summary and the session agree by
- * construction. It used to cascade through `exercise.defaultRestSeconds`, which
- * is a number the user could neither see nor change — so the line could report a
- * rest the session would not actually run.
+ * Rest goes through `resolveRest`, the same function the session calls when it
+ * starts one, so the summary and the countdown agree by construction — and it
+ * reads the EXERCISE, because that is where a rest lives now (`lib/rest.ts`).
  */
 function summarizeItem(item: RoutineItem, exercise: Exercise, settingsRestSeconds: number): string {
   const parts: string[] = [];
@@ -849,7 +874,7 @@ function summarizeItem(item: RoutineItem, exercise: Exercise, settingsRestSecond
 
   // Rest is a clock ("3:00") — it is a stopwatch value you watch tick down.
   // A target duration is prose ("3 min") — it is a plan, not a countdown.
-  const rest = resolveItemRest(item, settingsRestSeconds);
+  const rest = resolveRest(exercise, settingsRestSeconds);
   parts.push(rest.seconds > 0 ? `rest ${formatClock(rest.seconds)}` : 'no rest');
   // Which of the two it is, in one word, so the collapsed line carries the same
   // fact the open editor states in a sentence.

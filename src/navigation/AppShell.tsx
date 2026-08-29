@@ -52,6 +52,7 @@ import {
   workoutNumbers,
 } from '../lib/completedWorkout';
 import { buildDraftEntry, defaultTargetCount, defaultTargetSets } from '../lib/draft';
+import { resolveRest } from '../lib/rest';
 import { ladderOf, ladderOutcomes } from '../lib/repLadder';
 import { applyPlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import {
@@ -586,7 +587,10 @@ export function AppShell() {
           history: historyById[exercise.id] ?? [],
           policy: seedUser.overloadPolicy,
           unitSystem: settings.unitSystem,
-          restSeconds: settings.restSecondsBetweenSets,
+          // Its own rest if it has one, the setting otherwise — the same read the
+          // routine path makes, so an exercise added at the rack rests exactly as
+          // long as the same exercise planned into a routine. See `lib/rest.ts`.
+          restSeconds: resolveRest(exercise, settings.restSecondsBetweenSets).seconds,
           transitionRestSeconds: settings.restSecondsBetweenExercises,
           targetSets: ladderSets ?? 1,
           targetRepsMax: defaultTargetCount(exercise),
@@ -689,6 +693,17 @@ export function AppShell() {
         exercisesById={exercisesById}
         defaultRestSeconds={restSecondsBetweenSets}
         isNew={route.isNew}
+        /*
+         * The rest row on a routine item edits the EXERCISE, so it writes to the
+         * library here rather than into the routine draft — there is nothing about
+         * it in the draft to save. Same shape as the removal above it: an edit that
+         * could be lost by backing out would be the only one on that screen that
+         * lies about what it did.
+         */
+        onPatchExercise={(exerciseId, fn) => {
+          const current = exercisesById[exerciseId];
+          if (current) updateExercise(exerciseId, fn(current));
+        }}
         onBack={() => handleLeaveEditor(route)}
         onSave={(draft) => {
           updateRoutine(routine.id, draft);
@@ -757,6 +772,7 @@ export function AppShell() {
     return (
       <CreateExerciseScreen
         initial={top.draft}
+        settingsRestSeconds={restSecondsBetweenSets}
         onBack={pop}
         onSubmit={(draft) => {
           const exercise = draftToExercise(draft, `ex_${Date.now().toString(36)}`, seedUser.id);
@@ -787,6 +803,7 @@ export function AppShell() {
         // is stored — including anything changed from somewhere else since.
         initial={exerciseToDraft(exercise, useSettings.getState().restSecondsBetweenSets)}
         mode="edit"
+        settingsRestSeconds={restSecondsBetweenSets}
         onBack={pop}
         onSubmit={(draft) => {
           // In place, keeping the id: every set ever logged points at it, so the

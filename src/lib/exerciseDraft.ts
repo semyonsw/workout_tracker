@@ -26,6 +26,7 @@
 import type { CountUnit, Exercise, MuscleGroup, TimerMode } from '../types/models';
 import { DEFAULT_PREPARE_SECONDS } from './setTimer';
 import { clampMax, ladderOf, supportsLadder } from './repLadder';
+import { clampRest, ownRestSeconds } from './rest';
 import type { LoadMode } from '../types/models';
 
 /** The editable shape of an exercise. A draft, not an `Exercise` yet. */
@@ -45,11 +46,20 @@ export interface ExerciseDraft {
   durationSeconds: number;
   incrementKg: number;
   /**
-   * Seconds of rest. Read from Settings by the caller and shown as a fact — rest
-   * lengths are global now, so this is not an override, just the number a session
-   * will actually run.
+   * REST BETWEEN SETS, as a number plus the flag that says whose number it is.
+   *
+   * A form cannot render an absence, and `Exercise.defaultRestSeconds` spells
+   * "follow the setting" as absence — so the draft carries both: the seconds a ±
+   * chip nudges, and whether they are this exercise's own or the setting's. Drop
+   * the flag and there is no way to show a stepper starting at the value in force
+   * without instantly turning it into an override, which is how every exercise
+   * ended up carrying a rest nobody chose.
+   *
+   * `restFollowsSettings` true → `defaultRestSeconds` is deleted on the way out,
+   * and `restSeconds` is only what the row displays. See `lib/rest.ts`.
    */
   restSeconds: number;
+  restFollowsSettings: boolean;
 
   /**
    * THE REP LADDER, as three fields rather than the model's optional object.
@@ -144,7 +154,11 @@ export function emptyExerciseDraft(
     targetCount: 12,
     durationSeconds: 180,
     incrementKg: 2.5,
+    // A new exercise FOLLOWS THE SETTING. `restSeconds` is the setting's current
+    // value, passed in by the caller so the row has something to show; it becomes
+    // this exercise's own only if somebody nudges it.
     restSeconds,
+    restFollowsSettings: true,
     /*
      * Off here, and switched on below when the caller says so — `Make every
      * exercise a rep ladder` in Settings, read by the caller because a `lib/`
@@ -162,6 +176,39 @@ export function emptyExerciseDraft(
 }
 
 /**
+ * Nudge the draft's rest, which MAKES IT THIS EXERCISE'S OWN.
+ *
+ * The first tap moves the number the row is already showing — the setting's value
+ * where the exercise was following it — rather than jumping somewhere else. That
+ * is also the moment the exercise stops following the setting, and the row says so
+ * on the next render, because a control that silently changes what a value MEANS
+ * is the whole failure this rework is about.
+ */
+export function bumpDraftRest(draft: ExerciseDraft, delta: number): ExerciseDraft {
+  return {
+    ...draft,
+    restSeconds: clampRest(draft.restSeconds + delta),
+    restFollowsSettings: false,
+  };
+}
+
+/**
+ * Hand the rest back to Settings — LIVE, not as a copy of what it says today.
+ *
+ * `settingsRestSeconds` only refills what the row displays; the flag is the fact.
+ */
+export function followSettingsRest(
+  draft: ExerciseDraft,
+  settingsRestSeconds: number,
+): ExerciseDraft {
+  return {
+    ...draft,
+    restSeconds: clampRest(settingsRestSeconds),
+    restFollowsSettings: true,
+  };
+}
+
+/**
  * An existing library row, back into an editable draft.
  *
  * Every optional field gets a concrete value, because the wells and the segmented
@@ -176,6 +223,7 @@ export function exerciseToDraft(exercise: Exercise, restSeconds = 120): Exercise
   // ladder is a hand-edited `{ max: "16" }` — opens as off rather than as a form
   // holding a number the scheme would refuse.
   const ladder = ladderOf(exercise);
+  const ownRest = ownRestSeconds(exercise);
 
   return {
     name: exercise.name,
@@ -191,7 +239,13 @@ export function exerciseToDraft(exercise: Exercise, restSeconds = 120): Exercise
     targetCount: inDuration ? 12 : target,
     durationSeconds: inDuration ? target : 180,
     incrementKg: positiveOr(exercise.incrementKg, 2.5),
-    restSeconds,
+    /*
+     * The exercise's own rest where it has one, and the setting where it does
+     * not — the same two-level read the session does, through the same function,
+     * so the editor and the countdown can never disagree.
+     */
+    restSeconds: ownRest ?? restSeconds,
+    restFollowsSettings: ownRest == null,
     ladderOn: ladder != null,
     ladderMax: ladder?.max ?? 0,
     ladderEarned: ladder?.earned ?? 0,
@@ -257,7 +311,16 @@ export function draftToExercise(
       draft.ladderOn && supportsLadder(draft.countUnit)
         ? { max: clampMax(draft.ladderMax), earned: Math.max(0, Math.round(draft.ladderEarned)) }
         : undefined,
-    defaultRestSeconds: draft.restSeconds,
+    /*
+     * Spread conditionally, because "follows the setting" is the ABSENCE of this
+     * key rather than a value in it. This row used to be
+     * `defaultRestSeconds: draft.restSeconds` unconditionally — and since the
+     * draft's rest was seeded from Settings, saving any exercise for any reason
+     * stamped a permanent override onto it with the setting's value of that
+     * moment. Every exercise in the library ended up shadowing the one rest
+     * control the user could reach. See `lib/rest.ts`.
+     */
+    ...(draft.restFollowsSettings ? {} : { defaultRestSeconds: clampRest(draft.restSeconds) }),
     isArchived: false,
     createdAt: now.toISOString(),
   };

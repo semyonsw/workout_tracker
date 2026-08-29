@@ -58,6 +58,19 @@
  * that is what removing that row does (see `activeWorkoutStore.removeSet`); the
  * label changes so the outcome is never a surprise.
  *
+ * ── AND `REMOVE EXERCISE` IS ITS OWN ROW ────────────────────────────────────
+ *
+ * Because "I'm not doing this today" was five taps of `Remove set` and a sixth
+ * that finally took the exercise with it — an ordinary decision, made at the rack,
+ * priced like an undo. It is the last row of the open card, under `Rest`, and it
+ * only renders while there is more than one set: at one set the footer's own
+ * remove half already IS this button and already says so, and two controls with
+ * the same label in one card is one of them being noise.
+ *
+ * It asks first when there is something to lose — the screen owns that sheet, the
+ * same way it owns the one behind `Discard`. Sets already logged are the only
+ * thing in this app that cannot be reconstructed.
+ *
  * A long press LIFTS the card for reordering. The gesture and the movement live in
  * the screen (it owns the geometry of the list); this component only reports the
  * press and renders the two states it puts a card into — `lifted`, which follows
@@ -133,6 +146,11 @@ interface ExerciseCardProps {
    * `Skip` you didn't mean.
    */
   onStartRest?: () => void;
+  /**
+   * Drop this exercise, sets and all. Only the expanded card offers it, and the
+   * screen decides whether to ask first — see the file header.
+   */
+  onRemoveExercise?: () => void;
 }
 
 function ExerciseCardComponent({
@@ -157,6 +175,7 @@ function ExerciseCardComponent({
   onPressTimer,
   restSeconds = 0,
   onStartRest,
+  onRemoveExercise,
 }: ExerciseCardProps) {
   /** Which set row has the editor open, and on which field. Card-local state. */
   const [focus, setFocus] = useState<{ setId: ID; field: SetField } | null>(null);
@@ -442,6 +461,27 @@ function ExerciseCardComponent({
               <Text className="ml-sm text-label tabular-nums text-ink-muted">
                 Rest {formatClock(restSeconds)}
               </Text>
+            </Pressable>
+          </>
+        ) : null}
+
+        {/* The way out of an exercise in one tap. Its own full-width row for the
+            same reason `Rest` has one: it is not a decision about the set count,
+            and it must not sit a thumb's width from `Add set`. */}
+        {onRemoveExercise && total > 1 ? (
+          <>
+            <View className="h-hairline bg-hairline" />
+            <Pressable
+              onPress={() => {
+                undo();
+                onRemoveExercise();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${entry.exercise.name} from this workout`}
+              className="h-row flex-row items-center justify-center"
+            >
+              <Icon name="minus" size={13} color={palette.inkFaint} />
+              <Text className="ml-sm text-label text-ink-muted">Remove exercise</Text>
             </Pressable>
           </>
         ) : null}

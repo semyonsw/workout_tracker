@@ -71,8 +71,6 @@ export interface User {
    * `settingsStore` beside the unit system, which is the only place the app can
    * actually be told it. Two homes for one number is one of them being stale.
    */
-  /** Fallback rest when neither exercise nor routine specifies one. */
-  defaultRestSeconds: number;
   overloadPolicy: OverloadPolicy;
   createdAt: ISODateTime;
 }
@@ -262,6 +260,20 @@ export interface Exercise {
    */
   ladder?: RepLadder;
 
+  /**
+   * THIS MOVEMENT'S OWN rest between sets, in seconds. Absent — the default —
+   * means it follows `Settings.restSecondsBetweenSets`, live.
+   *
+   * The only per-exercise rest there is: `RoutineItem` used to carry one too, and
+   * two overrides for one quantity is one of them being wrong. `lib/rest.ts` owns
+   * the cascade and explains why this one is safe where the old pair was not —
+   * the short version is that nothing seeds this field any more, so a number in
+   * it is always something the user typed, and setting the global rest clears
+   * every one of them.
+   *
+   * Zero is a legal, meaningful value ("no rest between these"), which is why
+   * absence rather than `0` is how "follow the setting" is spelled.
+   */
   defaultRestSeconds?: number;
 
   equipment?: string;
@@ -305,8 +317,14 @@ export interface RoutineItem {
   /** Range renders as "8–10"; a single number renders as "8". */
   targetRepsMin?: number;
   targetRepsMax?: number;
-  /** Seconds of rest after each set of this exercise. */
-  restSeconds?: number;
+  /*
+   * NO `restSeconds` HERE. It existed, the routine editor set it, and it was the
+   * top level of a three-level rest cascade — which is how "Between sets 1:30" in
+   * Settings could still produce a 3:00 countdown. Rest belongs to the MOVEMENT
+   * (`Exercise.defaultRestSeconds`), not to a row of a template that contains it;
+   * `lib/rest.ts` has the whole argument, and `libraryStore`'s migration strips
+   * the field from routines that still carry it.
+   */
   /** Extra rest after the LAST set, before moving on. */
   transitionRestSeconds?: number;
   /**

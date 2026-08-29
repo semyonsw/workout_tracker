@@ -57,6 +57,7 @@ import {
   type SetTimerSpec,
 } from '../lib/setTimer';
 import { MAX_PLAUSIBLE_REST_SECONDS } from '../lib/restHistory';
+import { clearExerciseRest, resolveRest } from '../lib/rest';
 import {
   ladderAfterTopSet,
   ladderTargets,
@@ -162,6 +163,11 @@ interface ActiveWorkoutState {
    * auto-rest off left the app with no way to run a rest timer at all.
    */
   startRestNow: () => void;
+  /**
+   * Drop every per-exercise rest override in the live session, so the whole
+   * workout follows the between-sets setting again. See `state/restSync.ts`.
+   */
+  followGlobalRest: () => void;
   adjustRest: (deltaSeconds: number) => void;
   /** Freeze the countdown where it stands. The pill stays; the clock doesn't move. */
   pauseRest: () => void;
@@ -406,23 +412,26 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
 
         const settings = currentSettings();
         /*
-         * BETWEEN SETS: this exercise's own rest if the routine gave it one,
-         * otherwise the live setting. BETWEEN EXERCISES: always the live setting.
+         * BETWEEN SETS: this exercise's own rest if it has one, otherwise the live
+         * setting — `resolveRest`, the one place that cascade lives.
+         * BETWEEN EXERCISES: always the live setting.
          *
          * The asymmetry is deliberate and it is the same rule stated twice. A
-         * number only overrides the setting if the user can SEE that it does — the
-         * routine editor shows the between-sets override on the row and can clear
-         * it, so it is a choice; nothing anywhere edits
+         * number only overrides the setting if the user can SEE that it does and
+         * can clear it — the exercise editor and the routine row both show which
+         * of the two is in force. Nothing anywhere edits
          * `RoutineItem.transitionRestSeconds`, so honouring it would be the old bug
          * again, a setting silently doing nothing.
          *
          * Read at the moment rest starts rather than captured at session start, so
-         * an item that is FOLLOWING Settings follows it live: change "Between sets"
-         * mid-workout and the very next set rests for the new length.
+         * an exercise that is FOLLOWING the setting follows it live: change
+         * "Between sets" mid-workout and the very next set rests for the new
+         * length. Setting it also clears every override, in the library and in this
+         * session — `state/restSync.ts` — so "between sets" is between every set.
          */
         const restSeconds = exerciseDone
           ? settings.restSecondsBetweenExercises
-          : (target.restSecondsOverride ?? settings.restSecondsBetweenSets);
+          : resolveRest(target.exercise, settings.restSecondsBetweenSets).seconds;
         /*
          * `!partner` is the superset rule: mid-round, the next thing to do is the
          * other exercise, and a countdown over its rows is the pill getting in the
@@ -619,9 +628,45 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         });
       },
 
+      /*
+       * The card's `Rest` button. It runs the rest of the exercise the cursor is
+       * on, not the setting flat — the same number `completeSet` would have
+       * started, and the same number the button's own label shows. A manual rest
+       * that disagreed with the automatic one would be two answers to one question.
+       */
       startRestNow: () => {
         const { restSecondsBetweenSets } = currentSettings();
-        get().startRest(restSecondsBetweenSets, 'set');
+        const { session, activeEntryId } = get();
+        const entry = session?.entries.find((e) => e.localId === activeEntryId);
+        const seconds = entry
+          ? resolveRest(entry.exercise, restSecondsBetweenSets).seconds
+          : restSecondsBetweenSets;
+        get().startRest(seconds, 'set');
+      },
+
+      /**
+       * Every exercise in the LIVE SESSION goes back to following the setting.
+       *
+       * Called by `state/restSync.ts` whenever the global between-sets rest is
+       * set — from Settings, or from the ± on the rest pill. The session carries
+       * its own copy of each exercise (deliberately: see `DraftEntry.exercise`),
+       * so clearing the library alone would leave the workout in progress still
+       * resting on numbers the user just overwrote — which is exactly the "I
+       * changed it and nothing happened" this whole rework is about.
+       */
+      followGlobalRest: () => {
+        const { session } = get();
+        if (!session) return;
+
+        let changed = false;
+        const entries = session.entries.map((entry) => {
+          const exercise = clearExerciseRest(entry.exercise);
+          if (exercise === entry.exercise) return entry;
+          changed = true;
+          return { ...entry, exercise };
+        });
+
+        if (changed) set({ session: { ...session, entries } });
       },
 
       /**

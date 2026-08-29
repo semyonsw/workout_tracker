@@ -111,9 +111,10 @@ import { Icon } from '../components/Icon';
 import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
-import type { DraftSession, DraftSet } from '../lib/draft';
+import type { DraftEntry, DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
+import { resolveRest } from '../lib/rest';
 import { describeLadderOutcomes, ladderOutcomes } from '../lib/repLadder';
 import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import { supersetPosition } from '../lib/superset';
@@ -180,6 +181,13 @@ export function ActiveWorkoutScreen({
   const listTop = useRef(0);
   const [confirming, setConfirming] = useState<'finish' | 'clock' | 'discard' | null>(null);
   /**
+   * The exercise the user asked to remove, held while the sheet asks — and only
+   * ever set when there is something to lose. Removing an exercise nobody has
+   * logged a set into is not a question, and a sheet in front of it would be
+   * ceremony charged for the common case.
+   */
+  const [removingEntry, setRemovingEntry] = useState<DraftEntry | null>(null);
+  /**
    * The card the user has SHUT, when it is the one the cursor is on.
    *
    * Screen-local and deliberately not persisted: reopening the app should show you
@@ -219,6 +227,7 @@ export function ActiveWorkoutScreen({
   const addSet = useActiveWorkout((s) => s.addSet);
   const removeSet = useActiveWorkout((s) => s.removeSet);
   const removeLastSet = useActiveWorkout((s) => s.removeLastSet);
+  const removeEntry = useActiveWorkout((s) => s.removeEntry);
   const moveEntry = useActiveWorkout((s) => s.moveEntry);
   const startWorkout = useActiveWorkout((s) => s.startWorkout);
   const discardSession = useActiveWorkout((s) => s.discardSession);
@@ -230,9 +239,12 @@ export function ActiveWorkoutScreen({
   const startRestNow = useActiveWorkout((s) => s.startRestNow);
 
   /*
-   * The live between-sets length, for the card's `Rest` button. Read here rather
-   * than from the entry so the label always matches what Settings says right now —
-   * which is also what `completeSet` will use.
+   * The live between-sets setting. Each card resolves its OWN rest from it
+   * (`resolveRest`, below) rather than showing it flat: an exercise with a rest of
+   * its own runs that, and a `Rest 2:00` button that then started a 3:00 countdown
+   * is the same lie this rework exists to remove. Read here rather than off the
+   * entry so an exercise that is following the setting follows it live — which is
+   * also what `completeSet` will do.
    */
   const restSeconds = useSettings((s) => s.restSecondsBetweenSets);
   /*
@@ -433,7 +445,21 @@ export function ActiveWorkoutScreen({
     );
   }
 
-  const dimmed = confirming != null;
+  /**
+   * Remove an exercise: straight away when nothing has been logged into it, and
+   * behind the sheet when something has. The sheet's job is not to slow the user
+   * down, it is to make sure a workout's record is never lost to one tap.
+   */
+  const handleRemoveEntry = (entry: DraftEntry) => {
+    if (entry.sets.some((set) => set.isCompleted)) {
+      setRemovingEntry(entry);
+      return;
+    }
+    undo();
+    removeEntry(entry.localId);
+  };
+
+  const dimmed = confirming != null || removingEntry != null;
 
   return (
     <View className="flex-1 bg-bg">
@@ -544,8 +570,9 @@ export function ActiveWorkoutScreen({
                     timingSetId={setTimer?.entryId === entry.localId ? setTimer.setId : null}
                     isLifted={isLifted}
                     dimmed={lifted != null && !isLifted}
-                    restSeconds={restSeconds}
+                    restSeconds={resolveRest(entry.exercise, restSeconds).seconds}
                     onStartRest={entry.localId === activeEntryId ? startRestNow : undefined}
+                    onRemoveExercise={() => handleRemoveEntry(entry)}
                     onToggleExpanded={() => handleToggleCard(entry.localId)}
                     // One exercise cannot be reordered, and the gesture would only
                     // ever end where it started.
@@ -614,6 +641,23 @@ export function ActiveWorkoutScreen({
             setConfirming(null);
           }}
           onCancel={() => setConfirming(null)}
+        />
+      ) : null}
+
+      {removingEntry ? (
+        <ConfirmSheet
+          title={`Remove ${removingEntry.exercise.name}?`}
+          body={`${removingEntry.sets.filter((set) => set.isCompleted).length} logged ${
+            removingEntry.sets.filter((set) => set.isCompleted).length === 1 ? 'set' : 'sets'
+          } will go with it, and nothing about them reaches your history. The exercise itself stays in your library.`}
+          confirmLabel="Remove it"
+          cancelLabel="Keep it"
+          onConfirm={() => {
+            undo();
+            removeEntry(removingEntry.localId);
+            setRemovingEntry(null);
+          }}
+          onCancel={() => setRemovingEntry(null)}
         />
       ) : null}
 

@@ -39,7 +39,14 @@ export interface Settings {
    * only thing that reads it is `effectiveLoadKg`.
    */
   bodyweightKg?: number;
-  /** Rest after a set, when the routine doesn't override it. */
+  /**
+   * Rest after a set — for every exercise that has no rest of its own.
+   *
+   * SETTING IT CLEARS THOSE TOO. The write goes through `state/restSync.ts`, not
+   * through `setNumber` alone, because this number is a claim about every set in
+   * the app and an override the user has forgotten about makes it a false one.
+   * That is the bug the whole of `lib/rest.ts` is about.
+   */
   restSecondsBetweenSets: number;
   /** Rest after the LAST set of an exercise, before the next one. */
   restSecondsBetweenExercises: number;

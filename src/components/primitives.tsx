@@ -139,6 +139,64 @@ export function SettingRow({
 }
 
 /**
+ * A number with a `−` and a `+`.
+ *
+ * The value sits between the label and the chips rather than next to them, so a
+ * column of these rows has its numbers in one vertical line — you can see what
+ * every duration is set to without reading a single label twice.
+ */
+export function StepperRow({
+  label,
+  hint,
+  value,
+  onDecrease,
+  onIncrease,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  onDecrease: () => void;
+  onIncrease: () => void;
+}) {
+  return (
+    <View className="min-h-[56px] flex-row items-center py-md pl-lg pr-sm">
+      <View className="flex-1 pr-md">
+        <Text className="text-body font-medium text-ink">{label}</Text>
+        {hint ? <Text className="mt-[2px] text-label text-ink-faint">{hint}</Text> : null}
+      </View>
+
+      <Text className="mr-sm text-body font-semibold tabular-nums text-ink-muted">{value}</Text>
+
+      <StepButton icon="minus" label={`Decrease ${label}`} onPress={onDecrease} />
+      <View className="w-xs" />
+      <StepButton icon="plus" label={`Increase ${label}`} onPress={onIncrease} />
+    </View>
+  );
+}
+
+export function StepButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: 'plus' | 'minus';
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={4}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="h-[36px] w-[36px] items-center justify-center rounded-pill border border-hairline bg-surface-alt"
+    >
+      <Icon name={icon} size={14} color={palette.ink} />
+    </Pressable>
+  );
+}
+
+/**
  * The footer row of a card: a plus and a verb. Green when it adds something the
  * user chose to add, faint when it is just the next slot in a list.
  */

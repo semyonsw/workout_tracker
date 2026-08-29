@@ -1,20 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ITEM_REST_LIMITS,
   TARGET_COUNT_LIMITS,
   TARGET_SETS_LIMITS,
   applyPlannedSetDiff,
-  bumpItemRest,
   bumpTargetCount,
   bumpTargetMin,
   bumpTargetSets,
-  clearItemRest,
   describePlannedSetDiff,
   isSupersettedWithAbove,
   performedSetCounts,
   plannedSetDiff,
-  resolveItemRest,
   supersetRunPosition,
   toggleSupersetWithAbove,
 } from './routinePlan';
@@ -135,67 +131,6 @@ describe('bumpTargetMin', () => {
 
 /* ------------------------------------------------------------------ */
 
-/**
- * The rest cascade — the bug this release walks back one level.
- *
- * It used to be three levels deep through `exercise.defaultRestSeconds`, which
- * nearly every shipped exercise carries and nobody could see or change, so the
- * two Settings values were shadowed almost everywhere. It is two levels now, and
- * the item level is only in it because the editor can set it, show it and clear
- * it.
- */
-describe('resolveItemRest', () => {
-  it('follows the setting when the item has no override', () => {
-    expect(resolveItemRest(item(), 120)).toEqual({ seconds: 120, source: 'settings' });
-  });
-
-  it('uses the item where it has one', () => {
-    expect(resolveItemRest(item({ restSeconds: 180 }), 120)).toEqual({
-      seconds: 180,
-      source: 'item',
-    });
-  });
-
-  it('treats an explicit zero as an override, not as missing', () => {
-    // A swim rests for nothing on purpose, and `0 ?? x` is 0 — but `undefined ?? x`
-    // is x, and the difference is the whole cascade.
-    expect(resolveItemRest(item({ restSeconds: 0 }), 120)).toEqual({
-      seconds: 0,
-      source: 'item',
-    });
-  });
-
-  it('ignores a nonsense override rather than resting for NaN seconds', () => {
-    expect(resolveItemRest(item({ restSeconds: NaN }), 120).source).toBe('settings');
-    expect(resolveItemRest(item({ restSeconds: -5 }), 120).source).toBe('settings');
-  });
-});
-
-describe('bumpItemRest and clearItemRest', () => {
-  it('creates the override from the value currently in force', () => {
-    // The first tap moves the number the row is showing rather than jumping.
-    const next = bumpItemRest(item(), ITEM_REST_LIMITS.step, 120);
-    expect(next.restSeconds).toBe(135);
-  });
-
-  it('nudges an existing override from itself, not from the setting', () => {
-    const own = item({ restSeconds: 180 });
-    expect(bumpItemRest(own, -ITEM_REST_LIMITS.step, 120).restSeconds).toBe(165);
-  });
-
-  it('can be nudged all the way to no rest', () => {
-    expect(bumpItemRest(item({ restSeconds: 10 }), -15, 120).restSeconds).toBe(0);
-  });
-
-  it('clears back to FOLLOWING the setting, not to a copy of it', () => {
-    const cleared = clearItemRest(item({ restSeconds: 180 }));
-    expect('restSeconds' in cleared).toBe(false);
-    expect(resolveItemRest(cleared, 90)).toEqual({ seconds: 90, source: 'settings' });
-    // ...and it keeps following as the setting moves.
-    expect(resolveItemRest(cleared, 150).seconds).toBe(150);
-  });
-});
-
 /* ------------------------------------------------------------------ */
 
 /**
@@ -269,7 +204,7 @@ describe('plannedSetDiff', () => {
 
 describe('applyPlannedSetDiff', () => {
   const items = [
-    item({ id: 'ri1', exerciseId: 'ex_dips', targetSets: 4, targetRepsMax: 8, restSeconds: 90 }),
+    item({ id: 'ri1', exerciseId: 'ex_dips', targetSets: 4, targetRepsMax: 8, targetRepsMin: 6 }),
     item({ id: 'ri2', exerciseId: 'ex_plank', targetSets: 3 }),
   ];
 
@@ -282,7 +217,7 @@ describe('applyPlannedSetDiff', () => {
     expect(next[0].targetSets).toBe(5);
     // Everything else about the item is left exactly alone.
     expect(next[0].targetRepsMax).toBe(8);
-    expect(next[0].restSeconds).toBe(90);
+    expect(next[0].targetRepsMin).toBe(6);
     expect(next[1]).toBe(items[1]);
   });
 

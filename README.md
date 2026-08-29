@@ -24,14 +24,15 @@ npm run lint             # also what CI runs, on every push
 | --- | --- |
 | Pick your own workout | every routine is listed on the home screen and one tap from opening. Nothing is imposed |
 | Open ≠ start | opening a routine shows its exercises and records nothing. The workout starts on `Start` inside it (or on the first logged set), and `Stop and exit` leaves without saving. Only `Finish` writes to history |
-| The clock, up top | one big pill under the session header, shared by the rest countdown and the clock on a timed set. `+15`, `⏸` and `Skip`; it names which rest it is running, and inverts to a green slab for the last ten seconds |
+| The clock, up top | one big pill under the session header, shared by the rest countdown and the clock on a timed set. `−15`, `+15`, `⏸` and `Skip`; it names which rest it is running, and inverts to a green slab for the last ten seconds. The ± sets the rest for every set that follows, not just the one you are in |
 | Count-in | the last N seconds of any countdown tick out loud and land on a long tone. Off screen it is a pair of scheduled notifications carrying the app's own WAVs, because a JS interval does not survive Doze |
 | Timed sets | ▶ on the row: a get-ready count, then either a countdown that logs itself at the bell (a 2:00 plank, a boxing round) or an open hold you stop (a dead hang) |
 | Training sequence | optional, off by default. Build an order — push → pull → push — and the home screen names the next one up and advances when you finish it. Off means invisible |
 | Routines | add, rename, reorder by long-press-and-slide, remove an exercise with the ✕ on its row, delete the routine |
 | The plan is editable | tap a row in the routine editor and it opens in place: sets, the rep range, and how long to rest, all on ± chips. Rest names which of the two it is using — this exercise's own, or your Settings value — and can be put back to following Settings |
+| One rest, and you can see whose it is | `Between sets` in Settings is the rest for every set of every exercise, and setting it puts every exercise back onto it. Give one movement a rest of its own in its editor — or on its routine row — and only that one leaves. Nothing ships with a rest of its own, and nothing creates one for you |
 | Supersets | one toggle, `with the exercise above`. Members share a green rule down their left edge, no rest fires between them, and rest comes after the last one of the round |
-| Change the plan mid-set | `+ Add set` / `− Remove set` in every card, `+ Add an exercise` at the bottom (library picker and create screen included), long-press a card and slide to reorder |
+| Change the plan mid-set | `+ Add set` / `− Remove set` in every card, `Remove exercise` under them for the whole thing at once (it asks first if you have logged into it), `+ Add an exercise` at the bottom (library picker and create screen included), long-press a card and slide to reorder |
 | …and it learns | on `Finish`, if you did five sets where the routine plans four, one extra tap writes that back. Declining changes nothing and it does not ask twice |
 | Warm-up sets | a chip in the set editor. A warm-up reads `W` instead of a number and counts towards nothing — not the volume, not the set count, not the shorthand, not the suggestions |
 | Exercise library | a muscle tree — `push → chest → dips` — with search, create-from-query, edit in place (a rename keeps every set ever logged) and delete |
@@ -108,15 +109,18 @@ src/components/             SetRow, ExerciseCard, TimerPill, primitives,
                             ErrorBoundary, ConfirmSheet…
 src/hooks/                  the two timers and the count-in
 src/lib/                    the decisions: overload, set timer, count-in cue,
-                            muscles, draft, routine plan, superset, balance,
-                            rest history, plates, reorder, completed workout,
+                            muscles, draft, routine plan, rest, superset,
+                            balance, rest history, plates, reorder, completed
+                            workout,
                             history, trends, shape, units, backup, csv — all
                             pure, all tested. Plus beeper/notify/feedback, the
                             three wrappers around native side effects that must
                             never throw mid-set
 src/state/                  the live session, the finished workouts, the library
                             (+ the sequence), the settings — zustand, every one
-                            validated on the way in. historyDb.ts is the SQLite
+                            validated on the way in. restSync.ts is the one
+                            policy that spans three of them: setting the global
+                            rest, everywhere it has to land. historyDb.ts is the SQLite
                             schema and the migration off AsyncStorage; the other
                             three stores are a few dozen rows and stay there
 src/data/seed.ts            the starting library and three routines. No history,

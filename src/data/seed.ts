@@ -11,6 +11,12 @@
  * because every movement cluster needs something in it for its filter chip and
  * its library section to be a real state rather than an empty one.
  *
+ * NO EXERCISE SHIPS WITH ITS OWN REST, and none of the routines does either.
+ * `Exercise.defaultRestSeconds` is an override the user sets by hand; a shipped
+ * one would shadow the `Between sets` setting on almost every movement in the
+ * app, which is precisely the bug `lib/rest.ts` exists to describe. Everything
+ * here follows the setting until somebody says otherwise.
+ *
  * The four `equipment: 'barbell'` rows carry `barWeightKg: 20`, which is what
  * turns on the `20 + 2×10 + 2×2.5` line under their weight cell. Only those four:
  * the flag is a fact about how a movement is loaded, and a machine or a dumbbell
@@ -24,7 +30,6 @@ export const seedUser: User = {
   id: 'u1',
   displayName: 'Semyon',
   unitSystem: 'metric',
-  defaultRestSeconds: 120,
   overloadPolicy: DEFAULT_OVERLOAD_POLICY,
   createdAt: '2026-01-01T00:00:00.000Z',
 };
@@ -46,7 +51,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'added_bodyweight', // the belt weight, not total load
     isUnilateral: false,
     incrementKg: 2.5,
-    defaultRestSeconds: 180,
     equipment: 'bar + belt',
   },
   {
@@ -59,7 +63,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 5, // pin stack: 5 kg is the smallest real jump
-    defaultRestSeconds: 120,
     equipment: 'lat machine',
   },
   {
@@ -73,7 +76,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 5,
-    defaultRestSeconds: 120,
   },
   {
     ...base,
@@ -86,7 +88,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: true,
     incrementKg: 2.5,
-    defaultRestSeconds: 90,
     equipment: 'dumbbells',
   },
   {
@@ -99,7 +100,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'added_bodyweight',
     isUnilateral: false,
     incrementKg: 2.5,
-    defaultRestSeconds: 90,
   },
   {
     ...base,
@@ -111,7 +111,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'added_bodyweight',
     isUnilateral: false,
     incrementKg: 2.5,
-    defaultRestSeconds: 120,
     equipment: 'dip bars + belt',
   },
   {
@@ -123,7 +122,6 @@ export const seedExercises: Exercise[] = [
     countUnit: 'reps',
     loadMode: 'none',
     isUnilateral: false,
-    defaultRestSeconds: 120,
   },
   {
     ...base,
@@ -135,7 +133,6 @@ export const seedExercises: Exercise[] = [
     countUnit: 'reps',
     loadMode: 'none',
     isUnilateral: false,
-    defaultRestSeconds: 60,
   },
   {
     ...base,
@@ -151,7 +148,6 @@ export const seedExercises: Exercise[] = [
     timerMode: 'countdown',
     prepareSeconds: 0,
     isUnilateral: false,
-    defaultRestSeconds: 60,
   },
   {
     ...base,
@@ -164,7 +160,6 @@ export const seedExercises: Exercise[] = [
     // Deliberately manual: the phone is in a locker for fifty minutes.
     timerMode: 'manual',
     isUnilateral: false,
-    defaultRestSeconds: 0,
   },
 
   /* --- timed holds: the reason the set timer exists ------------------- */
@@ -181,7 +176,6 @@ export const seedExercises: Exercise[] = [
     timerMode: 'countdown',
     prepareSeconds: 5,
     isUnilateral: false,
-    defaultRestSeconds: 60,
   },
   {
     ...base,
@@ -198,7 +192,6 @@ export const seedExercises: Exercise[] = [
     timerMode: 'countup',
     prepareSeconds: 5,
     isUnilateral: false,
-    defaultRestSeconds: 90,
   },
   {
     ...base,
@@ -211,7 +204,6 @@ export const seedExercises: Exercise[] = [
     timerMode: 'countdown',
     prepareSeconds: 5,
     isUnilateral: false,
-    defaultRestSeconds: 60,
   },
   {
     ...base,
@@ -223,7 +215,6 @@ export const seedExercises: Exercise[] = [
     countUnit: 'reps',
     loadMode: 'none',
     isUnilateral: false,
-    defaultRestSeconds: 90,
   },
 
   /* --- more back and arm work, so the pull cluster has a shape -------- */
@@ -237,7 +228,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 5,
-    defaultRestSeconds: 180,
     equipment: 'barbell',
     barWeightKg: 20,
   },
@@ -252,7 +242,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 2.5,
-    defaultRestSeconds: 120,
     equipment: 'barbell',
     barWeightKg: 20,
   },
@@ -268,7 +257,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 2.5,
-    defaultRestSeconds: 90,
     equipment: 'cable',
   },
   {
@@ -281,7 +269,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 2.5,
-    defaultRestSeconds: 90,
     equipment: 'dumbbells',
   },
   {
@@ -294,7 +281,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: true,
     incrementKg: 2.5,
-    defaultRestSeconds: 90,
     equipment: 'dumbbells',
   },
   {
@@ -307,7 +293,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 2.5,
-    defaultRestSeconds: 150,
     equipment: 'barbell',
     barWeightKg: 20,
   },
@@ -321,7 +306,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 5,
-    defaultRestSeconds: 180,
     equipment: 'barbell',
     barWeightKg: 20,
   },
@@ -335,7 +319,6 @@ export const seedExercises: Exercise[] = [
     loadMode: 'external',
     isUnilateral: false,
     incrementKg: 5,
-    defaultRestSeconds: 60,
   },
 ];
 
@@ -361,7 +344,6 @@ export const seedRoutine: Routine = {
       targetSets: 4,
       targetRepsMin: 4,
       targetRepsMax: 6,
-      restSeconds: 180,
     },
     {
       id: 'ri2',
@@ -370,21 +352,20 @@ export const seedRoutine: Routine = {
       targetSets: 4,
       targetRepsMin: 5,
       targetRepsMax: 8,
-      restSeconds: 120,
     },
     { id: 'ri3', exerciseId: 'ex_row_stomach', order: 2, targetSets: 4, targetRepsMax: 10 },
-    { id: 'ri4', exerciseId: 'ex_brachialis', order: 3, targetSets: 4, targetRepsMax: 16, restSeconds: 90 },
-    { id: 'ri5', exerciseId: 'ex_situp_weighted', order: 4, targetSets: 3, targetRepsMax: 12, restSeconds: 90 },
+    { id: 'ri4', exerciseId: 'ex_brachialis', order: 3, targetSets: 4, targetRepsMax: 16 },
+    { id: 'ri5', exerciseId: 'ex_situp_weighted', order: 4, targetSets: 3, targetRepsMax: 12 },
     /*
      * The two shapes of a timed set, back to back: a 2:00 plank the clock counts
      * DOWN to a prescribed target, and a dead hang the clock counts UP until the
      * hands give out. `targetRepsMax` is seconds for time-counted work, so it is
      * also what the countdown starts from.
      */
-    { id: 'ri7', exerciseId: 'ex_plank', order: 5, targetSets: 3, targetRepsMax: 120, restSeconds: 60 },
-    { id: 'ri8', exerciseId: 'ex_dead_hang', order: 6, targetSets: 2, targetRepsMax: 45, restSeconds: 90 },
+    { id: 'ri7', exerciseId: 'ex_plank', order: 5, targetSets: 3, targetRepsMax: 120 },
+    { id: 'ri8', exerciseId: 'ex_dead_hang', order: 6, targetSets: 2, targetRepsMax: 45 },
     // 50 min in the pool.
-    { id: 'ri6', exerciseId: 'ex_swim', order: 7, targetSets: 1, targetRepsMax: 3000, restSeconds: 0 },
+    { id: 'ri6', exerciseId: 'ex_swim', order: 7, targetSets: 1, targetRepsMax: 3000 },
   ],
 };
 
@@ -402,7 +383,6 @@ export const seedRoutinePush: Routine = {
       targetSets: 4,
       targetRepsMin: 5,
       targetRepsMax: 12,
-      restSeconds: 120,
     },
     {
       id: 'rp2',
@@ -411,7 +391,6 @@ export const seedRoutinePush: Routine = {
       targetSets: 4,
       targetRepsMin: 12,
       targetRepsMax: 15,
-      restSeconds: 60,
     },
   ],
 };
@@ -424,7 +403,7 @@ export const seedRoutineBoxing: Routine = {
   updatedAt: '2026-08-06T00:00:00.000Z',
   items: [
     // 12 rounds of 3:00, 1:00 between them.
-    { id: 'rb1', exerciseId: 'ex_boxing_bag', order: 0, targetSets: 12, targetRepsMax: 180, restSeconds: 60 },
+    { id: 'rb1', exerciseId: 'ex_boxing_bag', order: 0, targetSets: 12, targetRepsMax: 180 },
     {
       id: 'rb2',
       exerciseId: 'ex_pushups',
@@ -432,7 +411,6 @@ export const seedRoutineBoxing: Routine = {
       targetSets: 4,
       targetRepsMin: 12,
       targetRepsMax: 15,
-      restSeconds: 60,
     },
   ],
 };

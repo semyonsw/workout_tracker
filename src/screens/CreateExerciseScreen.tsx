@@ -30,7 +30,8 @@
  *   │ LOAD MODE                                    │
  *   │ ╭ External │ Added │ Assisted ╮               │
  *   │ ╭ Increment            ± 2.5 kg ╮             │
- *   │ ╰ Rest       From Settings · 2:00 ╯           │
+ *   │ │ Rest between sets                            │
+ *   │ ╰ Following your setting  2:00  ( − )( + )╯    │
  *   └──────────────────────────────────────────────┘
  *
  * `Requires weight` is the key control in the app's data model, and this screen
@@ -82,10 +83,16 @@
  * the five numbers it produces are the session. `lib/repLadder.ts` owns every one
  * of them.
  *
- * `Rest` is the exception and is deliberately NOT editable here: rest lengths are
- * two global settings now (see `activeWorkoutStore.completeSet`), so a per-exercise
- * rest on this screen would be a control that quietly does nothing. It states where
- * the number comes from instead.
+ * ── REST ───────────────────────────────────────────────────────────────────
+ *
+ * One movement, one rest. The row starts on your `Between sets` setting and says
+ * so; the first ± makes the number this exercise's own, and `Follow the setting
+ * instead` gives it back. Two facts, never one ambiguous number — `lib/rest.ts`
+ * has the whole argument, including why this row used to be inert and why the
+ * field behind it was being written anyway.
+ *
+ * Setting the global rest in Settings clears every one of these, which is what
+ * lets `Between sets` mean between every set.
  *
  * What this file does NOT own: the draft itself, and the two conversions between a
  * draft and a library row. Those became load-bearing the moment this screen could
@@ -106,9 +113,17 @@ import {
   SelectChip,
   Separator,
   SettingRow,
+  StepperRow,
   Toggle,
 } from '../components/primitives';
-import { bumpLadderMax, toggleLadder, type ExerciseDraft } from '../lib/exerciseDraft';
+import {
+  bumpDraftRest,
+  bumpLadderMax,
+  followSettingsRest,
+  toggleLadder,
+  type ExerciseDraft,
+} from '../lib/exerciseDraft';
+import { REST_LIMITS } from '../lib/rest';
 import { describeSetInputs, wellsFor, type WellSpec } from '../lib/exerciseShape';
 import { tap } from '../lib/feedback';
 import {
@@ -169,6 +184,16 @@ interface CreateExerciseScreenProps {
   initial: ExerciseDraft;
   /** `edit` relabels the header and the action. Everything else is identical. */
   mode?: 'create' | 'edit';
+  /**
+   * The between-sets rest from Settings — what this exercise runs unless it is
+   * given one of its own.
+   *
+   * Passed in rather than read here (this screen is composition), and needed as a
+   * LIVE value rather than only as the draft's seed: `Follow the setting instead`
+   * has to put the setting's number back on the row, and by then the draft's copy
+   * has been nudged away from it.
+   */
+  settingsRestSeconds: number;
   onBack: () => void;
   /** Create it, or save the changes — the caller knows which. */
   onSubmit: (draft: ExerciseDraft) => void;
@@ -177,6 +202,7 @@ interface CreateExerciseScreenProps {
 export function CreateExerciseScreen({
   initial,
   mode = 'create',
+  settingsRestSeconds,
   onBack,
   onSubmit,
 }: CreateExerciseScreenProps) {
@@ -435,14 +461,59 @@ export function CreateExerciseScreen({
             </>
           ) : null}
 
-          {/* Stated as a fact, not offered as a control: both rest lengths are
-              global settings now, so an editable per-exercise rest here would be a
-              row that quietly does nothing. */}
-          <SettingRow
-            label={isRounds ? 'Rest between rounds' : 'Rest'}
-            value={`From Settings · ${formatClock(draft.restSeconds)}`}
-            valueTone="faint"
+          {/*
+            REST, AND IT IS A REAL CONTROL NOW.
+
+            It used to state `From Settings · 2:00` and refuse to be touched, on the
+            grounds that rest was global and an editable row here would quietly do
+            nothing. That was half right: the row did nothing, but the field behind
+            it was written anyway — every save stamped the setting's value onto this
+            exercise, where it then shadowed the setting forever. One rest per
+            movement, set here, is the fix (`lib/rest.ts`).
+
+            The row NAMES ITS SOURCE, which is the part that makes it readable: a
+            bare `2:00` cannot tell "this movement wants two minutes" from "your
+            setting is two minutes", and the first tap on `−` is what turns one into
+            the other. */}
+          <StepperRow
+            label={isRounds ? 'Rest between rounds' : 'Rest between sets'}
+            hint={
+              draft.restFollowsSettings
+                ? 'Following your setting — it moves when you change it'
+                : 'This exercise only'
+            }
+            value={draft.restSeconds > 0 ? formatClock(draft.restSeconds) : 'None'}
+            onDecrease={() => {
+              tap();
+              patch(bumpDraftRest(draft, -REST_LIMITS.step));
+            }}
+            onIncrease={() => {
+              tap();
+              patch(bumpDraftRest(draft, REST_LIMITS.step));
+            }}
           />
+
+          {/* Not "copy the current value" — stop overriding. An exercise that is
+              following tracks the setting as it changes, including the change that
+              sets every exercise at once. */}
+          {draft.restFollowsSettings ? null : (
+            <>
+              <Separator />
+              <Pressable
+                onPress={() => {
+                  tap();
+                  patch(followSettingsRest(draft, settingsRestSeconds));
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Follow the rest setting instead of this exercise's own"
+                className="h-hit justify-center px-lg"
+              >
+                <Text className="text-label font-medium text-ink-muted">
+                  Follow the setting instead
+                </Text>
+              </Pressable>
+            </>
+          )}
 
           {/* Stated, not hidden: the user should know why they'll never see a
               nudge here, rather than wonder whether it's broken. A ladder is the

@@ -24,11 +24,31 @@ const exercisesById = Object.fromEntries(seedExercises.map((e) => [e.id, e])) as
   Exercise
 >;
 
-function startRoutine(index = 0) {
+/**
+ * `withOwnRest` gives the routine's FIRST exercise a rest of its own, which the
+ * shipped library deliberately no longer does — nothing ships with an override,
+ * because an override nobody chose is the bug this suite remembers. Tests about
+ * the override branch have to create one, and creating it here means they create
+ * it the same way the exercise editor does: on the exercise.
+ */
+function startRoutine(index = 0, withOwnRest?: number) {
+  const firstExerciseId = [...seedRoutines[index].items].sort((a, b) => a.order - b.order)[0]
+    .exerciseId;
+  const library =
+    withOwnRest == null
+      ? exercisesById
+      : {
+          ...exercisesById,
+          [firstExerciseId]: {
+            ...exercisesById[firstExerciseId],
+            defaultRestSeconds: withOwnRest,
+          },
+        };
+
   useActiveWorkout.getState().discardSession();
   useActiveWorkout.getState().startSession({
     routine: seedRoutines[index],
-    exercisesById,
+    exercisesById: library,
     historyByExerciseId: fixtureHistoryByExerciseId,
     policy: seedUser.overloadPolicy,
     unitSystem: 'metric',
@@ -135,14 +155,15 @@ describe('rest: pause, resume, skip', () => {
   /*
    * This asserted `entry.restSeconds`, the length the session was BUILT with, and
    * passed only because that number happened to equal the setting. It is now the
-   * length the rule below actually resolves — see 'rest lengths: the item
-   * override, then settings' for the rule itself; this test is about the pill
-   * being started, running, and not paused.
+   * length the rule below actually resolves — see 'rest lengths: the exercise,
+   * then the setting' for the rule itself; this test is about the pill being
+   * started, running, and not paused.
    */
   it('completing a set starts a running rest of the resolved length', () => {
     const session = startRoutine();
     const entry = session.entries[0];
-    const expected = entry.restSecondsOverride ?? useSettings.getState().restSecondsBetweenSets;
+    const expected =
+      entry.exercise.defaultRestSeconds ?? useSettings.getState().restSecondsBetweenSets;
     const before = Date.now();
 
     useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
@@ -275,27 +296,31 @@ describe('rest: pause, resume, skip', () => {
 /**
  * Where the two rest lengths actually come from.
  *
- * The history matters, because both halves of it were bugs.
+ * The history matters, because every version of it was a bug.
  *
  * FIRST, rest was resolved once at session start from a cascade that checked the
  * routine item and then `exercise.defaultRestSeconds` — and nearly every shipped
- * exercise carries one, so both Settings values were shadowed on almost every
- * exercise. Setting "Between sets" to 1:30 and watching a 3:00 countdown is a
- * setting that does nothing. The fix was to ignore the routine entirely.
+ * exercise carried one, so both Settings values were shadowed almost everywhere.
+ * Setting "Between sets" to 1:30 and watching a 3:00 countdown is a setting that
+ * does nothing. The fix was to ignore the routine entirely.
  *
- * THAT WENT TOO FAR, and 0.12.0 walks it back one level. The routine editor can
- * now SET a per-item rest, show which of the two is in force on the row, and
- * clear it again — so an override is a choice the user made and can see, which
- * was the only thing missing. The rule is therefore:
+ * THEN it came back as a per-ITEM override, on the grounds that the routine editor
+ * could now set and clear one. It could — but the shipped routines still carried
+ * rests, `appendToRoutine` seeded more, and the exercise editor stamped the
+ * setting's value onto every exercise it saved. So the 3:00 countdown came back
+ * too, on a device that had never opened the routine editor.
  *
- *   between sets       item's override if it has one, else the live setting
+ * NOW there is ONE override and it lives on the exercise, nothing creates one by
+ * itself, and setting the global rest clears every one of them. The rule is:
+ *
+ *   between sets       the exercise's own rest if it has one, else the live setting
  *   between exercises  always the live setting
  *
  * and the asymmetry is the same rule stated twice: nothing edits
  * `RoutineItem.transitionRestSeconds`, so honouring it would be the first bug
  * again on a number nobody can reach.
  */
-describe('rest lengths: the item override, then settings', () => {
+describe('rest lengths: the exercise, then the setting', () => {
   function withSettings(values: Partial<Record<'sets' | 'exercises', number>>, run: () => void) {
     const settings = useSettings.getState();
     if (values.sets != null) settings.setNumber('restSecondsBetweenSets', values.sets);
@@ -310,23 +335,33 @@ describe('rest lengths: the item override, then settings', () => {
   }
 
   /**
-   * The first entry whose routine item did NOT set a rest, and the first that did.
-   *
-   * Picked by asking the built session rather than by index: the seed routine's
-   * shape is not this suite's business, and an index would silently start testing
-   * the wrong branch the day somebody adds a rest to an item.
+   * The first entry, whichever it is. EVERY shipped exercise follows the setting
+   * now — that is the point — so this is just "an entry", named for what the test
+   * is asserting about it.
    */
   function following(session: { entries: DraftEntry[] }): DraftEntry {
-    const entry = session.entries.find((e) => e.restSecondsOverride == null);
-    if (!entry) throw new Error('the seed routine has no item that follows Settings');
+    const entry = session.entries[0];
+    if (entry.exercise.defaultRestSeconds != null) {
+      throw new Error('a shipped exercise carries its own rest; nothing should');
+    }
     return entry;
   }
 
-  function overriding(session: { entries: DraftEntry[] }): DraftEntry {
-    const entry = session.entries.find((e) => (e.restSecondsOverride ?? 0) > 0);
-    if (!entry) throw new Error('the seed routine has no item with its own rest');
-    return entry;
-  }
+  it('nothing in the shipped library or routines carries a rest of its own', () => {
+    /*
+     * The guard on the whole rework. An override the user did not create is
+     * indistinguishable, from the gym floor, from a broken setting — so the
+     * library ships none, and this fails the day something seeds one again.
+     */
+    for (const exercise of seedExercises) {
+      expect(exercise.defaultRestSeconds).toBeUndefined();
+    }
+    for (const routine of seedRoutines) {
+      for (const item of routine.items) {
+        expect(JSON.stringify(item)).not.toContain('restSeconds');
+      }
+    }
+  });
 
   it('a set that is not the last uses "between sets"', () => {
     withSettings({ sets: 45 }, () => {
@@ -339,29 +374,55 @@ describe('rest lengths: the item override, then settings', () => {
     });
   });
 
-  it("uses the ITEM's own rest where the routine set one", () => {
+  it("uses the EXERCISE's own rest where it has one", () => {
     withSettings({ sets: 45 }, () => {
-      const entry = overriding(startRoutine());
+      const entry = startRoutine(0, 180).entries[0];
       useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
 
       const { rest } = useActiveWorkout.getState();
       expect(rest.source).toBe('set');
-      expect(rest.totalSeconds).toBe(entry.restSecondsOverride);
-      expect(rest.totalSeconds).not.toBe(45);
+      expect(rest.totalSeconds).toBe(180);
     });
   });
 
   it('an override does NOT follow the setting as it changes', () => {
-    // The other half of "no override means live": if both tracked Settings, the
-    // override would be decoration. 45 then 300, and the item ignores both.
+    // The other half of "no override means live": if both tracked the setting, an
+    // override would be decoration. 45 then 300, and the exercise ignores both.
     withSettings({ sets: 45 }, () => {
-      const entry = overriding(startRoutine());
+      const entry = startRoutine(0, 180).entries[0];
       useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
-      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(entry.restSecondsOverride);
+      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(180);
 
       useSettings.getState().setNumber('restSecondsBetweenSets', 300);
       useActiveWorkout.getState().completeSet(entry.localId, entry.sets[1].localId);
-      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(entry.restSecondsOverride);
+      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(180);
+    });
+  });
+
+  it('...until the session is told to follow the global rest again', () => {
+    /*
+     * What `restSync.setRestBetweenSets` calls, and the half that makes "set the
+     * general rest" reach a workout ALREADY RUNNING. Without it the user changes
+     * the number, the next ✓ counts down from the old one, and the setting looks
+     * broken exactly the way it used to.
+     */
+    withSettings({ sets: 45 }, () => {
+      const entry = startRoutine(0, 180).entries[0];
+      useActiveWorkout.getState().followGlobalRest();
+
+      useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(45);
+    });
+  });
+
+  it('the card’s Rest button runs the same length the ✓ would', () => {
+    // Two answers to "how long is this rest" is one of them being wrong.
+    withSettings({ sets: 45 }, () => {
+      const entry = startRoutine(0, 180).entries[0];
+      useActiveWorkout.getState().setActiveEntry(entry.localId);
+      useActiveWorkout.getState().startRestNow();
+
+      expect(useActiveWorkout.getState().rest.totalSeconds).toBe(180);
     });
   });
 

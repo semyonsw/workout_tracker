@@ -19,16 +19,14 @@
  *     makes the plan match reality. Derived from what you did rather than typed
  *     into a form — the app's own idiom.
  *
- * ── THE REST CASCADE ───────────────────────────────────────────────────────
+ * ── REST IS NOT ONE OF THEM ────────────────────────────────────────────────
  *
- * `resolveItemRest` is the one place the cascade lives, and it is deliberately
- * two levels, not three: the ITEM's override if it has one, otherwise the value
- * in Settings. `Exercise.defaultRestSeconds` is not in it. That is the whole
- * lesson of the bug this replaces — a cascade through a number the user cannot
- * see or change means the two rest controls in Settings silently do nothing on
- * almost every exercise, and a setting that does nothing is indistinguishable
- * from a broken one. An item override is different now, because the editor can
- * set it, shows which of the two is in force, and can clear it again.
+ * A routine item used to carry a rest override, and this module used to resolve
+ * it. It does not any more: rest belongs to the MOVEMENT, and the whole cascade
+ * lives in `lib/rest.ts`. Three items in three routines pointing at the same
+ * exercise are three rows; they are still one pull-up, and one answer to "how
+ * long before I can pull again". The old arrangement is also exactly how a
+ * `Between sets 1:30` setting produced a 3:00 countdown — see that file.
  */
 
 import type { CountUnit, Exercise, ID, RoutineItem } from '../types/models';
@@ -46,9 +44,6 @@ import { countStep } from './units';
  * ever reached and eight more is room to be wrong in.
  */
 export const TARGET_SETS_LIMITS = { min: 1, max: 20 } as const;
-
-/** Rest, in seconds. The same range Settings allows, for the same reasons. */
-export const ITEM_REST_LIMITS = { min: 0, max: 900, step: 15 } as const;
 
 /**
  * The believable range for the per-set target, PER COUNT UNIT.
@@ -139,37 +134,6 @@ export function bumpTargetMin(item: RoutineItem, countUnit: CountUnit, delta: nu
   return { ...item, targetRepsMin: next };
 }
 
-/**
- * Nudge this item's rest override — creating one from the value currently in
- * force, so the first tap moves the number the row is showing rather than
- * jumping to somewhere else.
- *
- * `settingsRestSeconds` is what Settings says right now; it is only used as the
- * starting point. Once an override exists it is a fact about the item and
- * Settings no longer reaches it.
- */
-export function bumpItemRest(
-  item: RoutineItem,
-  delta: number,
-  settingsRestSeconds: number,
-): RoutineItem {
-  const { min, max } = ITEM_REST_LIMITS;
-  const current = item.restSeconds ?? settingsRestSeconds;
-  return { ...item, restSeconds: clamp(current + delta, min, max) };
-}
-
-/**
- * Drop the override, so this item follows Settings again — LIVE, not as a copy of
- * whatever Settings happens to say today. That distinction is the point of having
- * a clear action at all: `completeSet` re-reads Settings every time it starts a
- * rest, so an item with no override tracks the setting as it changes, and an
- * item with an override of the same number does not.
- */
-export function clearItemRest(item: RoutineItem): RoutineItem {
-  const { restSeconds: _dropped, ...rest } = item;
-  return rest;
-}
-
 /* ------------------------------------------------------------------ */
 /* Supersets                                                           */
 /* ------------------------------------------------------------------ */
@@ -248,32 +212,6 @@ export function supersetRunPosition(
   const members = items.filter((i) => i.supersetGroup === item.supersetGroup);
   if (members.length < 2) return 'none';
   return isSupersettedWithAbove(items, index) ? 'continue' : 'start';
-}
-
-/* ------------------------------------------------------------------ */
-/* Reading the cascade                                                 */
-/* ------------------------------------------------------------------ */
-
-export interface ResolvedRest {
-  seconds: number;
-  /**
-   * Which of the two is in force. The row states it, because "rest 3:00" with no
-   * source is the exact ambiguity that made the old behaviour unreadable: there
-   * was no way to tell a routine's number from the user's own.
-   */
-  source: 'item' | 'settings';
-}
-
-/** The rest this item will actually run. Two levels — see the file header. */
-export function resolveItemRest(
-  item: Pick<RoutineItem, 'restSeconds'>,
-  settingsRestSeconds: number,
-): ResolvedRest {
-  const own = item.restSeconds;
-  if (typeof own === 'number' && Number.isFinite(own) && own >= 0) {
-    return { seconds: Math.round(own), source: 'item' };
-  }
-  return { seconds: Math.max(0, Math.round(settingsRestSeconds)), source: 'settings' };
 }
 
 /* ------------------------------------------------------------------ */

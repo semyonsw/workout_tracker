@@ -19,7 +19,7 @@ import type {
   UnitSystem,
 } from '../types/models';
 import { countUnitLabel, effectiveLoadKg, formatDuration } from './units';
-import { resolveItemRest } from './routinePlan';
+import { resolveRest } from './rest';
 import { summarizeSessionSets } from './history';
 import { evaluateOverload, type OverloadVerdict } from './progressiveOverload';
 import { LADDER_SETS, describeLadder, ladderOf, ladderTargets } from './repLadder';
@@ -57,9 +57,9 @@ export interface DraftEntry {
   /**
    * The two rest lengths this session was BUILT with, in seconds.
    *
-   * Recorded, not obeyed. Rest is started by `completeSet`, and what it runs is
-   * `restSecondsOverride ?? the live Settings value` — so changing a setting
-   * mid-workout takes effect on the very next set rather than on the next session.
+   * Recorded, not obeyed. Rest is started by `completeSet`, which resolves it
+   * fresh every time from `resolveRest(entry.exercise, the live setting)` — so an
+   * exercise following the setting follows it mid-workout, on the very next set.
    * These two are what the session began with: useful in a log or a test, and the
    * shape older persisted sessions already have.
    */
@@ -72,26 +72,20 @@ export interface DraftEntry {
    * between members, one rest after the last member of a round. `lib/superset.ts`
    * owns the "whose turn is it" decision.
    *
-   * Absent on an exercise added mid-session, for the same reason
-   * `restSecondsOverride` is: there is no routine item behind it. Joining a
-   * superset mid-workout is a plan change, and the place to make one is the
-   * routine editor.
+   * Absent on an exercise added mid-session: there is no routine item behind it.
+   * Joining a superset mid-workout is a plan change, and the place to make one is
+   * the routine editor.
    */
   supersetGroup?: string;
-  /**
-   * THIS EXERCISE'S OWN between-sets rest, if the routine item set one.
-   *
-   * The difference between "an override of 2:00" and "following Settings, which
-   * currently says 2:00" is not visible in a number, and it is the whole
-   * distinction the routine editor now exposes: an item with no override tracks
-   * the setting as it changes, an item with one does not. `completeSet` needs to
-   * know which, so it is carried separately rather than folded into
-   * `restSeconds` — a single field could not tell the two apart.
-   *
-   * Absent on an exercise added mid-session: there is no routine item behind it,
-   * so there is nothing it could be overriding.
+  /*
+   * NO `restSecondsOverride` HERE ANY MORE. It carried the routine item's rest
+   * into the session, and it was half of a cascade that could not be seen: the
+   * override lived on the item, the setting lived in Settings, and the countdown
+   * obeyed whichever the session happened to be built from. There is one rest per
+   * exercise now and it rides on `exercise.defaultRestSeconds` — the same object
+   * the card already reads — so the session cannot disagree with the library
+   * about how long this movement rests. See `lib/rest.ts`.
    */
-  restSecondsOverride?: number;
   /**
    * The rep ladder this exercise is running, copied off the library row at build
    * time. Absent = it isn't running one, which is every exercise until somebody
@@ -317,8 +311,8 @@ export interface BuildDraftParams {
   policy: OverloadPolicy;
   unitSystem: UnitSystem;
   /**
-   * Rest between sets, from Settings. THE value, not a fallback — see the note on
-   * rest in `buildDraftSession`.
+   * Rest between sets, from Settings — what every exercise that has no rest of
+   * its own will run. See the note on rest in `buildDraftSession`.
    */
   defaultRestSeconds: number;
   /**
@@ -355,8 +349,6 @@ export interface BuildEntryParams {
   unitSystem: UnitSystem;
   restSeconds: number;
   transitionRestSeconds: number;
-  /** The routine item's own rest, if it has one. See `DraftEntry`. */
-  restSecondsOverride?: number;
   /** The routine item's superset group, if it is in one. See `DraftEntry`. */
   supersetGroup?: string;
   /** What the header states — "4 × 8–10". */
@@ -457,9 +449,6 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
     ...(ladder ? { ladder } : {}),
     restSeconds,
     transitionRestSeconds,
-    ...(params.restSecondsOverride != null
-      ? { restSecondsOverride: params.restSecondsOverride }
-      : {}),
     ...(params.supersetGroup ? { supersetGroup: params.supersetGroup } : {}),
     sets,
     overload,
@@ -488,47 +477,29 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
       const exercise = exercisesById[item.exerciseId];
       if (!exercise) return null;
 
-      const rest = resolveItemRest(item, defaultRestSeconds);
-
       return buildDraftEntry({
         exercise,
         history: historyByExerciseId[exercise.id] ?? [],
         policy,
         unitSystem,
         /*
-         * REST: THE ITEM'S OVERRIDE IF IT HAS ONE, OTHERWISE SETTINGS.
+         * REST: WHAT THIS EXERCISE WILL ACTUALLY RUN, recorded — its own rest if
+         * it has one, otherwise the setting. `resolveRest` is the single place
+         * that decision lives (`lib/rest.ts`), and `completeSet` asks it again
+         * every time it starts a rest rather than trusting this number: an
+         * exercise following the setting has to follow it as the setting CHANGES,
+         * mid-workout included, and a value copied at build time cannot.
          *
-         * That day arrived. This used to be `defaultRestSeconds` and nothing else,
-         * with a note saying per-exercise rest could come back once the routine
-         * editor let someone SET it — because the cascade it replaced went through
-         * `exercise.defaultRestSeconds`, which nearly every shipped exercise
-         * carries and nobody could see or change. The two numbers in Settings were
-         * the only rest controls in the app, and they were shadowed on almost
-         * every exercise: setting "Between sets" to 1:30 and then watching a 3:00
-         * countdown is indistinguishable from a broken setting.
+         * So what is stored here is history — what the session was built with —
+         * not an instruction. See the note on `DraftEntry.restSeconds`.
          *
-         * The editor sets `item.restSeconds` now, shows which of the two is in
-         * force on the row, and can clear it back to "follow Settings". So an
-         * override is a choice the user made and can see, which is the whole
-         * condition that was missing. `resolveItemRest` is the one place the
-         * cascade lives, and it is two levels — the exercise's own default is
-         * still not in it, for exactly the reason above. It seeds an override in
-         * `appendToRoutine`, where it becomes visible and clearable, and reaches a
-         * session no other way.
-         *
-         * NO OVERRIDE STILL MEANS LIVE. `completeSet` re-reads Settings every time
-         * it starts a rest, so an item that is following Settings tracks the
-         * setting as it changes mid-workout. The value recorded here is what the
-         * session was BUILT with — see the note on `DraftEntry.restSeconds`.
-         *
-         * `transitionRestSeconds` deliberately still comes from Settings alone.
-         * `RoutineItem` declares one, and nothing sets it and no control edits it
-         * — so honouring it would recreate the original bug for the
-         * between-exercises setting, on a number nobody can reach.
+         * `transitionRestSeconds` comes from Settings alone. `RoutineItem`
+         * declares one, nothing sets it, and no control edits it — honouring a
+         * number nobody can reach is how the between-sets setting broke in the
+         * first place.
          */
-        restSeconds: rest.seconds,
+        restSeconds: resolveRest(exercise, defaultRestSeconds).seconds,
         transitionRestSeconds: defaultTransitionRestSeconds,
-        ...(rest.source === 'item' ? { restSecondsOverride: rest.seconds } : {}),
         /*
          * Carried onto the entry rather than looked up later. The session is what
          * `completeSet` and the cards read, and a store action reaching back into

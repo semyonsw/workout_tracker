@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyDraftToExercise,
+  bumpDraftRest,
   bumpLadderMax,
   draftToExercise,
   emptyExerciseDraft,
   exerciseToDraft,
+  followSettingsRest,
   toggleLadder,
 } from './exerciseDraft';
+import { REST_LIMITS } from './rest';
 import type { Exercise } from '../types/models';
 
 /**
@@ -206,7 +209,51 @@ describe('creating', () => {
     // The muscle the create flow was opened from is primary, so the exercise files
     // where the user was looking.
     expect(created.muscleGroups).toEqual(['quads']);
-    expect(created.defaultRestSeconds).toBe(150);
+  });
+
+  it('does not stamp the rest setting onto the exercise', () => {
+    /*
+     * THE BUG, in one assertion. The draft's rest is seeded from Settings so the
+     * row has something to show, and `draftToExercise` used to write it into
+     * `defaultRestSeconds` unconditionally — so every exercise ever saved came out
+     * carrying a permanent override with the setting's value of that moment, and
+     * the setting was shadowed everywhere afterwards. See `lib/rest.ts`.
+     */
+    const draft = emptyExerciseDraft('Zercher squat', 'quads', 150);
+    const created = draftToExercise(draft, 'ex_new', 'u1');
+
+    expect(created.defaultRestSeconds).toBeUndefined();
+    expect(JSON.stringify(created)).not.toContain('defaultRestSeconds');
+  });
+
+  it('writes a rest the user actually set, and takes it back on demand', () => {
+    const own = bumpDraftRest(emptyExerciseDraft('Zercher squat', 'quads', 150), -REST_LIMITS.step);
+    expect(own.restFollowsSettings).toBe(false);
+    expect(draftToExercise(own, 'ex_new', 'u1').defaultRestSeconds).toBe(135);
+
+    // ...and back to following, which is an absence rather than a copy of 150.
+    const back = followSettingsRest(own, 150);
+    expect(back.restSeconds).toBe(150);
+    expect(draftToExercise(back, 'ex_new', 'u1').defaultRestSeconds).toBeUndefined();
+  });
+
+  it('round-trips an exercise through the editor without inventing a rest', () => {
+    // Opening an exercise, changing nothing and saving must not give it a rest it
+    // did not have — the shape of the original stamp, one screen away.
+    const existing = draftToExercise(
+      emptyExerciseDraft('Zercher squat', 'quads', 150),
+      'ex_z',
+      'u1',
+    );
+
+    const following = exerciseToDraft(existing, 200);
+    expect(following.restSeconds).toBe(200);
+    expect(following.restFollowsSettings).toBe(true);
+    expect(applyDraftToExercise(following, existing).defaultRestSeconds).toBeUndefined();
+
+    const own = exerciseToDraft({ ...existing, defaultRestSeconds: 90 }, 200);
+    expect(own.restSeconds).toBe(90);
+    expect(own.restFollowsSettings).toBe(false);
   });
 });
 

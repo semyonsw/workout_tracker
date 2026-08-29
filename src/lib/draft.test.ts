@@ -338,47 +338,40 @@ describe('sessionVolume', () => {
  * override now, which is the condition that was missing.
  */
 describe('the rest an entry is built with', () => {
-  function routineWithRest(restSeconds?: number): Routine {
+  function routine(): Routine {
     return {
       ...routineFor(machine.id),
-      items: [
-        {
-          id: 'ri1',
-          exerciseId: machine.id,
-          order: 0,
-          targetSets: 4,
-          ...(restSeconds != null ? { restSeconds } : {}),
-        },
-      ],
+      items: [{ id: 'ri1', exerciseId: machine.id, order: 0, targetSets: 4 }],
     };
   }
 
-  it('follows Settings when the item has no override', () => {
-    const session = build(machine, [], routineWithRest());
+  it('follows the setting when the exercise has no rest of its own', () => {
+    const session = build(machine, [], routine());
     expect(session.entries[0].restSeconds).toBe(120);
-    // And says so: no override recorded, which is what `completeSet` checks.
-    expect(session.entries[0].restSecondsOverride).toBeUndefined();
   });
 
-  it("uses the ITEM's rest where the routine set one", () => {
-    const session = build(machine, [], routineWithRest(180));
+  it("uses the EXERCISE's own rest where it has one", () => {
+    const own: Exercise = { ...machine, defaultRestSeconds: 180 };
+    const session = build(own, [], routine());
     expect(session.entries[0].restSeconds).toBe(180);
-    expect(session.entries[0].restSecondsOverride).toBe(180);
   });
 
-  it('records an explicit no-rest as an override, not as missing', () => {
+  it('records an explicit no-rest rather than falling back to the setting', () => {
     // A swim rests for nothing on purpose.
-    const session = build(machine, [], routineWithRest(0));
+    const none: Exercise = { ...machine, defaultRestSeconds: 0 };
+    const session = build(none, [], routine());
     expect(session.entries[0].restSeconds).toBe(0);
-    expect(session.entries[0].restSecondsOverride).toBe(0);
   });
 
-  it('never reads the exercise’s own default rest', () => {
-    // The level that was removed, and the reason the setting looked broken.
-    const withOwnRest: Exercise = { ...machine, defaultRestSeconds: 240 };
-    const session = build(withOwnRest, [], routineWithRest());
-    expect(session.entries[0].restSeconds).toBe(120);
-    expect(session.entries[0].restSecondsOverride).toBeUndefined();
+  it('carries no rest override of its own — the entry reads the exercise', () => {
+    /*
+     * The session used to copy the routine item's rest onto the entry, which is
+     * how a workout could disagree with the library about how long a movement
+     * rests. `completeSet` resolves from `entry.exercise` now, so there is nothing
+     * on the entry to go stale. See `lib/rest.ts`.
+     */
+    const session = build(machine, [], routine());
+    expect(JSON.stringify(session.entries[0])).not.toContain('restSecondsOverride');
   });
 });
 
