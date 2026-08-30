@@ -35,12 +35,28 @@ export ANDROID_HOME=/root/android-sdk ANDROID_SDK_ROOT=/root/android-sdk
 Takes ~10 minutes; run it in the background. Output lands at
 `android/app/build/outputs/apk/release/app-release.apk`.
 
-**THE `-PWT_STORE_FILE` FLAGS ARE NOT OPTIONAL.** Android identifies an app by
-package name + signing key, and the phone has an app signed `CN=Android Debug`
-(`FA:C6:17:45…`). An APK signed with anything else cannot install over it — the
-only way in is uninstall, which deletes the training log. Those flags point the
-release build at `android/app/debug.keystore` so the key stays the same one
-forever. See `BUILD_ANDROID.md` for the whole story.
+### On the Windows box
+
+The same build, with the paths it actually has (installed 2026-08-30): JDK 17 at
+`C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot`, SDK at `E:\android-sdk`
+(C: is short on space), and `android/local.properties` holding
+`sdk.dir=E\:\\android-sdk` — Java-properties escaping, so that is a real
+double backslash in the file. Set `JAVA_HOME`/`ANDROID_HOME` per command, since
+neither is on the machine's PATH, and call `gradlew.bat` with the same flags.
+
+**THE ONE TRAP: `ninja: error: Filename longer than 260 characters`.** The C++
+codegen step writes object paths that embed the project's absolute path twice, and
+they run past `MAX_PATH`. `LongPathsEnabled` is already 1 in the registry, but the
+ninja shipped inside `cmake;3.22.1` is 1.10.2, which predates the check that reads
+that flag. The fix is a drop-in binary swap: ninja 1.12.1 over
+`E:\android-sdk\cmake\3.22.1\bin\ninja.exe`, with the 1.10.2 original kept beside
+it as `ninja-1.10.2.exe.bak`. Reinstalling the SDK's cmake package undoes it.
+
+`android/app/debug.keystore` IS THE ONLY COPY. `/android/` is gitignored, so that
+file exists nowhere else — not in the repo, not in CI. It is the key the phone's
+install is signed with (`FA:C6:17:45…`), and losing it means the only way to update
+the app is an uninstall that deletes the training log. Back it up before anything
+that regenerates `android/`, and check its checksum afterwards.
 
 ## Verify the artifact, never the source
 
