@@ -49,3 +49,9 @@ yarn-debug.*
 yarn-error.*
 .DS_Store
 Thumbs.db
+
+# installer output
+install.log
+install.log.old
+Start Dev Server.bat
+Install on phone.bat

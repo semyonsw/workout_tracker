@@ -1,7 +1,26 @@
-# workout_tracker
+# Workout Tracker
+
+[![Install](https://img.shields.io/badge/install-one%20double--click-2b8a3e)](INSTALL.md)
+[![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-3ddc84)](INSTALL.md)
+[![Stack](https://img.shields.io/badge/stack-Expo%2054%20%C2%B7%20RN%200.81%20%C2%B7%20TS-000020)](#what-it-does)
+[![Tests](https://img.shields.io/badge/tests-700%2B-1f9d55)](#tests)
+[![Storage](https://img.shields.io/badge/storage-local--first-0b7285)](#what-it-does)
 
 A minimal, local-first Android workout tracker built around one rule: **logging a
 set that repeats last session costs one tap.**
+
+> ### Install it
+>
+> | I want… | What to do |
+> |---|---|
+> | **the app on my phone** | grab the `.apk` from the [Releases page](../../releases), open it in Files, tap install — or plug the phone in and let the installer push it over USB |
+> | **the project on my computer** | **Windows:** double-click `Install.bat` · **Linux/macOS/WSL:** `./install.sh` |
+>
+> The installer finds Node (and offers to fetch it), installs the locked
+> dependency tree, **runs TypeScript and all 700-odd tests to prove it works
+> here**, and — if a phone is plugged in with USB debugging on — offers to
+> install the APK on it, translating whatever Android says back into plain
+> English. Details and troubleshooting: **[INSTALL.md](INSTALL.md)**.
 
 - **Stack** — Expo (React Native) + TypeScript + NativeWind + Zustand. The
   finished-workout log lives in SQLite; the library, routines and settings are a
