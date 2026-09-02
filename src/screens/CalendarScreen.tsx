@@ -3,14 +3,27 @@
  *
  *   ┌──────────────────────────────────────────────┐
  *   │ HISTORY               [ Log | Graphs | Cal ] │
+ *   │  …                                    ↑ older│
+ *   │ AUGUST 2026 · 12 WORKOUTS                    │
+ *   │  …                                           │
  *   │ SEPTEMBER 2026 · 8 WORKOUTS · 7 DAYS         │
  *   │  M  T  W  T  F  S  S                         │
  *   │     1  2 ▓3▓ 4 ▓5▓ 6                         │
  *   │ ▓7▓ 8 ▓9▓10 11 12 13                         │
- *   │ 14 15 16 17 18 19 20                         │
- *   │ AUGUST 2026 · 12 WORKOUTS                    │
- *   │  …                                           │
+ *   │ 14 15 16 17 18 19 20                    ▲ you│
  *   └──────────────────────────────────────────────┘
+ *
+ * ── IT RUNS THE WAY A WALL CALENDAR RUNS ───────────────────────────────────
+ *
+ * This month is at the BOTTOM and you climb up through the older ones. Every other
+ * list in the app is newest-first, and this one is the exception on purpose: a
+ * calendar is read rather than scanned, and reversing it puts the 30th of one month
+ * directly above the 1st of the next, which reads as time running backwards down
+ * the page.
+ *
+ * Which makes the opening scroll position load-bearing — see `settleToBottom`. A
+ * chronological list that opened at the top would open on the oldest month in the
+ * log, which for a three-year history is a screen full of 2023.
  *
  * The third view on the History tab, and the one that answers a question the other
  * two cannot: not "what did I lift" and not "is it going up", but "how often am I
@@ -35,7 +48,7 @@
  * already know.
  */
 
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import type { ReactNode } from 'react';
 
@@ -68,6 +81,31 @@ export function CalendarScreen({ workouts, toolbar }: CalendarScreenProps) {
     [months],
   );
 
+  const scrollRef = useRef<ScrollView>(null);
+  /**
+   * Whether the opening jump to the bottom has happened.
+   *
+   * ONCE, and never again: `onContentSizeChange` also fires when the grids finish
+   * measuring, so an unguarded `scrollToEnd` would keep yanking the list down while
+   * somebody is reading their way up through last spring.
+   */
+  const settled = useRef(false);
+
+  /**
+   * Land on THIS month.
+   *
+   * `animated: false`, because this is not a movement the user made — it is where
+   * the screen starts, and animating it would look like the list scrolling away from
+   * them. Fired from `onContentSizeChange` rather than an effect on mount, since at
+   * mount the months have no measured height and `scrollToEnd` would have nothing to
+   * scroll to.
+   */
+  const settleToBottom = useCallback(() => {
+    if (settled.current) return;
+    settled.current = true;
+    scrollRef.current?.scrollToEnd({ animated: false });
+  }, []);
+
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
@@ -83,9 +121,11 @@ export function CalendarScreen({ workouts, toolbar }: CalendarScreenProps) {
       </ScreenHeader>
 
       <ScrollView
+        ref={scrollRef}
         className="flex-1"
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        onContentSizeChange={settleToBottom}
       >
         {months.length === 0 ? (
           <Text className="mx-lg mt-xl text-label text-ink-faint">

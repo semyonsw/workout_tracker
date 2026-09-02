@@ -153,15 +153,29 @@ export function monthGrid(
 }
 
 /**
- * The months worth showing, newest first: every month from the first workout to
- * this one.
+ * The months worth showing, OLDEST FIRST: every month from the first workout to
+ * this one, in the order time runs.
+ *
+ * ── WHY CHRONOLOGICAL, WHEN EVERY OTHER LIST IN THE APP IS NEWEST-FIRST ────
+ *
+ * The session list, the history rows, the store's own array — all newest-first,
+ * because a list is scanned from the top and the thing you want is the thing you
+ * just did. A CALENDAR is not scanned, it is READ, and a calendar that runs
+ * backwards down the page puts the 30th above the 1st at the seam between two
+ * months. So this one goes the way a wall calendar goes: the current month is the
+ * LAST thing in the list, and older months are above it.
+ *
+ * `CalendarScreen` opens scrolled to the bottom because of it — landing on the
+ * oldest month of a three-year log would be the screen opening on 2023.
  *
  * GAPS INCLUDED. A month with no training in it is a fact about the log and the
  * most interesting thing on the screen — skipping the empty ones would draw a
  * calendar with no gaps in it, which is the one thing a calendar is for.
  *
  * Capped, because a log imported from a decade of training should not build a
- * hundred and twenty grids to render three.
+ * hundred and twenty grids to render three. The cap keeps the RECENT months, which
+ * is why the walk below still runs backwards from now and the reversal happens at
+ * the end: capping a chronological walk would keep 2010 and drop this year.
  */
 export function trainingMonths(
   workouts: readonly CompletedWorkout[],
@@ -185,7 +199,8 @@ export function trainingMonths(
     cursor.setMonth(cursor.getMonth() - 1);
   }
 
-  return months;
+  // Backwards from now, then flipped: see the note on the cap above.
+  return months.reverse();
 }
 
 /** "8 workouts · 7 days" — the month's header line, or null for an empty month. */

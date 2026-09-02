@@ -13,9 +13,10 @@ import type { CompletedWorkout } from './completedWorkout';
 /**
  * The training calendar.
  *
- * A record, not a streak — see the file header. These tests pin the three things
- * that make it a record: weeks start on Monday, empty months are rendered rather
- * than skipped, and a day belongs to the LOCAL date it started on.
+ * A record, not a streak — see the file header. These tests pin the four things
+ * that make it readable: weeks start on Monday, months run OLDEST FIRST so the
+ * current one is last, empty months are rendered rather than skipped, and a day
+ * belongs to the LOCAL date it started on.
  */
 
 let seq = 0;
@@ -108,17 +109,25 @@ describe('which months are shown', () => {
      */
     const months = trainingMonths([workout(2026, 5, 10)], new Date(2026, 8, 2));
     expect(months.map((m) => m.label)).toEqual([
-      'September 2026',
-      'August 2026',
-      'July 2026',
       'June 2026',
+      'July 2026',
+      'August 2026',
+      'September 2026',
     ]);
+    // June holds the workout; July is one of the empty months in between.
+    expect(months[0].total).toBe(1);
     expect(months[1].total).toBe(0);
   });
 
-  it('is newest first', () => {
+  it('runs OLDEST FIRST, so this month is the last thing in the list', () => {
+    /*
+     * The exception to the app's newest-first rule, and the reason the screen opens
+     * scrolled to the bottom: a calendar is read rather than scanned, and running it
+     * backwards puts the 30th of one month directly above the 1st of the next.
+     */
     const months = trainingMonths([workout(2026, 6, 1)], new Date(2026, 8, 2));
-    expect(months[0].label).toBe('September 2026');
+    expect(months[0].label).toBe('July 2026');
+    expect(months.at(-1)?.label).toBe('September 2026');
   });
 
   it('is just this month for an empty log', () => {
@@ -130,6 +139,13 @@ describe('which months are shown', () => {
   it('is capped, so a decade of imported history does not build 120 grids', () => {
     const months = trainingMonths([workout(2010, 0, 1)], new Date(2026, 8, 2), 24);
     expect(months).toHaveLength(24);
+    /*
+     * ...and the cap keeps the RECENT months. Capping a chronological walk would
+     * keep 2010 and drop this year, which is why the walk runs backwards and the
+     * reversal happens at the end.
+     */
+    expect(months.at(-1)?.label).toBe('September 2026');
+    expect(months[0].label).toBe('October 2024');
   });
 });
 
