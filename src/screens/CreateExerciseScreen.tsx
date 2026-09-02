@@ -29,9 +29,10 @@
  *   │ │ DEFAULT KG                        Done   │ │
  *   │ LOAD MODE                                    │
  *   │ ╭ External │ Added │ Assisted ╮               │
- *   │ ╭ Increment            ± 2.5 kg ╮             │
- *   │ │ Rest between sets                            │
- *   │ ╰ Following your setting  2:00  ( − )( + )╯    │
+ *   │ ╭ Sets                    4  ( − )( + ) ╮    │
+ *   │ │ Increment              ± 2.5 kg        │    │
+ *   │ │ Rest between sets                      │    │
+ *   │ ╰ Following your setting 2:00 ( − )( + ) ╯    │
  *   └──────────────────────────────────────────────┘
  *
  * `Requires weight` is the key control in the app's data model, and this screen
@@ -71,6 +72,17 @@
  * in the app uses (see `weightSteps`) — and nothing is snapped to the exercise's
  * progression step, so a machine whose pin reads 16 can be entered as 16.
  *
+ * ── SETS ───────────────────────────────────────────────────────────────────
+ *
+ * HOW MANY SETS is a fact about the movement, and until now it was the one fact
+ * this screen would not let you state: `defaultTargetSets` guessed per count unit
+ * and the only place to correct it was inside each routine, one item at a time. So
+ * `Sets` is a row here, it is saved as `Exercise.defaultSets`, and every routine
+ * item built from this exercise plans it — including the ones that already exist,
+ * which `libraryStore.updateExercise` rewrites when this number changes. That last
+ * part is the point: a set count that only applied to routines you had not built
+ * yet would be a control that does nothing for the routine you are looking at.
+ *
  * ── THE LADDER ─────────────────────────────────────────────────────────────
  *
  * One toggle and one number, and they replace the rep target of every set of this
@@ -80,8 +92,13 @@
  * is about a movement.
  *
  * The preview under the chips is the point: a max on its own is an abstraction, and
- * the five numbers it produces are the session. `lib/repLadder.ts` owns every one
- * of them.
+ * the numbers it produces are the session — at the set count in the `Sets` row
+ * above, so what is previewed is what the routine will plan. `lib/repLadder.ts`
+ * owns every one of them.
+ *
+ * AND THE MAX IS THE ONLY REP NUMBER. Turning the ladder on removes the `TARGET
+ * REPS` well, because two controls for one quantity is how "set the max to 16, come
+ * back, and the reps say 12" happened — see `lib/exerciseDraft.ts`.
  *
  * ── REST ───────────────────────────────────────────────────────────────────
  *
@@ -118,6 +135,7 @@ import {
 } from '../components/primitives';
 import {
   bumpDraftRest,
+  bumpDraftSets,
   bumpLadderMax,
   followSettingsRest,
   toggleLadder,
@@ -127,7 +145,6 @@ import { REST_LIMITS } from '../lib/rest';
 import { describeSetInputs, wellsFor, type WellSpec } from '../lib/exerciseShape';
 import { tap } from '../lib/feedback';
 import {
-  LADDER_SETS,
   describeLadder,
   ladderTargets,
   ladderTotal,
@@ -215,6 +232,8 @@ export function CreateExerciseScreen({
   const [editing, setEditing] = useState<WellSpec['field'] | null>(null);
   const patch = (next: Partial<ExerciseDraft>) => setDraft((d) => ({ ...d, ...next }));
 
+  // `ladderOn` is part of the SHAPE: a ladder owns the rep target, so the well that
+  // would set one is not rendered. See `lib/exerciseShape.ts`.
   const wells = wellsFor(draft);
   /*
    * Derived, not stored: flipping `Requires weight` or the count unit changes WHICH
@@ -365,24 +384,32 @@ export function CreateExerciseScreen({
         <Kicker tone="green" className="mx-lg mb-sm mt-xl">
           Set inputs · {describeSetInputs(draft)}
         </Kicker>
-        <View className="mx-lg flex-row">
-          {wells.map((well, index) => (
-            <View key={well.label} className={index > 0 ? 'ml-sm flex-1' : 'flex-1'}>
-              <NumericWell
-                label={well.label}
-                value={wellValue(draft, well.field)}
-                unit={well.unit}
-                selected={editing === well.field}
-                onPress={() => {
-                  tap();
-                  // Tapping the open well again closes it, exactly as a set row's
-                  // value cell does.
-                  setEditing((current) => (current === well.field ? null : well.field));
-                }}
-              />
-            </View>
-          ))}
-        </View>
+        {/* A laddered bodyweight movement has NO wells: the max below is its only
+            number, and an empty row is the honest rendering of that. */}
+        {wells.length === 0 ? (
+          <Text className="mx-lg text-label text-ink-faint">
+            The ladder’s max is the only number this exercise needs — it derives every set.
+          </Text>
+        ) : (
+          <View className="mx-lg flex-row">
+            {wells.map((well, index) => (
+              <View key={well.label} className={index > 0 ? 'ml-sm flex-1' : 'flex-1'}>
+                <NumericWell
+                  label={well.label}
+                  value={wellValue(draft, well.field)}
+                  unit={well.unit}
+                  selected={editing === well.field}
+                  onPress={() => {
+                    tap();
+                    // Tapping the open well again closes it, exactly as a set row's
+                    // value cell does.
+                    setEditing((current) => (current === well.field ? null : well.field));
+                  }}
+                />
+              </View>
+            ))}
+          </View>
+        )}
 
         {editingWell ? (
           <View className="mx-lg mt-sm">
@@ -447,6 +474,31 @@ export function CreateExerciseScreen({
         ) : null}
 
         <ListCard className="mx-lg mt-xl">
+          {/*
+            HOW MANY SETS. First in the card because it is the number the routine
+            reads, and because it is the one this screen used to leave to a guess —
+            see the file header. The hint says where it lands, since the effect is
+            on a screen the user is not looking at.
+          */}
+          <StepperRow
+            label={isRounds ? 'Rounds' : 'Sets'}
+            hint={
+              draft.ladderOn
+                ? 'The ladder is shaped to this many sets'
+                : 'What a routine plans for this exercise'
+            }
+            value={String(draft.targetSets)}
+            onDecrease={() => {
+              tap();
+              setDraft((d) => bumpDraftSets(d, -1));
+            }}
+            onIncrease={() => {
+              tap();
+              setDraft((d) => bumpDraftSets(d, 1));
+            }}
+          />
+          <Separator />
+
           {draft.requiresWeight ? (
             <>
               <SettingRow
@@ -708,8 +760,15 @@ function LadderSection({
   onChange: (next: (draft: ExerciseDraft) => ExerciseDraft) => void;
 }) {
   const ladder = { max: draft.ladderMax, earned: draft.ladderEarned };
-  const targets = draft.ladderOn ? ladderTargets(ladder, LADDER_SETS) : [];
-  const untilPR = draft.ladderOn ? sessionsToNextMax(ladder, LADDER_SETS) : 0;
+  /*
+   * Previewed at THIS exercise's set count, not at the scheme's five. The two are
+   * the same number for a ladder switched on here (`toggleLadder` asks for five),
+   * and where the user has changed it the preview has to follow — a card promising
+   * `16 + 10 + 8 + 8 + 6` above a `Sets 3` row is one of the two lying.
+   */
+  const sets = draft.targetSets;
+  const targets = draft.ladderOn ? ladderTargets(ladder, sets) : [];
+  const untilPR = draft.ladderOn ? sessionsToNextMax(ladder, sets) : 0;
 
   return (
     <>
@@ -791,9 +850,8 @@ function LadderSection({
               : `Meet every set and one rep is added, from the bottom up. ${untilPR} met sessions and the max becomes ${draft.ladderMax + 1}.`}
           </Text>
           <Text className="mx-lg mt-xs text-label text-ink-faint">
-            Miss one and nothing moves — the same numbers come back next time. Shown at five sets,
-            as the scheme is written; a routine that plans four or six gets the ladder for four or
-            six.
+            Miss one and nothing moves — the same numbers come back next time. Shown at {sets} sets,
+            which is what the Sets row above plans; five is the scheme as it is written.
           </Text>
         </>
       ) : null}

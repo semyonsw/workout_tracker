@@ -277,10 +277,12 @@ export function defaultTargetCount(exercise: Pick<Exercise, 'countUnit' | 'defau
  * `defaultTargetCount` as a per-unit decision rather than a literal inside a store
  * action.
  *
- * Deliberately NOT read from a new `Exercise.defaultSets` field: nothing would
- * write one. The create screen asks for a starting weight and a target count, not
- * a set count, and a model field with no writer is the thing Phase 1 spent a
- * commit deleting five of.
+ * THE EXERCISE'S OWN NUMBER WINS. `Exercise.defaultSets` used to not exist, on the
+ * grounds that nothing would ever write one — the create screen asked for a
+ * starting weight and a target count and not a set count, and a model field with no
+ * writer is the thing Phase 1 spent a commit deleting five of. It has a writer now:
+ * the create/edit screen's `Sets` row. Everything below it is the fallback for a
+ * shipped exercise and for rows made before that row existed.
  *
  * Per unit, because "four" means different things: four sets of reps, twelve
  * rounds on a bag, three holds of a plank (nobody plans four two-minute planks),
@@ -293,8 +295,10 @@ export function defaultTargetCount(exercise: Pick<Exercise, 'countUnit' | 'defau
  * life at four sets starts life as a different program.
  */
 export function defaultTargetSets(
-  exercise: Pick<Exercise, 'countUnit'> & { ladder?: RepLadder },
+  exercise: Pick<Exercise, 'countUnit'> & { ladder?: RepLadder; defaultSets?: number },
 ): number {
+  const own = finiteOrNull(exercise.defaultSets);
+  if (own != null && own >= 1) return Math.round(own);
   if (ladderOf(exercise)) return LADDER_SETS;
   if (exercise.countUnit === 'rounds') return 12;
   if (exercise.countUnit === 'seconds') return 3;

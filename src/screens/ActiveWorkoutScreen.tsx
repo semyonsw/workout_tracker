@@ -124,6 +124,25 @@ import { PrimaryButton } from '../components/primitives';
 import { palette } from '../theme/tokens';
 import type { ID, RoutineItem, UnitSystem } from '../types/models';
 
+/**
+ * The air left above the auto-scrolled card, in dp.
+ *
+ * Small on purpose: the top of the card lands ON the line the timer pill sits on,
+ * so the exercise's name and its first sets are the first thing in the viewport
+ * and nothing above them is wasted. Any more than a hair here and the list looks
+ * like it stopped short.
+ */
+const CARD_TOP_GAP = 8;
+
+/**
+ * How long the auto-scroll keeps correcting itself against fresh layouts, in ms.
+ *
+ * Long enough for the collapse-and-expand pass that follows a cursor move, short
+ * enough that the next `Add set` is the user's business and not the scroll's. See
+ * `pendingScroll`.
+ */
+const LAYOUT_SETTLE_MS = 350;
+
 interface ActiveWorkoutScreenProps {
   unitSystem: UnitSystem;
   /**
@@ -272,13 +291,47 @@ export function ActiveWorkoutScreen({
     : '';
 
   /* --- keep the active card in view ---------------------------------- */
+  /**
+   * Scroll so THE TOP OF THE CARD sits just under the timer pill.
+   *
+   * That is the whole rule, and it is the one that makes the auto-scroll useful:
+   * the exercise's name and its first sets are what you need to see when the
+   * cursor lands on it, so the card starts where the list starts. `CARD_TOP_GAP`
+   * is the hair of air that keeps the name off the pill's edge — the card is
+   * under the pill, not tucked behind it.
+   */
+  const scrollToCard = useCallback((entryId: ID) => {
+    const layout = cardLayouts.current[entryId];
+    if (layout == null) return;
+    scrollRef.current?.scrollTo({
+      y: Math.max(0, listTop.current + layout.y - CARD_TOP_GAP),
+      animated: true,
+    });
+  }, []);
+
+  /**
+   * The card the scroll is chasing, and the moment it stops chasing it.
+   *
+   * THE LAYOUTS ARE ONE FRAME BEHIND, and that is what made this scroll wrong.
+   * Moving the cursor shuts the card above and opens this one, so every `y` below
+   * the change is stale at the instant the effect runs — by the height of a whole
+   * expanded card, which is what "it scrolls too far" was. `onLayout` is where the
+   * true number arrives, so the scroll is re-issued there.
+   *
+   * Time-boxed rather than one-shot, because several layout passes can land (the
+   * card above collapsing, this one expanding), and NOT left armed, because the
+   * card re-lays out for ordinary reasons too — `Add set`, a plate line appearing —
+   * and yanking the list to the top on those would be the app fighting the thumb.
+   */
+  const pendingScroll = useRef<{ id: ID; until: number } | null>(null);
+
   useEffect(() => {
     if (!expandedEntryId || lifted) return;
-    const layout = cardLayouts.current[expandedEntryId];
-    if (layout == null) return;
-    // -8 so the card header isn't flush against the header hairline.
-    scrollRef.current?.scrollTo({ y: Math.max(0, listTop.current + layout.y - 8), animated: true });
-  }, [expandedEntryId, lifted]);
+    pendingScroll.current = { id: expandedEntryId, until: Date.now() + LAYOUT_SETTLE_MS };
+    // Immediately as well, off whatever is known: a card whose layout does not
+    // change at all still has to be scrolled to.
+    scrollToCard(expandedEntryId);
+  }, [expandedEntryId, lifted, scrollToCard]);
 
   /* --- handlers ------------------------------------------------------ */
   /**
@@ -554,6 +607,11 @@ export function ActiveWorkoutScreen({
                   onLayout={(e) => {
                     const { y, height } = e.nativeEvent.layout;
                     cardLayouts.current[entry.localId] = { y, height };
+                    // The real offset, one frame after the effect wanted it.
+                    const pending = pendingScroll.current;
+                    if (pending?.id === entry.localId && Date.now() < pending.until) {
+                      scrollToCard(entry.localId);
+                    }
                   }}
                 >
                   <ExerciseCard

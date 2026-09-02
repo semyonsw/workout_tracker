@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { routineUsageCount, useLibrary } from './libraryStore';
+import { defaultTargetSets } from '../lib/draft';
 import { seedExercises, seedRoutines } from '../data/seed';
 import type { Exercise } from '../types/models';
 
@@ -583,5 +584,104 @@ describe('setLadderOnAllExercises', () => {
 
     // Same array, so a library of holds does not get rewritten to disk for nothing.
     expect(useLibrary.getState().exercises).toBe(before);
+  });
+});
+
+/**
+ * THE SET COUNT ON THE EXERCISE, AND THE ROUTINES THAT ALREADY CONTAIN IT.
+ *
+ * `Exercise.defaultSets` exists so "this movement is four sets" can be said once.
+ * A number that only applied to routine items created afterwards would be a
+ * control that does nothing for any routine the user already has — so an edit to
+ * it reaches the plans. The guard is that NOTHING ELSE does: a rename, a new
+ * muscle group and a ladder written back by a finished session must all leave a
+ * routine's own set count alone.
+ */
+describe("an exercise's set count", () => {
+  it('is what a new routine item plans', () => {
+    const created = useLibrary.getState().createRoutine();
+    useLibrary.getState().addExercise(newExercise({ id: 'ex_six_sets', defaultSets: 6 }));
+    useLibrary.getState().appendToRoutine(created.id, 'ex_six_sets');
+
+    const item = useLibrary.getState().routines.find((r) => r.id === created.id)?.items[0];
+    expect(item?.targetSets).toBe(6);
+  });
+
+  it('rewrites the routines that already contain it when it changes', () => {
+    const exercise = newExercise({ id: 'ex_props', defaultSets: 4 });
+    useLibrary.getState().addExercise(exercise);
+    const a = useLibrary.getState().createRoutine();
+    const b = useLibrary.getState().createRoutine();
+    useLibrary.getState().appendToRoutine(a.id, 'ex_props');
+    useLibrary.getState().appendToRoutine(b.id, 'ex_props');
+
+    useLibrary.getState().updateExercise('ex_props', { ...exercise, defaultSets: 7 });
+
+    for (const id of [a.id, b.id]) {
+      const item = useLibrary.getState().routines.find((r) => r.id === id)?.items[0];
+      expect(item?.targetSets).toBe(7);
+    }
+  });
+
+  it('leaves a routine alone on an edit that is not about sets', () => {
+    const exercise = newExercise({ id: 'ex_rename', defaultSets: 4 });
+    useLibrary.getState().addExercise(exercise);
+    const routine = useLibrary.getState().createRoutine();
+    useLibrary.getState().appendToRoutine(routine.id, 'ex_rename');
+
+    // The set count the routine editor set by hand — it writes whole items back.
+    const stored = useLibrary.getState().routines.find((r) => r.id === routine.id);
+    useLibrary.getState().updateRoutine(routine.id, {
+      name: stored?.name ?? '',
+      items: (stored?.items ?? []).map((item) => ({ ...item, targetSets: 5 })),
+    });
+
+    useLibrary
+      .getState()
+      .updateExercise('ex_rename', { ...exercise, defaultSets: 4, name: 'Renamed' });
+
+    const after = useLibrary.getState().routines.find((r) => r.id === routine.id)?.items[0];
+    expect(after?.targetSets).toBe(5);
+  });
+
+  it('leaves a routine alone when a row that never had one is saved unchanged', () => {
+    /*
+     * The trap: a shipped exercise opens the editor on `defaultTargetSets`' answer
+     * and saves it, so a rename writes a `defaultSets` where there was none. That
+     * is not the user setting a set count, and it must not reach the plans.
+     */
+    const exercise = newExercise({ id: 'ex_untouched' });
+    useLibrary.getState().addExercise(exercise);
+    const routine = useLibrary.getState().createRoutine();
+    useLibrary.getState().appendToRoutine(routine.id, 'ex_untouched');
+    const stored = useLibrary.getState().routines.find((r) => r.id === routine.id);
+    useLibrary.getState().updateRoutine(routine.id, {
+      name: stored?.name ?? '',
+      items: (stored?.items ?? []).map((item) => ({ ...item, targetSets: 2 })),
+    });
+
+    useLibrary.getState().updateExercise('ex_untouched', {
+      ...exercise,
+      name: 'Renamed',
+      // What the editor showed, because the row carried nothing of its own.
+      defaultSets: defaultTargetSets(exercise),
+    });
+
+    const item = useLibrary.getState().routines.find((r) => r.id === routine.id)?.items[0];
+    expect(item?.targetSets).toBe(2);
+  });
+
+  it('never writes a set count a routine could not hold', () => {
+    const exercise = newExercise({ id: 'ex_broken_sets', defaultSets: 4 });
+    useLibrary.getState().addExercise(exercise);
+    const routine = useLibrary.getState().createRoutine();
+    useLibrary.getState().appendToRoutine(routine.id, 'ex_broken_sets');
+
+    useLibrary
+      .getState()
+      .updateExercise('ex_broken_sets', { ...exercise, defaultSets: Number.NaN });
+
+    const item = useLibrary.getState().routines.find((r) => r.id === routine.id)?.items[0];
+    expect(item?.targetSets).toBe(4);
   });
 });

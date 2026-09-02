@@ -245,6 +245,27 @@ export interface Exercise {
   defaultCount?: number;
 
   /**
+   * HOW MANY SETS of this movement a plan asks for.
+   *
+   * A fact about the exercise, the same way the starting weight and the rep target
+   * are: three planks and twelve rounds on a bag are not preferences about a
+   * routine, they are what the thing IS. Before this field the answer came from
+   * `defaultTargetSets`' per-unit guess and could only be corrected routine by
+   * routine, which is why "make it four sets everywhere" was four edits.
+   *
+   * Read by `defaultTargetSets`, so every path that creates a routine item — the
+   * routine editor's `+ Add exercise` and the mid-workout add — plans this number.
+   * Editing it also rewrites the item of every routine that already contains the
+   * exercise (`libraryStore.updateExercise`): the whole point of the field is that
+   * the library row and the plans agree, and a number that only applies to
+   * routines you have not built yet is a number you cannot use.
+   *
+   * Absent = never set on this row (a shipped exercise, or one created before the
+   * field existed), and `defaultTargetSets` falls back to its per-unit answer.
+   */
+  defaultSets?: number;
+
+  /**
    * The rep ladder this movement runs, if it runs one. Absent = off.
    *
    * ON THE EXERCISE, not on the routine item, and the reason is that a max is a

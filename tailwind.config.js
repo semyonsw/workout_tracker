@@ -42,6 +42,12 @@ module.exports = {
       label: ['13px', { lineHeight: '18px' }],
       body: ['16px', { lineHeight: '22px' }],
       title: ['22px', { lineHeight: '28px', letterSpacing: '-0.4px' }],
+      // The SIXTH size, and it exists for exactly one thing: the numbers of the
+      // set that is up next (`SetRow`). Title is what every other set row reads,
+      // and Display is the timer pill — 40 px of numeral does not fit beside a
+      // ✓ and a ▶. This is the one step between them, so "bigger" is a real
+      // step in the scale rather than a transform nobody else can reuse.
+      'title-lg': ['26px', { lineHeight: '32px', letterSpacing: '-0.6px' }],
       display: ['40px', { lineHeight: '44px', letterSpacing: '-1.2px' }],
     },
     spacing: {

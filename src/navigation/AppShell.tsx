@@ -563,23 +563,31 @@ export function AppShell() {
    * Takes the row rather than an id because it is also called for an exercise
    * created a moment ago, which is not in `exercisesById` until the next render.
    *
-   * One set, deliberately: an exercise added mid-workout has no plan behind it —
-   * the user is deciding set by set, and `Add set` in the card is one tap. The rest
-   * of the entry is built by the SAME function the routine path uses, so the
-   * prefills, the overload verdict and the last-session lines are identical to what
-   * a planned exercise would have shown.
+   * One set by default: an exercise added mid-workout with nothing said about it
+   * has no plan behind it — the user is deciding set by set, and `Add set` in the
+   * card is one tap. The rest of the entry is built by the SAME function the routine
+   * path uses, so the prefills, the overload verdict and the last-session lines are
+   * identical to what a planned exercise would have shown.
    *
-   * ONE EXCEPTION: an exercise running a LADDER arrives with the ladder's whole
-   * shape. A ladder is not a set, it is a session — one rung of `16 + 10 + 8 + 8 +
-   * 6` is a max effort with nothing after it — and the user who switched it on
-   * chose that shape already. `defaultTargetSets` is where "how many" lives.
+   * TWO EXCEPTIONS, and both are the user having already said how many:
+   *
+   *  • A SET COUNT ON THE EXERCISE (`defaultSets`, from the create/edit screen).
+   *    Somebody who wrote "4 sets" on the movement meant it at the rack too, and
+   *    handing them one set to then tap `Add set` three times is the app forgetting
+   *    what it was told.
+   *  • A LADDER, which arrives with its whole shape. A ladder is not a set, it is a
+   *    session — one rung of `16 + 10 + 8 + 8 + 6` is a max effort with nothing
+   *    after it.
+   *
+   * `defaultTargetSets` answers both, and answers 1 for neither.
    */
   const addExerciseToSession = useCallback(
     (exercise: Exercise) => {
       const workout = useActiveWorkout.getState();
       if (!workout.session) return;
       const settings = useSettings.getState();
-      const ladderSets = ladderOf(exercise) ? defaultTargetSets(exercise) : null;
+      const planned =
+        exercise.defaultSets != null || ladderOf(exercise) ? defaultTargetSets(exercise) : null;
 
       workout.addEntry(
         buildDraftEntry({
@@ -592,9 +600,9 @@ export function AppShell() {
           // long as the same exercise planned into a routine. See `lib/rest.ts`.
           restSeconds: resolveRest(exercise, settings.restSecondsBetweenSets).seconds,
           transitionRestSeconds: settings.restSecondsBetweenExercises,
-          targetSets: ladderSets ?? 1,
+          targetSets: planned ?? 1,
           targetRepsMax: defaultTargetCount(exercise),
-          plannedSetCount: ladderSets ?? 1,
+          plannedSetCount: planned ?? 1,
         }),
       );
     },

@@ -8,6 +8,10 @@
  * This is the single place those three flags get turned into words, so the
  * library list, the create-exercise preview and the set row can never disagree
  * about what an exercise is.
+ *
+ * A rep LADDER is the fourth axis, and it only ever SUBTRACTS: it owns the rep
+ * target of every set, so the well that used to set one is not part of the shape
+ * any more. See `ladderOwnsReps`.
  */
 
 import type { CountUnit, Exercise, LoadMode, TimerMode } from '../types/models';
@@ -19,6 +23,21 @@ export interface ShapeInput {
   loadMode: LoadMode;
   /** Absent = the number is typed. See `lib/setTimer.ts`. */
   timerMode?: TimerMode;
+  /**
+   * A rep ladder is running, so THE LADDER OWNS THE REP TARGET.
+   *
+   * It changes the shape: there is no per-set rep number to set, because the max
+   * derives all of them (`lib/repLadder.ts`). The well is removed rather than
+   * disabled, for the same reason the weight well is — and leaving it in is how the
+   * screen ended up with two answers to one question, one of which silently stayed
+   * at 12. See `lib/exerciseDraft.ts`.
+   */
+  ladderOn?: boolean;
+}
+
+/** Reps, and a ladder switched on to prescribe them. */
+function ladderOwnsReps(exercise: ShapeInput): boolean {
+  return exercise.ladderOn === true && exercise.countUnit === 'reps';
 }
 
 /** The count axis as a noun: "reps" / "time" / "metres" / "rounds". */
@@ -66,6 +85,9 @@ export function describeShape(exercise: ShapeInput | Exercise): string {
  */
 export function describeSetInputs(exercise: ShapeInput): string {
   const noun = countNoun(exercise.countUnit);
+  // Named, not omitted: the reps well is gone from under this label and the label
+  // is the receipt for that.
+  if (ladderOwnsReps(exercise)) return exercise.requiresWeight ? 'weight + ladder' : 'ladder reps';
   if (exercise.requiresWeight) return `weight + ${noun}`;
   if (exercise.countUnit === 'meters') return 'distance + duration';
   if (exercise.countUnit === 'seconds') return 'duration only';
@@ -88,6 +110,14 @@ export interface WellSpec {
  * greyed-out input is a promise that it might come back, and this one won't.
  */
 export function wellsFor(exercise: ShapeInput): WellSpec[] {
+  // A ladder prescribes every rep of every set from its max, so there is no rep
+  // target to well — the max's own ± is the control. An unweighted laddered
+  // exercise therefore has no wells at all, which is correct: one number, and it is
+  // in the ladder card.
+  if (ladderOwnsReps(exercise)) {
+    return exercise.requiresWeight ? [{ label: 'default kg', field: 'weight', unit: 'kg' }] : [];
+  }
+
   if (exercise.requiresWeight) {
     const second: WellSpec =
       exercise.countUnit === 'reps'

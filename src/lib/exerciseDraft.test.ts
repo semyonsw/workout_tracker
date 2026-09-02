@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyDraftToExercise,
   bumpDraftRest,
+  bumpDraftSets,
   bumpLadderMax,
   draftToExercise,
   emptyExerciseDraft,
@@ -10,7 +11,10 @@ import {
   followSettingsRest,
   toggleLadder,
 } from './exerciseDraft';
+import { defaultTargetSets } from './draft';
 import { REST_LIMITS } from './rest';
+import { LADDER_SETS } from './repLadder';
+import { TARGET_SETS_LIMITS } from './routinePlan';
 import type { Exercise } from '../types/models';
 
 /**
@@ -325,5 +329,92 @@ describe('the ladder round trip', () => {
     const draft = emptyExerciseDraft('Zercher squat');
     expect(draft.ladderOn).toBe(false);
     expect(draftToExercise(draft, 'ex_new', 'u1').ladder).toBeUndefined();
+  });
+});
+
+/**
+ * THE SET COUNT.
+ *
+ * It used to not be on this screen at all: `defaultTargetSets` guessed per count
+ * unit and the only correction was inside each routine, item by item. These are
+ * the two directions of the new field, and the one rule that matters is that what
+ * the editor shows is what a routine would actually plan.
+ */
+describe('the planned set count', () => {
+  it('round-trips, and is what a routine item is built from', () => {
+    const draft = { ...exerciseToDraft(machine), targetSets: 6 };
+    const saved = applyDraftToExercise(draft, machine);
+
+    expect(saved.defaultSets).toBe(6);
+    expect(defaultTargetSets(saved)).toBe(6);
+    expect(exerciseToDraft(saved).targetSets).toBe(6);
+  });
+
+  it('opens a row that has never had one at the per-unit fallback', () => {
+    // The same number a routine item would get, so the editor is not showing a
+    // number the plan disagrees with.
+    expect(exerciseToDraft(machine).targetSets).toBe(defaultTargetSets(machine));
+    expect(exerciseToDraft(plank).targetSets).toBe(defaultTargetSets(plank));
+  });
+
+  it('clamps to what a routine may hold', () => {
+    const draft = exerciseToDraft(machine);
+    expect(bumpDraftSets({ ...draft, targetSets: TARGET_SETS_LIMITS.min }, -5).targetSets).toBe(
+      TARGET_SETS_LIMITS.min,
+    );
+    expect(bumpDraftSets({ ...draft, targetSets: TARGET_SETS_LIMITS.max }, 5).targetSets).toBe(
+      TARGET_SETS_LIMITS.max,
+    );
+  });
+
+  it('repairs a hand-edited row rather than saving it', () => {
+    const broken = { ...exerciseToDraft(machine), targetSets: Number.NaN };
+    expect(draftToExercise(broken, 'ex_x', 'u1').defaultSets).toBe(TARGET_SETS_LIMITS.min);
+  });
+});
+
+/**
+ * THE LADDER'S MAX IS THE REP NUMBER.
+ *
+ * The bug: the screen carried a `TARGET REPS` well AND a ladder max, so setting a
+ * max of 16 left the well on the 12 a blank draft starts with, and 12 is what got
+ * saved as `defaultCount` — the number the first session prefills. Two controls,
+ * one quantity. There is one now.
+ */
+describe('the max is the only rep number', () => {
+  const laddered = { ...machine, defaultCount: 12, ladder: { max: 16, earned: 0 } };
+
+  it('opens the rep target ON the max, not on the stored count', () => {
+    expect(exerciseToDraft(laddered).targetCount).toBe(16);
+  });
+
+  it('saves the max as the count the first session starts at', () => {
+    const draft = bumpLadderMax(exerciseToDraft(laddered), 1);
+    const saved = applyDraftToExercise(draft, laddered);
+
+    expect(saved.ladder).toEqual({ max: 17, earned: 0 });
+    // Not 12. The first rung of the ladder IS the max.
+    expect(saved.defaultCount).toBe(17);
+  });
+
+  it('derives the count from the max even when the draft disagrees', () => {
+    const stale = { ...exerciseToDraft(laddered), targetCount: 12 };
+    expect(draftToExercise(stale, 'ex_x', 'u1').defaultCount).toBe(16);
+  });
+
+  it('leaves the max behind as the rep target when the ladder is switched off', () => {
+    const off = toggleLadder(exerciseToDraft(laddered), false);
+    expect(off.targetCount).toBe(16);
+    expect(draftToExercise(off, 'ex_x', 'u1').defaultCount).toBe(16);
+  });
+
+  it('asks for the scheme’s five sets when switched on', () => {
+    const on = toggleLadder(emptyExerciseDraft('Pull-ups'), true);
+    expect(on.targetSets).toBe(LADDER_SETS);
+  });
+
+  it('leaves a hold alone — its duration is not a rep target', () => {
+    const draft = { ...exerciseToDraft(plank), ladderOn: true, ladderMax: 16 };
+    expect(draftToExercise(draft, 'ex_x', 'u1').defaultCount).toBe(120);
   });
 });

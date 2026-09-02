@@ -21,11 +21,24 @@
  * duration). Which well holds it is decided once, by `targetIsDuration` below, and
  * both directions read that same rule — otherwise a round-trip through the editor
  * would quietly move a plank's 2:00 into its rep target.
+ *
+ * THE SECOND ONE: WHERE A LADDER IS ON, THE MAX *IS* THE REP NUMBER. The screen
+ * used to carry both — a `TARGET REPS` well and a ladder max — and they were two
+ * answers to one question, so the well kept its own number (12, from
+ * `emptyExerciseDraft`) no matter what max you set, and `defaultCount` was saved as
+ * that 12. Setting a max of 16 and finding 12 on the row afterwards is that bug.
+ * There is one number now: `syncLadderTarget` keeps `targetCount` equal to the max
+ * while the ladder is on, `wellsFor` stops rendering the second well, and
+ * `draftToExercise` derives `defaultCount` from the max rather than trusting the
+ * draft — so the first set of the first session is the max, which is what the
+ * ladder's first rung is anyway (`lib/repLadder.ts`).
  */
 
 import type { CountUnit, Exercise, MuscleGroup, TimerMode } from '../types/models';
 import { DEFAULT_PREPARE_SECONDS } from './setTimer';
-import { clampMax, ladderOf, supportsLadder } from './repLadder';
+import { clampMax, LADDER_SETS, ladderOf, supportsLadder } from './repLadder';
+import { defaultTargetSets } from './draft';
+import { TARGET_SETS_LIMITS } from './routinePlan';
 import { clampRest, ownRestSeconds } from './rest';
 import type { LoadMode } from '../types/models';
 
@@ -40,8 +53,19 @@ export interface ExerciseDraft {
   timerMode: TimerMode;
   prepareSeconds: number;
   defaultWeightKg: number;
-  /** Reps, metres, or the number of rounds — whatever `countUnit` counts. */
+  /**
+   * Reps, metres, or the number of rounds — whatever `countUnit` counts.
+   *
+   * While the ladder is on this IS the ladder's max, kept in step by
+   * `syncLadderTarget`, and the well that edits it is not rendered — see the file
+   * header. One number, one control.
+   */
   targetCount: number;
+  /**
+   * HOW MANY SETS a plan asks for. Becomes `Exercise.defaultSets`, which is what
+   * every routine item for this exercise is built from.
+   */
+  targetSets: number;
   /** Seconds per set: a round length, or a swim duration. */
   durationSeconds: number;
   incrementKg: number;
@@ -92,7 +116,21 @@ export interface ExerciseDraft {
 export function bumpLadderMax(draft: ExerciseDraft, delta: number): ExerciseDraft {
   const next = clampMax(draft.ladderMax + delta);
   if (next === draft.ladderMax) return draft;
-  return { ...draft, ladderMax: next, ladderEarned: 0 };
+  return syncLadderTarget({ ...draft, ladderMax: next, ladderEarned: 0 });
+}
+
+/**
+ * The rep target follows the max while the ladder is on.
+ *
+ * ONE number for one question — see the file header. `targetCount` is still the
+ * field `defaultCount` is written from, so this is what makes the first set of the
+ * first session the max the user typed, and what makes switching the ladder back
+ * OFF leave a sensible rep target behind (the max, which is a number they chose)
+ * rather than the 12 a blank draft starts with.
+ */
+function syncLadderTarget(draft: ExerciseDraft): ExerciseDraft {
+  if (!draft.ladderOn || !supportsLadder(draft.countUnit)) return draft;
+  return draft.targetCount === draft.ladderMax ? draft : { ...draft, targetCount: draft.ladderMax };
 }
 
 /**
@@ -103,11 +141,34 @@ export function bumpLadderMax(draft: ExerciseDraft, delta: number): ExerciseDraf
  * do twelve of is a movement whose max is nearer twelve than the number a
  * constant in this file would have picked. Switching it OFF keeps the max, so the
  * toggle is reversible.
+ *
+ * It also asks for FIVE SETS, because five is the scheme — the same reason
+ * `defaultTargetSets` has always answered five for a laddered exercise. The
+ * difference now is that the number is on the screen with a ± beside it, so five
+ * is a starting point the user can see and change rather than a constant they
+ * cannot reach.
  */
 export function toggleLadder(draft: ExerciseDraft, on: boolean): ExerciseDraft {
   if (!on) return { ...draft, ladderOn: false };
   const seeded = draft.ladderMax > 0 ? draft.ladderMax : draft.targetCount;
-  return { ...draft, ladderOn: true, ladderMax: clampMax(seeded) };
+  return syncLadderTarget({
+    ...draft,
+    ladderOn: true,
+    ladderMax: clampMax(seeded),
+    targetSets: LADDER_SETS,
+  });
+}
+
+/** How many sets a plan may ask for — the routine editor's own range. */
+export function clampSets(value: number): number {
+  const { min, max } = TARGET_SETS_LIMITS;
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/** Nudge the planned set count, clamped to what a routine may hold. */
+export function bumpDraftSets(draft: ExerciseDraft, delta: number): ExerciseDraft {
+  return { ...draft, targetSets: clampSets(draft.targetSets + delta) };
 }
 
 /**
@@ -152,6 +213,13 @@ export function emptyExerciseDraft(
     prepareSeconds: DEFAULT_PREPARE_SECONDS,
     defaultWeightKg: 30,
     targetCount: 12,
+    /*
+     * Four, which is `defaultTargetSets`' answer for the rep-counted weighted work
+     * a blank draft starts as. Read from there rather than written as a 4 here, so
+     * the number a new exercise starts at and the number a shipped one falls back
+     * to cannot drift apart. A ladder switched on below overrides it with five.
+     */
+    targetSets: defaultTargetSets({ countUnit: 'reps' }),
     durationSeconds: 180,
     incrementKg: 2.5,
     // A new exercise FOLLOWS THE SETTING. `restSeconds` is the setting's current
@@ -236,7 +304,17 @@ export function exerciseToDraft(exercise: Exercise, restSeconds = 120): Exercise
     timerMode: exercise.timerMode ?? 'manual',
     prepareSeconds: positiveOr(exercise.prepareSeconds, DEFAULT_PREPARE_SECONDS),
     defaultWeightKg: positiveOr(exercise.defaultWeightKg, 20),
-    targetCount: inDuration ? 12 : target,
+    // The max where a ladder is running, because that is the exercise's rep number
+    // — see the file header. `defaultCount` should already say the same thing; this
+    // is the side that wins if an older row disagrees.
+    targetCount: ladder ? ladder.max : inDuration ? 12 : target,
+    /*
+     * The row's own set count where it has one, and `defaultTargetSets`' per-unit
+     * answer where it does not — a shipped exercise, or one created before the
+     * field existed. Same read every routine item is built from, so opening the
+     * editor shows the number a new plan would actually get.
+     */
+    targetSets: clampSets(positiveOr(exercise.defaultSets, defaultTargetSets(exercise))),
     durationSeconds: inDuration ? target : 180,
     incrementKg: positiveOr(exercise.incrementKg, 2.5),
     /*
@@ -299,7 +377,19 @@ export function draftToExercise(
      * had typed.
      */
     defaultWeightKg: draft.requiresWeight ? draft.defaultWeightKg : undefined,
-    defaultCount: targetIsDuration(draft) ? draft.durationSeconds : draft.targetCount,
+    /*
+     * A LADDER'S MAX IS ITS FIRST SET, so it is also the count the very first
+     * session prefills — derived here rather than trusted off `targetCount`,
+     * because this is the one place that cannot be reached with the two of them out
+     * of step. See the file header for the bug that made this necessary.
+     */
+    defaultCount: targetIsDuration(draft)
+      ? draft.durationSeconds
+      : draft.ladderOn && supportsLadder(draft.countUnit)
+        ? clampMax(draft.ladderMax)
+        : draft.targetCount,
+    // What every routine item for this exercise plans. See `Exercise.defaultSets`.
+    defaultSets: clampSets(draft.targetSets),
     /*
      * The ladder, only where the scheme applies. `supportsLadder` is checked here
      * as well as in `ladderOf` because a draft can leave this screen with the

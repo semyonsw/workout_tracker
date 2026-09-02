@@ -132,6 +132,57 @@ describe('exercise shape', () => {
     expect(off.map((w) => w.field)).not.toContain('weight');
     expect(off.map((w) => w.label)).toEqual(['rounds', 'round length']);
   });
+
+  /*
+   * A ladder owns the rep target of every set, so a second control for it is a
+   * second answer — which is exactly how a max of 16 came to sit above a rep
+   * target of 12. See `lib/exerciseDraft.ts`.
+   */
+  it('removes the rep well while a ladder prescribes the reps', () => {
+    const weighted = wellsFor({
+      requiresWeight: true,
+      countUnit: 'reps',
+      loadMode: 'external',
+      ladderOn: true,
+    });
+    expect(weighted.map((w) => w.label)).toEqual(['default kg']);
+
+    const bodyweight = wellsFor({
+      requiresWeight: false,
+      countUnit: 'reps',
+      loadMode: 'none',
+      ladderOn: true,
+    });
+    expect(bodyweight).toEqual([]);
+
+    // ...and only for reps. A ladder cannot run on a hold, so nothing changes.
+    const hold = wellsFor({
+      requiresWeight: false,
+      countUnit: 'seconds',
+      loadMode: 'none',
+      ladderOn: true,
+    });
+    expect(hold.map((w) => w.label)).toEqual(['duration']);
+  });
+
+  it('says so in the kicker, which is the receipt for the missing well', () => {
+    expect(
+      describeSetInputs({
+        requiresWeight: true,
+        countUnit: 'reps',
+        loadMode: 'external',
+        ladderOn: true,
+      }),
+    ).toBe('weight + ladder');
+    expect(
+      describeSetInputs({
+        requiresWeight: false,
+        countUnit: 'reps',
+        loadMode: 'none',
+        ladderOn: true,
+      }),
+    ).toBe('ladder reps');
+  });
 });
 
 describe('sessionRows', () => {

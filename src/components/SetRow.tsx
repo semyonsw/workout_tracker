@@ -17,6 +17,14 @@
  *     of box the row does not have: the numbers under a thumb must not shift
  *     sideways when the ring arrives, and they must not shift back when the ✓
  *     lands and it moves to the row below.
+ *   • AND THE RING IS NOT THE ONLY THING THAT SAYS SO. The ringed row is TALLER
+ *     (64 rather than 56) and its two numbers are one step up the type scale,
+ *     bold, and carry the app's one `glow` behind them. A 2 dp outline is a
+ *     detail you have to look for; the numbers you are about to do are the thing
+ *     you read at arm's length, mid-set, through sweat, so they are the thing
+ *     that grows. It costs 8 dp of layout on ONE row in the session, and the row
+ *     above it gives exactly that back as the ✓ lands — which is why the numbers
+ *     under the thumb still do not move sideways, only the row's own height does.
  *   • The row arrives PRE-FILLED with last session's numbers, rendered faint
  *     ("ghost") on a lifted `surface-alt` background. That is the visual promise
  *     of "tap ✓ if nothing changed" — logging an identical set costs ONE tap.
@@ -158,8 +166,9 @@ function SetRowComponent({
       className={[
         // `min-h` rather than a fixed `h-row`: the plate line adds 14 dp and only
         // on the rows that have one, so a barbell card grows and a machine card is
-        // exactly the height it has always been.
-        plateLabel ? 'min-h-row py-sm' : 'h-row',
+        // exactly the height it has always been. The ringed row takes the taller
+        // 64 dp, because its numbers are a size up — see the file header.
+        ring ? 'min-h-row-lg py-sm' : plateLabel ? 'min-h-row py-sm' : 'h-row',
         'flex-row items-center px-lg',
         // The primed row is the only one that lifts. Logged and later rows sit
         // flush on the card so "next" is unambiguous at a glance.
@@ -180,6 +189,7 @@ function SetRowComponent({
               value={formatWeight(set.weightKg, unitSystem, exercise.loadMode)}
               unit={unitLabel(unitSystem)}
               tone={valueTone}
+              emphasis={ring}
               focused={focusedField === 'weight'}
               onPress={() => onFocusField('weight')}
               accessibilityLabel={`Weight ${formatWeight(set.weightKg, unitSystem, exercise.loadMode)} ${unitLabel(unitSystem)}`}
@@ -207,6 +217,7 @@ function SetRowComponent({
         value={formatCount(set.count, exercise.countUnit)}
         unit={countUnitLabel(exercise.countUnit)}
         tone={valueTone}
+        emphasis={ring}
         focused={focusedField === 'count'}
         onPress={() => onFocusField('count')}
         accessibilityLabel={`${set.count} ${countUnitLabel(exercise.countUnit)}`}
@@ -282,12 +293,18 @@ function SetRowComponent({
  * Focused, it grows a `surface` chip behind itself with a −8 left margin, so
  * the chip appears *around* the value without the value sliding sideways. The
  * number under the thumb must not move when it is tapped.
+ *
+ * `emphasis` is the up-next row: a size up the scale, bold, and glowing. The glow
+ * is the app's ONE glow (`theme/tokens`), the same value the ring around this row
+ * is drawn with — a second, stronger green would be a second meaning, and there is
+ * only one thing being said here.
  */
 function ValueCell({
   width,
   value,
   unit,
   tone,
+  emphasis = false,
   focused,
   onPress,
   accessibilityLabel,
@@ -296,6 +313,8 @@ function ValueCell({
   value: string;
   unit: string;
   tone: string;
+  /** This is the set to do next: bigger, bolder, glowing. */
+  emphasis?: boolean;
   focused: boolean;
   onPress: () => void;
   accessibilityLabel: string;
@@ -312,8 +331,39 @@ function ValueCell({
         focused ? '-ml-sm rounded-surface bg-surface px-sm py-[2px]' : '',
       ].join(' ')}
     >
-      <Text className={`text-title font-semibold tabular-nums ${tone}`}>{value}</Text>
-      <Text className="ml-xs text-micro font-semibold uppercase text-ink-faint">{unit}</Text>
+      <Text
+        className={[
+          emphasis ? 'text-title-lg font-bold' : 'text-title font-semibold',
+          'tabular-nums',
+          tone,
+        ].join(' ')}
+        /*
+         * Inline, not className: a text glow is `textShadow*`, which NativeWind
+         * has no utility for. Offset zero and a wide radius, so it is a halo
+         * around the numeral rather than a shadow under it.
+         */
+        style={
+          emphasis
+            ? {
+                textShadowColor: GLOW,
+                textShadowOffset: { width: 0, height: 0 },
+                textShadowRadius: 10,
+              }
+            : undefined
+        }
+      >
+        {value}
+      </Text>
+      <Text
+        className={[
+          'ml-xs font-semibold uppercase',
+          // The unit rides with the number, one notch behind it: `KG` at micro
+          // beside a 26 dp numeral reads as a different row's label.
+          emphasis ? 'text-label text-ink-muted' : 'text-micro text-ink-faint',
+        ].join(' ')}
+      >
+        {unit}
+      </Text>
     </Pressable>
   );
 }

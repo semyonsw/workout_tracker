@@ -76,6 +76,12 @@ Worth also grepping `assets/index.android.bundle` inside the APK for a string yo
 change introduced — it is the one proof the JS that shipped is the JS you wrote.
 Use `grep -a`; the bundle is binary and plain `grep` silently reports nothing.
 
+**Pick an ASCII string.** The release bundle is Hermes bytecode, and its string
+table holds anything containing a non-ASCII character as UTF-16 — so a `grep -a`
+for a sentence with a curly apostrophe or an em dash in it reports 0 matches on a
+bundle that contains the string. Either grep an ASCII-only fragment, or match
+`s.encode('utf-16-le')` in Python.
+
 ## `.gitignore` has `*.apk`
 
 The committed APK is force-added. `git add -f workout-tracker-<version>.apk`, or the

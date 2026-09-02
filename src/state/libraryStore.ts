@@ -158,14 +158,62 @@ export const useLibrary = create<LibraryState>()(
 
       addExercise: (exercise) => set({ exercises: [...get().exercises, exercise] }),
 
-      updateExercise: (exerciseId, next) =>
+      /**
+       * An edited exercise, in place — AND the routines that contain it, where the
+       * edit was to its set count.
+       *
+       * `next.id` is ignored in favour of the key being replaced: an edit can change
+       * everything about an exercise except which exercise it is.
+       *
+       * THE SET COUNT REACHES THE PLANS. `Exercise.defaultSets` is the answer to
+       * "how many sets of this", and a number that only applied to routine items
+       * built after it was typed would be a control that does nothing for any
+       * routine the user already has — which is exactly the complaint the field
+       * exists to fix. So changing it rewrites `targetSets` on every item pointing
+       * at this exercise, the same way setting the global rest clears every
+       * per-exercise rest (`lib/rest.ts`).
+       *
+       * ONLY WHEN IT CHANGED, and that guard is load-bearing: `updateExercise` is
+       * also how a finished session writes back a ladder's advance, and how any
+       * unrelated edit (a rename, a new muscle group) is saved. Those must not walk
+       * over a set count the routine editor set by hand.
+       *
+       * "CHANGED" IS AGAINST WHAT THE EDITOR WAS SHOWING, which is not the same as
+       * against the stored field. A row that has never carried a set count — every
+       * shipped exercise, and everything made before the field existed — opens the
+       * editor on `defaultTargetSets`' per-unit answer and therefore SAVES that
+       * answer, so comparing against a stored `undefined` would read every rename of
+       * a shipped exercise as "the user set four sets" and push a 4 over the plans.
+       * `defaultTargetSets` is the same read `exerciseToDraft` opens the row with,
+       * so this compares the number the user saw against the number they saved.
+       */
+      updateExercise: (exerciseId, next) => {
+        const { exercises, routines } = get();
+        const before = exercises.find((e) => e.id === exerciseId);
+        const sets = next.defaultSets;
+        const shown = before ? defaultTargetSets(before) : null;
+        const setsChanged =
+          sets != null && Number.isFinite(sets) && sets >= 1 && shown != null && sets !== shown;
+
         set({
-          exercises: get().exercises.map((e) =>
-            // `next.id` is ignored in favour of the key being replaced: an edit can
-            // change everything about an exercise except which exercise it is.
-            e.id === exerciseId ? { ...next, id: exerciseId } : e,
-          ),
-        }),
+          exercises: exercises.map((e) => (e.id === exerciseId ? { ...next, id: exerciseId } : e)),
+          ...(setsChanged
+            ? {
+                routines: routines.map((routine) =>
+                  routine.items.some((i) => i.exerciseId === exerciseId)
+                    ? {
+                        ...routine,
+                        updatedAt: nowIso(),
+                        items: routine.items.map((item) =>
+                          item.exerciseId === exerciseId ? { ...item, targetSets: sets } : item,
+                        ),
+                      }
+                    : routine,
+                ),
+              }
+            : {}),
+        });
+      },
 
       /**
        * Put an `auto` ladder on every rep-counted exercise, or take back exactly
