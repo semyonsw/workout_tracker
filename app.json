@@ -2,7 +2,7 @@
   "expo": {
     "name": "Workout Tracker",
     "slug": "workout-tracker",
-    "version": "1.0.4",
+    "version": "1.1.0",
     "orientation": "portrait",
     "scheme": "workouttracker",
     "platforms": [
@@ -22,7 +22,7 @@
     ],
     "android": {
       "package": "com.semyonsw.workouttracker",
-      "versionCode": 17,
+      "versionCode": 18,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#060807"
@@ -34,7 +34,8 @@
         "WAKE_LOCK",
         "POST_NOTIFICATIONS",
         "SCHEDULE_EXACT_ALARM",
-        "USE_EXACT_ALARM"
+        "USE_EXACT_ALARM",
+        "android.permission.health.WRITE_EXERCISE"
       ]
     },
     "plugins": [
@@ -56,7 +57,16 @@
         }
       ],
       "./plugins/withoutMicrophone",
-      "expo-sqlite"
+      "expo-sqlite",
+      "react-native-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ]
   }
 }

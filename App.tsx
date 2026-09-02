@@ -30,6 +30,12 @@
  *     key, and it stays quiet either way: a migration that could not run tries
  *     again next launch, and a dialog on launch about a storage system the user has
  *     never heard of is worse than a History tab that fills itself in tomorrow.
+ *   • the AUTOMATIC BACKUP, which writes the whole log into a folder the user has
+ *     granted, if the last copy is old enough. Here because launch is the only
+ *     moment a sideloaded app can reliably run anything (see `lib/notify.ts` on
+ *     why), and silent because a backup that cannot write must not become a modal
+ *     in front of somebody who opened the app to train — the Settings row and the
+ *     Finish sheet report the age instead. `hooks/useAutoBackup.ts` has the rest.
  *
  * None of them are load-bearing: the on-screen pill derives from a stored
  * deadline and is correct whether or not any of this works, and the log already on
@@ -47,6 +53,7 @@ import { AppShell } from './src/navigation/AppShell';
 import { prepareAudio } from './src/lib/beeper';
 import { ensureTimerChannels, requestNotificationPermission } from './src/lib/notify';
 import { migrateHistoryIfNeeded, useWorkoutHistory } from './src/state/workoutHistoryStore';
+import { useAutoBackup } from './src/hooks/useAutoBackup';
 
 /*
  * Timer alerts — rest ending, and the bell on a timed hold.
@@ -80,6 +87,12 @@ try {
 }
 
 export default function App() {
+  /*
+   * Mounted here, at the top, rather than inside a screen: it must run on the
+   * launches where the user never opens Settings, which is all of them.
+   */
+  useAutoBackup();
+
   useEffect(() => {
     void requestNotificationPermission();
     void ensureTimerChannels();

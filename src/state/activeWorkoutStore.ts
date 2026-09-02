@@ -67,7 +67,7 @@ import {
 import { moveToIndex } from '../lib/reorder';
 import { nextInSupersetRound } from '../lib/superset';
 import { currentSettings } from './settingsStore';
-import type { ID } from '../types/models';
+import type { ID, SessionEffort } from '../types/models';
 
 export type RestSource = 'set' | 'transition' | 'manual';
 
@@ -144,6 +144,18 @@ interface ActiveWorkoutState {
   patchSet: (entryId: ID, setId: ID, patch: Partial<DraftSet>) => void;
   addSet: (entryId: ID) => void;
   /**
+   * Put generated warm-up rows at the TOP of an exercise.
+   *
+   * At the top because that is where they happen and because `workingSetLabels`
+   * numbers the working sets around them — a warm-up appended below set 3 would
+   * read `1 2 3 W`, which is a lie about the order of a session. Already-logged
+   * rows are never disturbed: nothing is inserted once the exercise has started,
+   * because warming up after your first working set is not a thing that happens.
+   *
+   * `lib/warmup.ts` decides the weights; this only files them.
+   */
+  addWarmupSets: (entryId: ID, sets: readonly { weightKg: number; count: number }[]) => void;
+  /**
    * Remove one set. THE LAST SET OF AN EXERCISE TAKES THE EXERCISE WITH IT: an
    * entry with no rows is a header with nothing under it and no way back to a
    * row, so "remove the only set" can only mean "I'm not doing this".
@@ -154,6 +166,14 @@ interface ActiveWorkoutState {
   /** Applies the overload suggestion to every not-yet-completed set. */
   acceptOverload: (entryId: ID) => void;
   dismissOverload: (entryId: ID) => void;
+  /**
+   * How the session felt — the one tap on the Finish sheet. See `SessionEffort`.
+   *
+   * On the session rather than handed straight to `saveSession`, so dismissing the
+   * sheet and reopening it does not lose the answer. Passing the value already set
+   * clears it, which is how a mis-tap is undone without a fourth chip reading None.
+   */
+  setSessionEffort: (effort: SessionEffort | undefined) => void;
 
   /* --- rest timer --- */
   startRest: (seconds: number, source?: RestSource, originSetId?: ID | null) => void;
@@ -527,6 +547,44 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         });
       },
 
+      addWarmupSets: (entryId, warmups) => {
+        const { session } = get();
+        if (!session || warmups.length === 0) return;
+
+        set({
+          session: mapEntry(session, entryId, (entry) => {
+            // Refused once anything is logged: see the note on the action.
+            if (entry.sets.some((s) => s.isCompleted)) return entry;
+
+            const rows: DraftSet[] = warmups.map((warmup) => ({
+              localId: uid('set'),
+              weightKg: warmup.weightKg,
+              count: warmup.count,
+              isWarmup: true,
+              isCompleted: false,
+              completedAt: null,
+              /*
+               * NOT prefilled. `isPrefilled` means "carried over from last session,
+               * untouched" and renders the numbers ghosted — the visual promise of
+               * "tap ✓ if nothing changed". These numbers came from the working
+               * weight the user is looking at right now, which is a fact about this
+               * session, so they read in full ink.
+               */
+              isPrefilled: false,
+            }));
+
+            /*
+             * `withLadderPlan` is NOT called. A ladder prescribes the working sets
+             * and its rung count is the number of sets that count — warm-ups are
+             * out of the set count by definition (`SetRow`, `ladderTargets`), so
+             * adding three of them must not re-shape the ladder into a six-rung
+             * session.
+             */
+            return { ...entry, sets: [...rows, ...entry.sets] };
+          }),
+        });
+      },
+
       removeSet: (entryId, setId) => {
         const { session, setTimer } = get();
         if (!session) return;
@@ -597,6 +655,12 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
             return { ...entry, sets, overloadAccepted: true };
           }),
         });
+      },
+
+      setSessionEffort: (effort) => {
+        const { session } = get();
+        if (!session) return;
+        set({ session: { ...session, effort: session.effort === effort ? undefined : effort } });
       },
 
       dismissOverload: (entryId) => {

@@ -24,6 +24,7 @@
  * It is deleted as of 0.12.0 — the argument here was the whole case against it.
  */
 
+import { useMemo } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -39,7 +40,10 @@ import {
   sessionsToNextMax,
 } from '../lib/repLadder';
 import type { OverloadVerdict } from '../lib/progressiveOverload';
-import { formatShortDate } from '../lib/units';
+import { describeBests, exerciseBests } from '../lib/records';
+import { bodyweightAt } from '../lib/bodyweightLog';
+import { formatCount, formatShortDate, formatWeight } from '../lib/units';
+import { useSettings } from '../state/settingsStore';
 import type { Exercise, ID, SetHistory } from '../types/models';
 
 interface ExerciseHistoryScreenProps {
@@ -87,6 +91,25 @@ export function ExerciseHistoryScreen({
   const ladderPlan = ladder ? ladderTargets(ladder, LADDER_SETS) : null;
   const untilPR = ladder ? sessionsToNextMax(ladder, LADDER_SETS) : 0;
 
+  /*
+   * THE STANDING BESTS. Read from the same rows the list below is built from, and
+   * compared on EFFECTIVE load — so a pull-up at `+20 kg` last year when the lifter
+   * weighed 78 does not out-rank the same set at 82 today. `lib/records.ts` has the
+   * argument for these three numbers and against an estimated 1RM.
+   */
+  const bodyweightLog = useSettings((s) => s.bodyweightLog);
+  const unitSystem = useSettings((s) => s.unitSystem);
+  const bests = useMemo(
+    () => exerciseBests(history, exercise, (at) => bodyweightAt(bodyweightLog, at)),
+    [bodyweightLog, exercise, history],
+  );
+  const bestsLine = describeBests(
+    bests,
+    exercise.countUnit,
+    (kg) => `${loadPrefix}${formatWeight(kg, unitSystem, 'external')}`,
+    (count) => formatCount(count, exercise.countUnit),
+  );
+
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
@@ -104,6 +127,20 @@ export function ExerciseHistoryScreen({
         <Text className="mx-lg mt-xs text-label tabular-nums text-ink-muted">
           {describeHistory(rows, plateauDays, loadPrefix)}
         </Text>
+
+        {/*
+          BEST — one line, `ink-faint`, and no medal anywhere near it.
+
+          `HistoryScreen` sets the rule this follows: a total is a fact, not a goal;
+          no streaks, no badges. A best is the same kind of thing — it is what the
+          log says — so it is stated once, here, where somebody is already looking at
+          this exercise's numbers, and it is never announced mid-set.
+        */}
+        {bestsLine ? (
+          <Text className="mx-lg mt-xs text-label tabular-nums text-ink-faint">
+            Best {bestsLine}
+          </Text>
+        ) : null}
 
         {/*
           THE LADDER, above the chart, because it is the only thing on this screen

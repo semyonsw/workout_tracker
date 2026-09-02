@@ -28,7 +28,14 @@
  * word themselves differently.
  */
 
-import type { CountUnit, ID, ISODateTime, LoadMode, SetHistory } from '../types/models';
+import type {
+  CountUnit,
+  ID,
+  ISODateTime,
+  LoadMode,
+  SessionEffort,
+  SetHistory,
+} from '../types/models';
 import { draftToSetHistory, sessionPerformedAt, sessionVolume, type DraftSession } from './draft';
 import { effectiveLoadKg } from './units';
 import { summarizeSessionSets } from './history';
@@ -78,6 +85,14 @@ export interface CompletedWorkout {
    * the clause when it cannot be stood behind.
    */
   volumeIsPartial: boolean;
+  /**
+   * How the session felt, if the user said. See `SessionEffort`.
+   *
+   * Optional and absent by default: skipping the question is one tap on the button
+   * that was already there, and a workout with no answer must not read as an easy
+   * one.
+   */
+  effort?: SessionEffort;
   exercises: CompletedExercise[];
   /** The rows the overload engine and next session's prefills read. */
   sets: SetHistory[];
@@ -112,6 +127,8 @@ export function buildCompletedWorkout(
    * sets cannot be weighed, and the record says so through `volumeIsPartial`.
    */
   bodyweightKg: number | null = null,
+  /** How it felt, from the Finish sheet. Absent = the user skipped the question. */
+  effort?: SessionEffort,
 ): CompletedWorkout | null {
   const sets = draftToSetHistory(session);
   if (sets.length === 0) return null;
@@ -165,6 +182,9 @@ export function buildCompletedWorkout(
     setCount: working.length,
     totalVolumeKg: volume.kg,
     volumeIsPartial: volume.unweighable > 0,
+    // Spread conditionally: absent means unanswered, and a stored `undefined` is a
+    // key in the JSON that says nothing.
+    ...(effort ? { effort } : {}),
     exercises,
     sets,
   };

@@ -285,6 +285,25 @@ export function CreateExerciseScreen({
           />
         </View>
 
+        {/* THE CUE — one line of form or setup, shown on the card mid-session.
+            Directly under the name because it is the other thing that is purely
+            about identifying and performing this movement, and because a lifter
+            filling this screen in is thinking about the exercise, not about its
+            numbers yet. Optional and usually empty. */}
+        <Kicker className="mx-lg mb-sm mt-xl">Cue</Kicker>
+        <View className="mx-lg">
+          <FieldWell
+            value={draft.cue}
+            placeholder="Elbows in, pause at the chest"
+            onChangeText={(cue) => patch({ cue })}
+            accessibilityLabel="Form cue"
+          />
+        </View>
+        <Text className="mx-lg mt-sm text-label text-ink-faint">
+          One line, shown on the card while you are doing this exercise. A seat height, a pin
+          number, the thing you keep forgetting.
+        </Text>
+
         {/* Muscles, through the hierarchy: cluster first, then what's inside it.
             The kicker states the filing decision this makes — cluster, then the
             picks in the order they were tapped. */}

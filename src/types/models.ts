@@ -112,6 +112,31 @@ export type MuscleCluster = 'push' | 'pull' | 'legs' | 'core' | 'cardio';
 export type CountUnit = 'reps' | 'seconds' | 'meters' | 'rounds';
 
 /**
+ * HOW THE WHOLE SESSION FELT. One value per workout, and there is no fourth option.
+ *
+ * ── WHY THIS EXISTS WHEN PER-SET RPE DOES NOT ──────────────────────────────
+ *
+ * `SetHistory` used to declare an `rpe` field, nothing ever collected it, and the
+ * note where it was deleted still stands: rate of perceived exertion per set "asks
+ * the user to grade every set, which is the opposite of a log that costs one tap".
+ * That argument is about the COST, not about the information — and the cost of one
+ * tap on a sheet the user is already looking at is nothing.
+ *
+ * So it is one number for the session, taken at `Finish`, optional, and skippable
+ * by just pressing the button that was already there. Three choices rather than a
+ * 1–10 scale for the same reason `Get ready` cycles four values: nobody can tell a
+ * 6 from a 7 about a workout they have just finished, and a scale that fine invites
+ * a precision the answer does not have.
+ *
+ * WHAT READS IT TODAY: the history row, which states it. That is deliberately all.
+ * It is the input an honest autoregulation feature would need and this app does not
+ * have one yet — but unlike the five fields Phase 1 deleted, this one is WRITTEN by
+ * a control the user can see and READ by a screen they can find, which is the test
+ * a field has to pass to be worth keeping.
+ */
+export type SessionEffort = 'easy' | 'right' | 'hard';
+
+/**
  * How a time-counted set is PERFORMED. Orthogonal to `countUnit`, which says
  * what the number means — this says who produces it, the phone or the user.
  *
@@ -296,6 +321,28 @@ export interface Exercise {
    * absence rather than `0` is how "follow the setting" is spelled.
    */
   defaultRestSeconds?: number;
+
+  /**
+   * ONE LINE OF FORM, shown on the card while you are doing the exercise.
+   *
+   *   "Elbows in, pause at the chest, no bounce"
+   *   "Pin 4, seat at 2"
+   *
+   * ── WHY THIS EXISTS WHEN PER-SET NOTES DO NOT ──────────────────────────
+   *
+   * `SetHistory.notes` was declared, written by nothing, and deleted with the
+   * reasoning that "prose per set is a search feature this app has no screen for".
+   * That is still true. This is the opposite kind of field: it is a fact about the
+   * MOVEMENT, not about one performance of it — the same class of thing as
+   * `barWeightKg` and `incrementKg` — so there is one of them per exercise, it is
+   * edited where the exercise is defined, and it is displayed in the one place it
+   * is useful, which is on the card at the moment you are about to do the lift.
+   *
+   * A seat height and a pin number are the honest use. It is deliberately ONE line
+   * and capped short: a text box that grows is a place to write a training diary,
+   * and a diary needs a screen to read it back on.
+   */
+  cue?: string;
 
   equipment?: string;
   isArchived: boolean;

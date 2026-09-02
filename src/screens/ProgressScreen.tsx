@@ -49,6 +49,8 @@ import {
   workoutVolumeSeries,
   type TrendPoint,
 } from '../lib/trends';
+import { bodyweightSeries } from '../lib/bodyweightLog';
+import { useSettings } from '../state/settingsStore';
 import { formatClock, formatShortDate } from '../lib/units';
 import type { Exercise, ID, SetHistory } from '../types/models';
 import type { ReactNode } from 'react';
@@ -72,6 +74,13 @@ export function ProgressScreen({
   toolbar,
 }: ProgressScreenProps) {
   const [scope, setScope] = useState<Scope>(null);
+  /*
+   * Read here rather than passed in, unlike the log and the library: it is a
+   * SETTING, this screen is the only place that charts it, and threading it through
+   * `AppShell` would make the shell responsible for a number it has no opinion
+   * about. A stable reference out of the store, so the memo below is honest.
+   */
+  const bodyweightLog = useSettings((s) => s.bodyweightLog);
 
   /**
    * Exercises worth offering: trained at least twice, most recently trained
@@ -138,8 +147,24 @@ export function ProgressScreen({
         points: workoutVolumeSeries(workouts),
         unit: 'kg',
       },
+      /*
+       * BODYWEIGHT — the third line, and the only one that is not about a session.
+       *
+       * It belongs on this screen because it is load-bearing rather than
+       * decorative: `effectiveLoadKg` adds it to every pull-up and dip in the log,
+       * so a lifter who gained 4 kg while holding `+20 × 8` added 4 kg to the bar,
+       * and the two lines above cannot show that on their own. The rule that drops
+       * a series with fewer than two points does the rest — a user who has never
+       * typed a weight sees no chart at all, not an empty one.
+       */
+      {
+        key: 'bodyweight',
+        title: 'Bodyweight',
+        points: bodyweightSeries(bodyweightLog),
+        unit: 'kg',
+      },
     ];
-  }, [exercise, historyByExerciseId, workouts]);
+  }, [bodyweightLog, exercise, historyByExerciseId, workouts]);
 
   const drawable = graphs.filter((graph) => graph.points.length >= 2);
 

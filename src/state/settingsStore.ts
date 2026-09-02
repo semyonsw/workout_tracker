@@ -24,8 +24,37 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { AUTO_BACKUP_INTERVAL_LIMITS, rotateBackups } from '../lib/autoBackup';
+import {
+  BODYWEIGHT_LIMITS,
+  clampBodyweightKg,
+  recordBodyweight,
+  sanitizeBodyweightLog,
+  type BodyweightEntry,
+} from '../lib/bodyweightLog';
 import { DEFAULT_PLATES_KG } from '../lib/plates';
-import type { UnitSystem } from '../types/models';
+import {
+  activeGymPlates,
+  addGym as addGymTo,
+  clampPlates,
+  DEFAULT_GYM_ID,
+  gymsFromLegacyPlates,
+  removeGym as removeGymFrom,
+  resolveActiveGymId,
+  sanitizeGyms,
+  toggleGymPlate,
+  updateGym,
+  type Gym,
+} from '../lib/gyms';
+import type { MuscleCluster, UnitSystem } from '../types/models';
+
+/*
+ * Re-exported, because they used to live here and the range is still a settings
+ * concern from the outside — `lib/bodyweightLog.ts` owns them now so that the
+ * series and the scalar cannot disagree about what a believable weight is, and a
+ * store importing a lib is the direction that does not cycle.
+ */
+export { BODYWEIGHT_LIMITS, clampBodyweightKg };
 
 export interface Settings {
   /**
@@ -39,6 +68,19 @@ export interface Settings {
    * only thing that reads it is `effectiveLoadKg`.
    */
   bodyweightKg?: number;
+  /**
+   * EVERY bodyweight the user has typed, newest first — and the reason
+   * `bodyweightKg` above is the HEAD of this list rather than a second opinion.
+   *
+   * `effectiveLoadKg` multiplies a bodyweight into every pull-up, dip and assisted
+   * set in the log, and the right multiplier is different for every session. One
+   * scalar answered that question with today's number, which repriced old sessions
+   * on edit and hid real progress. `lib/bodyweightLog.ts` has the whole argument.
+   *
+   * The scalar stays because everything that only wants "what do I weigh now" reads
+   * it, and `setBodyweightKg` writes both — so the two cannot drift.
+   */
+  bodyweightLog: BodyweightEntry[];
   /**
    * Rest after a set — for every exercise that has no rest of its own.
    *
@@ -84,14 +126,73 @@ export interface Settings {
   ladderAllExercises: boolean;
   unitSystem: UnitSystem;
   /**
-   * The plates this gym has, in kilograms.
+   * THE GYMS, each with the plates on its rack.
    *
-   * A fact about the gym rather than about any one lift, which is why it is here
+   * A fact about the room rather than about any one lift, which is why it is here
    * and `Exercise.barWeightKg` is not: the bar you are holding changes between
-   * exercises, the rack of plates behind you does not. Read only by
-   * `platesFor`, and only for an exercise that declares a bar weight.
+   * exercises, the rack of plates behind you does not — it changes when you change
+   * buildings. This was a single `availablePlatesKg` list, which is right until you
+   * train anywhere else; `lib/gyms.ts` has the argument and the migration.
+   *
+   * Read through `activeGymPlates`, never directly, so everything below this line
+   * still sees one plate list.
    */
-  availablePlatesKg: number[];
+  gyms: Gym[];
+  activeGymId: string;
+  /**
+   * WEEKLY SET TARGETS PER MUSCLE CLUSTER, and every one of them is optional.
+   *
+   * `lib/balance.ts` counts sets per cluster and refuses to score them — "a count,
+   * not a score" — and that refusal is right about someone else's model of your
+   * recovery. It is not right about a number YOU chose: a target you typed is a
+   * fact about your plan, and comparing this week against it is arithmetic you
+   * would otherwise do in your head.
+   *
+   * So: absent means no target and the count renders exactly as it always has. A
+   * number means the row says `14 / 16` and nothing more — no colour, no warning,
+   * no ratio the app invented.
+   */
+  weeklySetTargets: Partial<Record<MuscleCluster, number>>;
+
+  /* --- automatic backup: see `lib/autoBackup.ts` --------------------- */
+  /**
+   * Write a backup without being asked.
+   *
+   * ON by default, and inert until a folder is granted — see `autoBackupFolderUri`.
+   * The default is on because the alternative default is a year of training
+   * protected by the user remembering a menu item.
+   */
+  autoBackupEnabled: boolean;
+  /**
+   * The SAF tree URI the copies are written into, or absent.
+   *
+   * Absent is the normal state on a fresh install and it means automatic backup
+   * cannot run: Android's only writable-and-durable destination is a folder the
+   * user grants, and the app's own sandbox dies with the app — which is one of the
+   * events a backup exists to survive.
+   */
+  autoBackupFolderUri?: string;
+  /** How often, in days. */
+  autoBackupIntervalDays: number;
+  /** When the last backup — automatic or manual — actually landed. */
+  lastBackupAt?: string;
+  /**
+   * Write a finished workout to Health Connect, so the rest of the phone knows.
+   *
+   * OFF by default, and it stays off until the user turns it on and grants the
+   * permission — sending training data to another app is not something to opt
+   * somebody into. Write-only, and the record carries a start, an end and a title
+   * and nothing else; `lib/healthConnect.ts` has the argument.
+   */
+  shareToHealthConnect: boolean;
+  /**
+   * The copies written so far, newest first, so the oldest can be deleted.
+   *
+   * SAF cannot overwrite a file, so without this an unattended weekly write leaves
+   * fifty files a year in the user's Download folder. `rotateBackups` decides which
+   * ones go.
+   */
+  autoBackupUris: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -103,6 +204,7 @@ export const DEFAULT_SETTINGS: Settings = {
    * to.
    */
   bodyweightKg: undefined,
+  bodyweightLog: [],
   restSecondsBetweenSets: 120,
   restSecondsBetweenExercises: 150,
   prepareSeconds: 5,
@@ -115,7 +217,15 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyOnTimerEnd: true,
   ladderAllExercises: false,
   unitSystem: 'metric',
-  availablePlatesKg: [...DEFAULT_PLATES_KG],
+  gyms: gymsFromLegacyPlates(DEFAULT_PLATES_KG),
+  activeGymId: DEFAULT_GYM_ID,
+  weeklySetTargets: {},
+  autoBackupEnabled: true,
+  autoBackupFolderUri: undefined,
+  autoBackupIntervalDays: 7,
+  shareToHealthConnect: false,
+  lastBackupAt: undefined,
+  autoBackupUris: [],
 };
 
 /**
@@ -129,45 +239,10 @@ export const SETTING_LIMITS = {
   prepareSeconds: { min: 0, max: 60, step: 1 },
   beepSeconds: { min: 0, max: 30, step: 1 },
   adjustStepSeconds: { min: 5, max: 60, step: 5 },
+  autoBackupIntervalDays: AUTO_BACKUP_INTERVAL_LIMITS,
 } as const satisfies Record<string, { min: number; max: number; step: number }>;
 
 export type NumericSetting = keyof typeof SETTING_LIMITS;
-
-/**
- * The believable range for a human bodyweight, in kilograms.
- *
- * Wide on purpose — it is a guard against a typo and a corrupt blob, not an
- * opinion about anybody's body. 20 kg is a small child and 300 kg is past the
- * heaviest person who has ever trained; anything outside that reached the field by
- * accident.
- */
-export const BODYWEIGHT_LIMITS = { min: 20, max: 300 } as const;
-
-/**
- * A believable bodyweight in kilograms, or `undefined` for "not set".
- *
- * NOT `clampSetting`: that function's contract is that every setting has a
- * default, and this one deliberately has none. `undefined` here is a fact the app
- * acts on — `effectiveLoadKg` returns null for the three bodyweight-dependent
- * load modes, session volume leaves those sets out, and the history totals line
- * drops its volume clause rather than printing a figure that undercounts. Falling
- * back to a number would turn all of that into a silent wrong answer.
- *
- * One decimal place: a lifter knows their weight to the half-kilo and nothing
- * downstream needs more, while a raw float round-tripped through lb would print
- * 82.30000000000001 in a 40 px numeral.
- */
-export function clampBodyweightKg(value: unknown): number | undefined {
-  const n =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string' && value.trim() !== ''
-        ? Number(value)
-        : NaN;
-  if (!Number.isFinite(n) || n <= 0) return undefined;
-  const { min, max } = BODYWEIGHT_LIMITS;
-  return Number(Math.min(max, Math.max(min, n)).toFixed(1));
-}
 
 /**
  * Whole seconds inside the setting's own range. Anything unusable → the default.
@@ -192,30 +267,12 @@ export function clampSetting(key: NumericSetting, value: unknown): number {
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-/**
- * A usable plate list: positive, finite, deduplicated, heaviest first.
- *
- * Sorted here rather than in `platesFor`, so the greedy walk gets a canonical list
- * however the value reached disk — and deduplicated because two 20s in the list is
- * not two 20 kg plates in the gym, it is one entry written twice. An empty or
- * unusable list falls back to the default rather than to nothing: `[]` means every
- * target is unreachable, so every plate label silently disappears, which looks
- * exactly like the feature being broken.
- *
- * Capped at sixteen entries. A real gym has seven sizes; sixteen is room to be
- * unusual, and a blob with four thousand of them is corrupt.
+/*
+ * `clampPlates` moved to `lib/gyms.ts` with the rest of the plate concern, and is
+ * re-exported because it is still what the settings screen validates a plate row
+ * with. One list per gym now; the sanitizer is unchanged.
  */
-export function clampPlates(value: unknown): number[] {
-  if (!Array.isArray(value)) return [...DEFAULT_PLATES_KG];
-  const usable = [
-    ...new Set(
-      value.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0),
-    ),
-  ]
-    .sort((a, b) => b - a)
-    .slice(0, 16);
-  return usable.length > 0 ? usable : [...DEFAULT_PLATES_KG];
-}
+export { clampPlates };
 
 /**
  * A complete, in-range `Settings` from anything at all — including `undefined`.
@@ -230,11 +287,38 @@ export function clampPlates(value: unknown): number[] {
  */
 export function sanitizeSettings(input: Partial<Settings> | undefined | null): Settings {
   const raw: Settings = { ...DEFAULT_SETTINGS, ...(input ?? {}) };
+
+  /*
+   * THE GYM MIGRATION. A blob written by 1.0.x has `availablePlatesKg` and no
+   * `gyms`, and that list is the plates of the one place the user trains — so it
+   * becomes their first gym, named generically, and the plate labels on the day
+   * after the update are the labels on the day before it. A blob that has both is
+   * a device that has already migrated, and the legacy key is ignored.
+   */
+  const legacy = (input ?? {}) as { availablePlatesKg?: unknown; gyms?: unknown };
+  const gyms =
+    legacy.gyms == null && legacy.availablePlatesKg != null
+      ? gymsFromLegacyPlates(legacy.availablePlatesKg)
+      : sanitizeGyms(raw.gyms);
+
+  /*
+   * The bodyweight log and the scalar are one fact in two shapes, and the LOG wins:
+   * a scalar with no matching entry is a device upgrading from a build that only
+   * had the scalar, so it is seeded as the first reading. Without that seeding, the
+   * first thing the new bodyweight chart would show a long-time user is an empty
+   * screen, and `bodyweightAt` would return null for their whole history.
+   */
+  const scalar = clampBodyweightKg(raw.bodyweightKg);
+  const storedLog = sanitizeBodyweightLog(raw.bodyweightLog);
+  const bodyweightLog =
+    storedLog.length === 0 && scalar != null ? recordBodyweight([], scalar) : storedLog;
+
   return {
     // Named here like every other key, and `undefined` is a legal result: see
     // `clampBodyweightKg`. `JSON.stringify` drops it, so an unset bodyweight
     // costs no bytes on disk and reads back as unset.
-    bodyweightKg: clampBodyweightKg(raw.bodyweightKg),
+    bodyweightKg: scalar,
+    bodyweightLog,
     restSecondsBetweenSets: clampSetting('restSecondsBetweenSets', raw.restSecondsBetweenSets),
     restSecondsBetweenExercises: clampSetting(
       'restSecondsBetweenExercises',
@@ -253,8 +337,73 @@ export function sanitizeSettings(input: Partial<Settings> | undefined | null): S
     // whole library.
     ladderAllExercises: raw.ladderAllExercises === true,
     unitSystem: raw.unitSystem === 'imperial' ? 'imperial' : 'metric',
-    availablePlatesKg: clampPlates(raw.availablePlatesKg),
+    gyms,
+    // Resolved rather than trusted: deleting the active gym leaves a dangling
+    // pointer, and a plate label that goes blank reads as a broken feature.
+    activeGymId: resolveActiveGymId(gyms, raw.activeGymId),
+    weeklySetTargets: sanitizeWeeklyTargets(raw.weeklySetTargets),
+    autoBackupEnabled: raw.autoBackupEnabled !== false,
+    autoBackupFolderUri: usableFolderUri(raw.autoBackupFolderUri),
+    autoBackupIntervalDays: clampSetting('autoBackupIntervalDays', raw.autoBackupIntervalDays),
+    // `=== true`, not `!== false`: this one defaults OFF, so a device upgrading
+    // from a build without the key must not wake up sharing its training data.
+    shareToHealthConnect: raw.shareToHealthConnect === true,
+    lastBackupAt: usableInstant(raw.lastBackupAt),
+    autoBackupUris: usableUriList(raw.autoBackupUris),
   };
+}
+
+/**
+ * Weekly per-cluster targets: a whole number of sets, or the key is absent.
+ *
+ * Absent rather than zero, because zero is a real target ("I am not training legs
+ * this block") and "no opinion" has to be distinguishable from it. Capped at 60 —
+ * past any published maximum recoverable volume, so a number above it is a typo.
+ */
+export const WEEKLY_TARGET_LIMITS = { min: 0, max: 60, step: 1 } as const;
+
+function sanitizeWeeklyTargets(value: unknown): Partial<Record<MuscleCluster, number>> {
+  if (typeof value !== 'object' || value == null) return {};
+  const out: Partial<Record<MuscleCluster, number>> = {};
+  for (const cluster of CLUSTER_KEYS) {
+    const raw = (value as Record<string, unknown>)[cluster];
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) continue;
+    const { min, max } = WEEKLY_TARGET_LIMITS;
+    out[cluster] = Math.min(max, Math.max(min, Math.round(raw)));
+  }
+  return out;
+}
+
+/**
+ * The clusters, listed here rather than imported from `lib/muscles.ts`.
+ *
+ * `muscles.ts` imports nothing and is the compile-time proof that the muscle→cluster
+ * mapping is total; this store already imports two libs and does not need a third
+ * for five string literals. The `satisfies` is what keeps the two in step: a new
+ * cluster added to the type stops compiling here.
+ */
+const CLUSTER_KEYS = [
+  'push',
+  'pull',
+  'legs',
+  'core',
+  'cardio',
+] as const satisfies readonly MuscleCluster[];
+
+/** A folder URI that could plausibly have been granted, or undefined. */
+function usableFolderUri(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+/** A parseable instant, or undefined — a `NaN` date would make every backup due. */
+function usableInstant(value: unknown): string | undefined {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined;
+}
+
+/** The rotation list: strings only, and capped so a corrupt blob cannot grow. */
+function usableUriList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((uri): uri is string => typeof uri === 'string' && uri !== '').slice(0, 16);
 }
 
 interface SettingsState extends Settings {
@@ -278,11 +427,40 @@ interface SettingsState extends Settings {
    */
   setBodyweightKg: (kg: number | undefined) => void;
   /**
-   * Add or remove one plate size. Removing the last one is a no-op: an empty list
-   * makes every target unreachable, so every plate label silently disappears —
-   * which looks exactly like the feature being broken.
+   * Add or remove one plate size ON THE ACTIVE GYM. Removing the last one is a
+   * no-op: an empty list makes every target unreachable, so every plate label
+   * silently disappears — which looks exactly like the feature being broken.
    */
   togglePlate: (kg: number) => void;
+
+  /* --- gyms: see `lib/gyms.ts` --------------------------------------- */
+  /** Switch which gym's plates are in force. */
+  setActiveGym: (gymId: string) => void;
+  /** A new gym, seeded from the active one's plates. Capped at `MAX_GYMS`. */
+  addGym: (name: string) => void;
+  renameGym: (gymId: string, name: string) => void;
+  /** Remove one. The last gym cannot go — there is always somewhere you train. */
+  removeGym: (gymId: string) => void;
+
+  /** A weekly set target for one cluster. `undefined` clears it. */
+  setWeeklyTarget: (cluster: MuscleCluster, sets: number | undefined) => void;
+
+  /* --- automatic backup: see `lib/autoBackup.ts` --------------------- */
+  setAutoBackupEnabled: (enabled: boolean) => void;
+  /** Share finished workouts with Health Connect. Off unless granted. */
+  setShareToHealthConnect: (enabled: boolean) => void;
+  /** Remember the granted folder. `undefined` forgets it, which turns backup off. */
+  setAutoBackupFolder: (folderUri: string | undefined) => void;
+  /**
+   * Record that a backup landed, and rotate the copies.
+   *
+   * Called by BOTH paths — the automatic write and the manual `Export data` — so
+   * "last backup" means the last time the log actually left the phone, whoever
+   * asked for it. The manual export passes no URI because it goes wherever the user
+   * pointed the picker, which is not a folder this app rotates.
+   */
+  recordBackup: (at: string, uri?: string) => { drop: string[] };
+
   resetToDefaults: () => void;
   /**
    * Replace every setting from a restored backup.
@@ -308,18 +486,93 @@ export const useSettings = create<SettingsState>()(
 
       setUnitSystem: (unitSystem) => set({ unitSystem }),
 
-      setBodyweightKg: (kg) => set({ bodyweightKg: clampBodyweightKg(kg) }),
-
-      togglePlate: (kg) => {
-        const current = get().availablePlatesKg;
-        const next = current.includes(kg) ? current.filter((p) => p !== kg) : [...current, kg];
-        // `clampPlates` falls back to the default on an empty list, which would
-        // read as "removing my last plate restored all of them". Refuse instead.
-        if (next.length === 0) return;
-        set({ availablePlatesKg: clampPlates(next) });
+      /*
+       * BOTH, always. The scalar is what "what do I weigh now" reads and the log is
+       * what "what did I weigh in June" reads; writing one without the other is how
+       * two homes for one number becomes one of them being stale (`Settings.bodyweightKg`).
+       * Clearing it leaves the log alone — "stop guessing my load" is not "forget
+       * every weigh-in I ever recorded", and the log is what a restored history needs.
+       */
+      setBodyweightKg: (kg) => {
+        const clamped = clampBodyweightKg(kg);
+        set({
+          bodyweightKg: clamped,
+          bodyweightLog:
+            clamped == null ? get().bodyweightLog : recordBodyweight(get().bodyweightLog, clamped),
+        });
       },
 
-      resetToDefaults: () => set({ ...DEFAULT_SETTINGS }),
+      togglePlate: (kg) => {
+        const { gyms, activeGymId } = get();
+        set({ gyms: toggleGymPlate(gyms, resolveActiveGymId(gyms, activeGymId), kg) });
+      },
+
+      setActiveGym: (gymId) => set({ activeGymId: resolveActiveGymId(get().gyms, gymId) }),
+
+      addGym: (name) => {
+        const { gyms, activeGymId } = get();
+        const id = `gym_${Date.now().toString(36)}`;
+        const next = addGymTo(gyms, name, activeGymId, id);
+        // At the cap nothing was added, so nothing becomes active either.
+        set({ gyms: next, activeGymId: next.some((g) => g.id === id) ? id : activeGymId });
+      },
+
+      renameGym: (gymId, name) => set({ gyms: updateGym(get().gyms, gymId, { name }) }),
+
+      removeGym: (gymId) => {
+        const gyms = removeGymFrom(get().gyms, gymId);
+        set({ gyms, activeGymId: resolveActiveGymId(gyms, get().activeGymId) });
+      },
+
+      setWeeklyTarget: (cluster, sets) => {
+        const current = { ...get().weeklySetTargets };
+        if (sets == null) delete current[cluster];
+        else current[cluster] = sets;
+        set({ weeklySetTargets: sanitizeWeeklyTargets(current) });
+      },
+
+      setAutoBackupEnabled: (autoBackupEnabled) => set({ autoBackupEnabled }),
+
+      setShareToHealthConnect: (shareToHealthConnect) => set({ shareToHealthConnect }),
+
+      setAutoBackupFolder: (folderUri) =>
+        set({
+          autoBackupFolderUri: usableFolderUri(folderUri),
+          // The rotation list belongs to a folder. Pointing somewhere else makes
+          // those URIs somebody else's files, and deleting them would be wrong.
+          autoBackupUris: [],
+        }),
+
+      recordBackup: (at, uri) => {
+        const stamp = usableInstant(at) ?? new Date().toISOString();
+        if (!uri) {
+          set({ lastBackupAt: stamp });
+          return { drop: [] };
+        }
+        const { keep, drop } = rotateBackups(get().autoBackupUris, uri);
+        set({ lastBackupAt: stamp, autoBackupUris: keep });
+        return { drop };
+      },
+
+      resetToDefaults: () =>
+        /*
+         * The gyms, the bodyweight log and the granted folder are NOT settings in
+         * the sense this button means. "Reset settings to defaults" is about the
+         * durations and the toggles; it is not about deleting the plate lists of
+         * three buildings, a year of weigh-ins, or a folder permission the user
+         * would then have to grant again. `Delete all workout history` is the
+         * button that destroys data, and it says so.
+         */
+        set({
+          ...DEFAULT_SETTINGS,
+          bodyweightKg: get().bodyweightKg,
+          bodyweightLog: get().bodyweightLog,
+          gyms: get().gyms,
+          activeGymId: get().activeGymId,
+          autoBackupFolderUri: get().autoBackupFolderUri,
+          lastBackupAt: get().lastBackupAt,
+          autoBackupUris: get().autoBackupUris,
+        }),
 
       importSettings: (raw) =>
         set({ ...sanitizeSettings(raw as Partial<Settings> | undefined | null) }),
@@ -356,4 +609,20 @@ export const useSettings = create<SettingsState>()(
  */
 export function currentSettings(): Settings {
   return sanitizeSettings(useSettings.getState());
+}
+
+/**
+ * The plates in force, wherever the user says they are training.
+ *
+ * THE one read path for plates. Everything that used to reach for
+ * `Settings.availablePlatesKg` calls this instead, which is what keeps gyms
+ * invisible below this line: `platesFor` still receives one list.
+ *
+ * A plain function over a settings object rather than a hook, so the two callers
+ * that are not components (`currentSettings` consumers) can use it too. Components
+ * select `gyms` and `activeGymId` and call it — both are stable references out of
+ * the store, which is what keeps `SetRow`'s memo working.
+ */
+export function platesInForce(settings: Pick<Settings, 'gyms' | 'activeGymId'>): number[] {
+  return activeGymPlates(settings.gyms, settings.activeGymId);
 }

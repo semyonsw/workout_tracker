@@ -115,10 +115,12 @@ function recordUserDeletion(): void {
 /**
  * The whole schema, idempotent, applied on every open.
  *
- * `IF NOT EXISTS` throughout rather than a version counter: there is exactly one
- * version of this schema so far, and a migration table for a schema that has never
- * changed is scaffolding for a problem nobody has. When the second version
- * arrives, `meta` is already here to hold its number.
+ * `IF NOT EXISTS` throughout rather than a version counter, and the same for the
+ * one COLUMN that has been added since (`effort` — see `addMissingColumns`): every
+ * statement here can run against a fresh database and against one that has been
+ * open for a year, which is a stronger property than a version counter and needs no
+ * bookkeeping to be true. When a change arrives that cannot be expressed that way,
+ * `meta` is already here to hold a number.
  *
  * `ON DELETE CASCADE` is why deleting a workout does not need two statements — and
  * `foreign_keys = ON` is why the cascade actually happens, since SQLite has it off
@@ -153,7 +155,11 @@ CREATE TABLE IF NOT EXISTS workouts (
   set_count         INTEGER NOT NULL,
   total_volume_kg   INTEGER NOT NULL,
   volume_is_partial INTEGER NOT NULL,
-  exercises_json    TEXT NOT NULL
+  exercises_json    TEXT NOT NULL,
+  -- How the session felt, or NULL for one nobody answered for (SessionEffort).
+  -- Present in the CREATE for a fresh install, and added by addMissingColumns on
+  -- a database that predates it. No backticks in here: this is a template literal.
+  effort            TEXT
 );
 
 CREATE TABLE IF NOT EXISTS set_history (
@@ -209,8 +215,40 @@ export function db(): Db {
   if (handle) return handle;
   const opened = openDatabaseSync(DB_NAME);
   opened.execSync(SCHEMA);
+  addMissingColumns(opened);
   handle = opened;
   return handle;
+}
+
+/**
+ * Columns added to `workouts` after the table already existed on real devices.
+ *
+ * SQLite has no `ADD COLUMN IF NOT EXISTS`, and `CREATE TABLE IF NOT EXISTS` is a
+ * no-op on a table that is already there — so a column added to the schema above
+ * reaches a fresh install and NOT a phone that has been logging workouts for a
+ * year. That is the one shape of change `IF NOT EXISTS` cannot express, and this is
+ * the smallest thing that does express it: read the columns, add what is missing.
+ *
+ * Each add is wrapped on its own. A duplicate-column error is the expected outcome
+ * of a race or of a `PRAGMA` that lied, and it is not a reason to fail the open —
+ * an open that throws here is a launch that reports a lifetime of training as
+ * "Nothing finished yet" (see `db`).
+ */
+function addMissingColumns(database: Db): void {
+  const wanted: readonly { table: string; column: string; type: string }[] = [
+    { table: 'workouts', column: 'effort', type: 'TEXT' },
+  ];
+
+  for (const { table, column, type } of wanted) {
+    try {
+      const columns = database.getAllSync<{ name: string }>(`PRAGMA table_info(${table})`);
+      if (columns.some((c) => c.name === column)) continue;
+      database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    } catch {
+      // Already there, or a database this open cannot repair. Either way the read
+      // path treats the column as absent, which is exactly what it means.
+    }
+  }
 }
 
 /** Drop the cached handle. For tests, and for a hard reset that never happens. */
@@ -233,6 +271,7 @@ interface WorkoutRow {
   total_volume_kg: number;
   volume_is_partial: number;
   exercises_json: string;
+  effort: string | null;
 }
 
 interface SetRow {
@@ -288,6 +327,10 @@ export function readAllWorkouts(): unknown[] {
     setCount: row.set_count,
     totalVolumeKg: row.total_volume_kg,
     volumeIsPartial: row.volume_is_partial === 1,
+    // Spread conditionally, so a NULL column reads back as an absent key rather
+    // than as `effort: null` — the store's sanitizer is the one that decides what
+    // an unusable value means, and absence is what "nobody answered" looks like.
+    ...(row.effort ? { effort: row.effort } : {}),
     exercises: parseExercises(row.exercises_json),
     sets: bySession.get(row.id) ?? [],
   }));
@@ -418,8 +461,8 @@ function writeWorkoutIn(database: Db, workout: CompletedWorkout): void {
   database.runSync(
     `INSERT OR REPLACE INTO workouts
        (id, title, routine_id, started_at, ended_at, duration_minutes,
-        set_count, total_volume_kg, volume_is_partial, exercises_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        set_count, total_volume_kg, volume_is_partial, exercises_json, effort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     workout.id,
     workout.title,
     workout.routineId ?? null,
@@ -430,6 +473,7 @@ function writeWorkoutIn(database: Db, workout: CompletedWorkout): void {
     workout.totalVolumeKg,
     workout.volumeIsPartial ? 1 : 0,
     JSON.stringify(workout.exercises),
+    workout.effort ?? null,
   );
   database.runSync('DELETE FROM set_history WHERE session_id = ?', workout.id);
   for (const row of workout.sets) insertSet(database, workout.id, row);

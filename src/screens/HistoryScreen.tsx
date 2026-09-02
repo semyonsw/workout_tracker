@@ -122,7 +122,20 @@ import {
 } from '../lib/units';
 import { historyTotals } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
-import type { Exercise, ID, SetHistory, UnitSystem } from '../types/models';
+import { useSettings } from '../state/settingsStore';
+import type { Exercise, ID, SessionEffort, SetHistory, UnitSystem } from '../types/models';
+
+/**
+ * How a session's effort reads on a history row.
+ *
+ * Lower case, because it is a clause in a sentence of facts and not a label:
+ * `6 exercises · 18 sets · 4 720 kg · brutal`.
+ */
+const EFFORT_WORDS: Record<SessionEffort, string> = {
+  easy: 'easy',
+  right: 'right',
+  hard: 'brutal',
+};
 
 const MONTHS = [
   'January',
@@ -224,6 +237,14 @@ export function HistoryScreen({
    * session does not swing it, short enough that it is about now.
    */
   const [window, setWindow] = useState<BalanceWindow>('4w');
+
+  /*
+   * The user's own weekly set targets, if they have set any. Read here rather than
+   * passed in for the same reason the bodyweight log is on the Progress screen: it
+   * is a setting, and threading it through `AppShell` would make the shell
+   * responsible for a number it has no opinion about.
+   */
+  const weeklyTargets = useSettings((s) => s.weeklySetTargets);
 
   const totals = useMemo(() => historyTotals(workouts), [workouts]);
   const months = useMemo(() => groupByMonth(workouts), [workouts]);
@@ -330,7 +351,11 @@ export function HistoryScreen({
                   {balance.clusters.map((row, index) => (
                     <View key={row.cluster}>
                       {index > 0 ? <Separator /> : null}
-                      <ClusterRow row={row} maxSets={balance.maxSets} />
+                      <ClusterRow
+                        row={row}
+                        maxSets={balance.maxSets}
+                        target={weeklyTargets[row.cluster]}
+                      />
                     </View>
                   ))}
                   {/* Only when there is something to say. Sets whose exercise has
@@ -507,6 +532,14 @@ function WorkoutRow({
             {workout.totalVolumeKg > 0 && !workout.volumeIsPartial
               ? ` · ${formatKg(workout.totalVolumeKg)}`
               : ''}
+            {/* HOW IT FELT, where the user said. Appended in `ink-faint` rather
+                than given a badge: it is one more fact on a line of facts, and a
+                brutal session is not a worse session. Absent on every workout
+                logged before the question existed, and on every one where it was
+                skipped — which are the same thing and read the same way. */}
+            {workout.effort ? (
+              <Text className="text-label text-ink-faint"> · {EFFORT_WORDS[workout.effort]}</Text>
+            ) : null}
           </Text>
         </View>
 
@@ -629,19 +662,53 @@ function WorkoutRow({
  * The count is `ink` even at zero: it is a fact, not a warning, and dimming it
  * would be the screen having an opinion.
  */
-function ClusterRow({ row, maxSets }: { row: ClusterCount; maxSets: number }) {
-  const fraction = maxSets > 0 ? row.sets / maxSets : 0;
+function ClusterRow({
+  row,
+  maxSets,
+  target,
+}: {
+  row: ClusterCount;
+  maxSets: number;
+  /** The user's own weekly target for this cluster, or undefined. */
+  target?: number;
+}) {
   const totals = describeClusterTotals(row.totals, formatDuration);
+  /*
+   * THE BAR IS MEASURED AGAINST THE TARGET WHERE THERE IS ONE, and against the
+   * busiest cluster otherwise.
+   *
+   * That is the whole difference the target makes. Without one, the bars are a
+   * comparison between clusters — "back got twice the work chest did" — which is
+   * `balance.ts`'s "a count, not a score" and stays exactly as it was. With one,
+   * the bar is progress toward a number the USER typed, which is the only kind of
+   * target this app is willing to draw. It is capped at full: a bar past 100% would
+   * need a second visual language for overshoot, and the numerals already say it.
+   */
+  const fraction =
+    target != null && target > 0
+      ? Math.min(1, row.sets / target)
+      : maxSets > 0
+        ? row.sets / maxSets
+        : 0;
 
   return (
     <View
       className="min-h-[44px] flex-row items-center px-lg py-sm"
       accessibilityLabel={`${clusterLabel(row.cluster)}, ${row.sets} ${
         row.sets === 1 ? 'set' : 'sets'
-      }${totals ? `, ${totals}` : ''}`}
+      }${target != null ? ` of ${target}` : ''}${totals ? `, ${totals}` : ''}`}
     >
       <Text className="w-[64px] text-label font-medium text-ink">{clusterLabel(row.cluster)}</Text>
-      <Text className="w-[36px] text-body font-semibold tabular-nums text-ink">{row.sets}</Text>
+
+      {/* `14 / 16` where a target exists, `14` where it does not. The target is
+          `ink-faint` because it is the thing the user typed, not the thing that
+          happened — the fact is the number in full ink beside it. */}
+      <View className="w-[56px] flex-row items-baseline">
+        <Text className="text-body font-semibold tabular-nums text-ink">{row.sets}</Text>
+        {target != null ? (
+          <Text className="text-label tabular-nums text-ink-faint">/{target}</Text>
+        ) : null}
+      </View>
 
       {/* The bar, and what those sets added up to, on one line. */}
       <View className="ml-sm flex-1">

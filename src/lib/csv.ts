@@ -12,11 +12,18 @@
  *
  * So this is the flat form, and it is deliberately NOT a second backup format:
  *
- *  • EXPORT ONLY. There is no CSV import and there will not be one. A backup has
- *    to restore exercises, routines, the sequence and the settings, and a table of
- *    set rows carries none of them — importing one would produce a log referring to
- *    exercises that do not exist, which is exactly the state `libraryStore` rule 1
- *    exists to prevent. The JSON file is the backup; this is a copy you can read.
+ *  • NOT A BACKUP FORMAT, AND STILL NOT ONE. This file said "there is no CSV import
+ *    and there will not be one", on the grounds that a table of set rows carries no
+ *    exercises, routines, sequence or settings — so importing one would produce a
+ *    log referring to exercises that do not exist, which is the state `libraryStore`
+ *    rule 1 exists to prevent.
+ *
+ *    That argument was right about RESTORING and there is still exactly one thing
+ *    that restores: the JSON file. What `lib/csvImport.ts` does is different — it
+ *    ADDS old workouts, and it answers the dangling-exercise objection rather than
+ *    living with it, by creating the library rows a sheet refers to and does not
+ *    contain. Routines, the sequence and the settings are untouched, because a set
+ *    table genuinely says nothing about them.
  *  • DERIVED, NEVER AUTHORITATIVE. Every column comes off a `SetHistory` row or the
  *    workout snapshot around it. Nothing is computed, summarised or rounded, so a
  *    number in a cell is a number in the log.

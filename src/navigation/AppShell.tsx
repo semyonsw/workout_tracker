@@ -36,6 +36,7 @@ import { ExerciseHistoryScreen } from '../screens/ExerciseHistoryScreen';
 import { ExerciseLibraryScreen, clusterKey, muscleKey } from '../screens/ExerciseLibraryScreen';
 import { HistoryScreen, type HistoryScreenProps } from '../screens/HistoryScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
+import { CalendarScreen } from '../screens/CalendarScreen';
 import {
   HomeScreen,
   type RoutineChoice,
@@ -53,6 +54,8 @@ import {
 } from '../lib/completedWorkout';
 import { buildDraftEntry, defaultTargetCount, defaultTargetSets } from '../lib/draft';
 import { resolveRest } from '../lib/rest';
+import { bodyweightAt } from '../lib/bodyweightLog';
+import { writeWorkoutToHealthConnect } from '../lib/healthConnect';
 import { ladderOf, ladderOutcomes } from '../lib/repLadder';
 import { applyPlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import {
@@ -67,7 +70,7 @@ import { evaluateOverloadBatch } from '../lib/progressiveOverload';
 import { searchExercises } from '../lib/search';
 import { useActiveWorkout } from '../state/activeWorkoutStore';
 import { routineUsageCount, useLibrary } from '../state/libraryStore';
-import { useSettings } from '../state/settingsStore';
+import { platesInForce, useSettings } from '../state/settingsStore';
 import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore';
 import { seedUser } from '../data/seed';
 import type { CompletedWorkout } from '../lib/completedWorkout';
@@ -472,6 +475,15 @@ export function AppShell() {
         unitSystem: settings.unitSystem,
         defaultRestSeconds: settings.restSecondsBetweenSets,
         defaultTransitionRestSeconds: settings.restSecondsBetweenExercises,
+        /*
+         * What the lifter weighed on the day of each past set, so a bodyweight
+         * movement's bests compare honestly: `+20 kg × 8` at 78 kg does not tie
+         * the same set at 82 kg. A closure rather than a number, because the
+         * answer is different for every row in the history it is about to read.
+         */
+        bodyweightAtDate: (at) => bodyweightAt(settings.bodyweightLog, at),
+        // For the deload suggestion, which must never name an unloadable weight.
+        availablePlatesKg: platesInForce(settings),
       });
     },
     [exercisesById, historyById, push, routinesById, session, startSession],
@@ -600,6 +612,9 @@ export function AppShell() {
           // long as the same exercise planned into a routine. See `lib/rest.ts`.
           restSeconds: resolveRest(exercise, settings.restSecondsBetweenSets).seconds,
           transitionRestSeconds: settings.restSecondsBetweenExercises,
+          bodyweightAtDate: (at) => bodyweightAt(settings.bodyweightLog, at),
+          // For the deload suggestion, which must never name an unloadable weight.
+          availablePlatesKg: platesInForce(settings),
           targetSets: planned ?? 1,
           targetRepsMax: defaultTargetCount(exercise),
           plannedSetCount: planned ?? 1,
@@ -641,6 +656,21 @@ export function AppShell() {
             // gets recorded. A session with nothing logged saves nothing, and a
             // workout from some other routine is not this step being done.
             if (saved) advanceSequence(saved.routineId);
+
+            /*
+             * ...and the rest of the phone is told a workout happened, if the user
+             * has switched that on and granted it.
+             *
+             * FIRE AND FORGET, deliberately: it is a `void` on a promise nobody
+             * awaits, it can fail in half a dozen ordinary ways (Health Connect not
+             * installed, permission revoked, provider gone), and none of them are
+             * worth a word on screen because the log is already on disk by this
+             * line. `lib/healthConnect.ts` has the argument for why it writes a
+             * session and nothing else.
+             */
+            if (saved && useSettings.getState().shareToHealthConnect) {
+              void writeWorkoutToHealthConnect(saved);
+            }
 
             /*
              * ...and every ladder that met its target moves up, one rep, without
@@ -985,7 +1015,7 @@ function HistoryTab({
   onEditSet: HistoryScreenProps['onEditSet'];
   onDeleteSet: HistoryScreenProps['onDeleteSet'];
 }) {
-  const [view, setView] = useState<'log' | 'graphs'>('log');
+  const [view, setView] = useState<'log' | 'graphs' | 'calendar'>('log');
 
   /*
    * A workout tapped ANYWHERE ELSE in the app lands on this tab expecting the log
@@ -1021,6 +1051,10 @@ function HistoryTab({
     );
   }
 
+  if (view === 'calendar') {
+    return <CalendarScreen workouts={workouts} toolbar={toolbar} />;
+  }
+
   return (
     <HistoryScreen
       workouts={workouts}
@@ -1040,9 +1074,15 @@ function HistoryTab({
   );
 }
 
+/*
+ * Three views of one log: the sessions, the lines, and the days. `Cal` rather than
+ * `Calendar` because three labels have to fit a 360 dp segmented control, and the
+ * screen it opens says the word in full.
+ */
 const VIEWS = [
   { value: 'log' as const, label: 'Log' },
   { value: 'graphs' as const, label: 'Graphs' },
+  { value: 'calendar' as const, label: 'Cal' },
 ];
 
 type LibraryProps = React.ComponentProps<typeof ExerciseLibraryScreen>;

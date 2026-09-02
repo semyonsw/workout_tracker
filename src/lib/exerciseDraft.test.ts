@@ -418,3 +418,46 @@ describe('the max is the only rep number', () => {
     expect(draftToExercise(draft, 'ex_x', 'u1').defaultCount).toBe(120);
   });
 });
+
+/**
+ * THE CUE. One line of form, on the movement rather than on a set.
+ *
+ * `SetHistory.notes` was deleted because "prose per set is a search feature this app
+ * has no screen for". This is the field that survives that objection: it is a fact
+ * about the exercise, edited where the exercise is defined, displayed on the card
+ * while you are doing it.
+ */
+describe('the form cue', () => {
+  it('round-trips', () => {
+    const withCue = { ...machine, cue: 'Elbows in, pause at the chest' };
+    expect(exerciseToDraft(withCue).cue).toBe('Elbows in, pause at the chest');
+    expect(applyDraftToExercise(exerciseToDraft(withCue), withCue).cue).toBe(
+      'Elbows in, pause at the chest',
+    );
+  });
+
+  it('is absent rather than empty when there is nothing to say', () => {
+    // A row of empty quotes on disk is a field pretending to have a value.
+    expect(exerciseToDraft(machine).cue).toBe('');
+    expect(draftToExercise(emptyExerciseDraft('Zercher squat'), 'ex_x', 'u1').cue).toBeUndefined();
+  });
+
+  it('trims whitespace, and treats blank as absent', () => {
+    const draft = { ...emptyExerciseDraft('Squat'), cue: '   ' };
+    expect(draftToExercise(draft, 'ex_x', 'u1').cue).toBeUndefined();
+
+    const padded = { ...emptyExerciseDraft('Squat'), cue: '  Brace hard  ' };
+    expect(draftToExercise(padded, 'ex_x', 'u1').cue).toBe('Brace hard');
+  });
+
+  it('caps a paragraph, because it is one line on a card', () => {
+    const essay = { ...emptyExerciseDraft('Squat'), cue: 'x'.repeat(500) };
+    expect(draftToExercise(essay, 'ex_x', 'u1').cue).toHaveLength(120);
+  });
+
+  it('can be cleared by an edit', () => {
+    const withCue = { ...machine, cue: 'Old cue' };
+    const cleared = applyDraftToExercise({ ...exerciseToDraft(withCue), cue: '' }, withCue);
+    expect(cleared.cue).toBeUndefined();
+  });
+});

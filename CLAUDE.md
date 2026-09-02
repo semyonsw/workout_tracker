@@ -52,6 +52,22 @@ that flag. The fix is a drop-in binary swap: ninja 1.12.1 over
 `E:\android-sdk\cmake\3.22.1\bin\ninja.exe`, with the 1.10.2 original kept beside
 it as `ninja-1.10.2.exe.bak`. Reinstalling the SDK's cmake package undoes it.
 
+## Native dependencies
+
+Two, and both are config-plugin-driven, so `npx expo prebuild -p android` is what
+applies them:
+
+- **`react-native-health-connect`** writes a finished workout to Health Connect
+  (`src/lib/healthConnect.ts`). It is `require`d lazily inside a `try`, so the app
+  runs identically in a build that does not contain it — which is what makes it
+  removable by deleting the dependency and the plugin entry. It needs
+  `android.permission.health.WRITE_EXERCISE` in `app.json`'s `permissions` (the
+  plugin adds the rationale intent-filters but NOT the permission itself) and it
+  forces `minSdkVersion` 26.
+- **`expo-build-properties`** exists only to set that `minSdkVersion`. Check
+  `android/gradle.properties` says `android.minSdkVersion=26` after a prebuild;
+  Health Connect will not compile below it.
+
 `android/app/debug.keystore` IS THE ONLY COPY. `/android/` is gitignored, so that
 file exists nowhere else — not in the repo, not in CI. It is the key the phone's
 install is signed with (`FA:C6:17:45…`), and losing it means the only way to update

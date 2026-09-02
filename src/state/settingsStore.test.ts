@@ -8,13 +8,20 @@ import {
   clampPlates,
   clampSetting,
   currentSettings,
+  platesInForce,
   sanitizeSettings,
   useSettings,
   type Settings,
 } from './settingsStore';
 
 afterEach(() => {
-  useSettings.getState().resetToDefaults();
+  /*
+   * `importSettings`, not `resetToDefaults`. The reset button deliberately KEEPS the
+   * gyms, the bodyweight log and the granted backup folder — it is about durations
+   * and toggles, not about destroying data — so it is the wrong tool for isolating
+   * tests from each other. This replaces every key.
+   */
+  useSettings.getState().importSettings(DEFAULT_SETTINGS);
 });
 
 /*
@@ -193,7 +200,7 @@ describe('the bodyweight', () => {
  */
 describe('the plate list', () => {
   it('defaults to what most gyms have, heaviest first', () => {
-    expect(DEFAULT_SETTINGS.availablePlatesKg).toEqual([25, 20, 15, 10, 5, 2.5, 1.25]);
+    expect(platesInForce(DEFAULT_SETTINGS)).toEqual([25, 20, 15, 10, 5, 2.5, 1.25]);
   });
 
   it('sorts and deduplicates whatever comes off disk', () => {
@@ -211,7 +218,7 @@ describe('the plate list', () => {
     // `[]` means every target is unreachable, so every plate label silently
     // disappears — which looks exactly like the feature being broken.
     for (const bad of [[], undefined, null, 'plates', [0, -1], {}]) {
-      expect(clampPlates(bad)).toEqual(DEFAULT_SETTINGS.availablePlatesKg);
+      expect(clampPlates(bad)).toEqual(platesInForce(DEFAULT_SETTINGS));
     }
   });
 
@@ -221,10 +228,141 @@ describe('the plate list', () => {
   });
 
   it('survives a round trip through sanitizeSettings', () => {
-    expect(sanitizeSettings({ availablePlatesKg: [10, 20] }).availablePlatesKg).toEqual([20, 10]);
-    expect(sanitizeSettings(undefined).availablePlatesKg).toEqual(
-      DEFAULT_SETTINGS.availablePlatesKg,
-    );
+    /*
+     * `availablePlatesKg` is the LEGACY key — every device installed before gyms
+     * existed has one, and it is the plates of the one place they train. It has to
+     * come back as that device's first gym, or the plate label under every barbell
+     * weight changes on update.
+     */
+    expect(platesInForce(sanitizeSettings({ availablePlatesKg: [10, 20] } as never))).toEqual([
+      20, 10,
+    ]);
+    expect(platesInForce(sanitizeSettings(undefined))).toEqual(platesInForce(DEFAULT_SETTINGS));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * GYMS. One plate list per building, one of them active.
+ *
+ * The rule that matters is that nothing below `platesInForce` can ever see an empty
+ * list or a dangling pointer: a plate label that silently disappears reads as a
+ * broken feature rather than as an unset setting.
+ */
+describe('gyms', () => {
+  it('migrates a single legacy plate list into one gym, losing nothing', () => {
+    const migrated = sanitizeSettings({ availablePlatesKg: [20, 10, 5] } as never);
+    expect(migrated.gyms).toHaveLength(1);
+    expect(migrated.gyms[0].platesKg).toEqual([20, 10, 5]);
+    expect(platesInForce(migrated)).toEqual([20, 10, 5]);
+  });
+
+  it('ignores the legacy key once a device has gyms of its own', () => {
+    const settings = sanitizeSettings({
+      availablePlatesKg: [20],
+      gyms: [{ id: 'g1', name: 'Home', platesKg: [10, 5] }],
+      activeGymId: 'g1',
+    } as never);
+    expect(settings.gyms).toHaveLength(1);
+    expect(platesInForce(settings)).toEqual([10, 5]);
+  });
+
+  it('resolves an active id that points at nothing', () => {
+    const settings = sanitizeSettings({
+      gyms: [{ id: 'g1', name: 'Home', platesKg: [10] }],
+      activeGymId: 'deleted',
+    } as never);
+    expect(settings.activeGymId).toBe('g1');
+    expect(platesInForce(settings)).toEqual([10]);
+  });
+
+  it('adds a gym seeded from the active one, and switches to it', () => {
+    useSettings.getState().addGym('Hotel');
+    const { gyms, activeGymId } = useSettings.getState();
+    expect(gyms).toHaveLength(2);
+    // Seeded, because a second rack is nearly always the same one minus the heavy
+    // plates — re-picking seven sizes to say that would be the wrong default.
+    expect(gyms[1].platesKg).toEqual(gyms[0].platesKg);
+    expect(activeGymId).toBe(gyms[1].id);
+  });
+
+  it('edits the plates of the ACTIVE gym only', () => {
+    useSettings.getState().addGym('Hotel');
+    const hotelId = useSettings.getState().activeGymId;
+    useSettings.getState().togglePlate(25);
+
+    const { gyms } = useSettings.getState();
+    const home = gyms.find((g) => g.id !== hotelId);
+    const hotel = gyms.find((g) => g.id === hotelId);
+    expect(hotel?.platesKg).not.toContain(25);
+    expect(home?.platesKg).toContain(25);
+  });
+
+  it('refuses to remove the last gym — there is always somewhere you train', () => {
+    const only = useSettings.getState().gyms[0].id;
+    useSettings.getState().removeGym(only);
+    expect(useSettings.getState().gyms).toHaveLength(1);
+  });
+
+  it('moves the active pointer when the active gym is removed', () => {
+    useSettings.getState().addGym('Hotel');
+    const hotelId = useSettings.getState().activeGymId;
+    useSettings.getState().removeGym(hotelId);
+
+    const { gyms, activeGymId } = useSettings.getState();
+    expect(gyms.some((g) => g.id === hotelId)).toBe(false);
+    expect(gyms.some((g) => g.id === activeGymId)).toBe(true);
+    expect(platesInForce(useSettings.getState())).toEqual(gyms[0].platesKg);
+  });
+
+  it('keeps the gyms through Reset settings to defaults', () => {
+    /*
+     * "Reset settings" means the durations and the toggles. It does not mean
+     * deleting the plate lists of three buildings — the button that destroys data
+     * is `Delete all workout history`, and it says so.
+     */
+    useSettings.getState().addGym('Hotel');
+    useSettings.getState().resetToDefaults();
+    expect(useSettings.getState().gyms).toHaveLength(2);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * AUTOMATIC BACKUP, from the store's side. The decision itself is tested in
+ * `lib/autoBackup.test.ts`; these are the two facts the store has to keep straight.
+ */
+describe('the backup stamp', () => {
+  it('records a manual backup with no URI to rotate', () => {
+    const { drop } = useSettings.getState().recordBackup('2026-09-02T10:00:00.000Z');
+    expect(drop).toEqual([]);
+    expect(useSettings.getState().lastBackupAt).toBe('2026-09-02T10:00:00.000Z');
+  });
+
+  it('rotates the automatic copies, keeping the newest four', () => {
+    const store = useSettings.getState;
+    for (const n of [1, 2, 3, 4]) {
+      store().recordBackup(`2026-0${n}-01T10:00:00.000Z`, `uri-${n}`);
+    }
+    expect(store().autoBackupUris).toEqual(['uri-4', 'uri-3', 'uri-2', 'uri-1']);
+
+    const { drop } = store().recordBackup('2026-05-01T10:00:00.000Z', 'uri-5');
+    expect(drop).toEqual(['uri-1']);
+    expect(store().autoBackupUris).toEqual(['uri-5', 'uri-4', 'uri-3', 'uri-2']);
+  });
+
+  it('forgets the rotation list when the folder changes', () => {
+    // Those URIs are somebody else's files now, and deleting them would be wrong.
+    useSettings.getState().recordBackup('2026-09-02T10:00:00.000Z', 'uri-1');
+    useSettings.getState().setAutoBackupFolder('content://tree/elsewhere');
+    expect(useSettings.getState().autoBackupUris).toEqual([]);
+  });
+
+  it('refuses an unparseable stamp rather than storing NaN', () => {
+    useSettings.getState().recordBackup('not a date');
+    expect(Number.isFinite(Date.parse(useSettings.getState().lastBackupAt ?? ''))).toBe(true);
   });
 });
 

@@ -1,8 +1,15 @@
 /**
- * Icon — the entire icon set. Nine glyphs, one drag handle, nothing else.
+ * Icon — the entire icon set. Ten glyphs, one drag handle, nothing else.
  *
- *   check · plus · minus · chevron ×3 · trending-up · x · play · pause
- *                                                  (+ the reorder handle)
+ *   check · plus · minus · chevron ×3 · trending-up · trending-down · x
+ *   play · pause                                     (+ the reorder handle)
+ *
+ * `trending-down` is `trending-up` reflected, at the same weight, for the same
+ * reason `minus` is the middle bar of `plus`: they are one idea and its opposite,
+ * and two marks that differ only by a reflection are two marks nobody has to learn.
+ * It marks the ONE thing in the app that suggests doing less — a stalled lift's
+ * back-off session (`lib/deload.ts`) — and it is drawn in `ink-muted` rather than
+ * green, because green in this app means progressive overload and this is not that.
  *
  * `play` and `pause` are in the same weight class as `check` and `plus` (2.5)
  * because they are the same kind of mark: on a timed set — a plank, a hang — ▶ IS
@@ -39,6 +46,7 @@ export type IconName =
   | 'chevron-right'
   | 'chevron-down'
   | 'trending-up'
+  | 'trending-down'
   | 'x'
   | 'play'
   | 'pause';
@@ -59,6 +67,7 @@ const STROKE: Record<IconName, number> = {
   'chevron-right': 2,
   'chevron-down': 2,
   'trending-up': 2,
+  'trending-down': 2,
   x: 2,
   play: 2.5,
   pause: 2.5,
@@ -72,6 +81,9 @@ const PATHS: Record<IconName, string[]> = {
   'chevron-right': ['M9 6l6 6-6 6'],
   'chevron-down': ['M6 9l6 6 6-6'],
   'trending-up': ['M22 7l-8.5 8.5-4-4L2 19', 'M16 7h6v6'],
+  // The same two strokes, reflected through the horizontal: the arrowhead ends up
+  // bottom-right, and the elbow points the other way.
+  'trending-down': ['M22 17l-8.5-8.5-4 4L2 5', 'M16 17h6v-6'],
   x: ['M18 6L6 18M6 6l12 12'],
   // Closed triangle: the round join at the apex matches the checkmark's corner.
   play: ['M8 5.5l11 6.5-11 6.5z'],

@@ -53,20 +53,29 @@ npm run lint             # also what CI runs, on every push
 | Supersets | one toggle, `with the exercise above`. Members share a green rule down their left edge, no rest fires between them, and rest comes after the last one of the round |
 | Change the plan mid-set | `+ Add set` / `− Remove set` in every card, `Remove exercise` under them for the whole thing at once (it asks first if you have logged into it), `+ Add an exercise` at the bottom (library picker and create screen included), long-press a card and slide to reorder |
 | …and it learns | on `Finish`, if you did five sets where the routine plans four, one extra tap writes that back. Declining changes nothing and it does not ask twice |
-| Warm-up sets | a chip in the set editor. A warm-up reads `W` instead of a number and counts towards nothing — not the volume, not the set count, not the shorthand, not the suggestions |
-| Exercise library | a muscle tree — `push → chest → dips` — with search, create-from-query, edit in place (a rename keeps every set ever logged) and delete |
+| Warm-up sets | a chip in the set editor, or generated: `Warm-up` on the card adds `40 × 5 · 60 × 5 · 80 × 3` off the working weight, snapped DOWN onto plates your gym actually has. A warm-up reads `W` instead of a number and counts towards nothing — not the volume, not the set count, not the shorthand, not the suggestions |
+| Exercise library | a muscle tree — `push → chest → dips` — with search, create-from-query, edit in place (a rename keeps every set ever logged) and delete. An exercise carries its own set count, so a routine plans what the movement asks for, and one line of form — `elbows in, pause at the chest` — shown on the card while you do it |
 | Rep ladder | one number, and the whole session follows. **Max 16 → `16 + 10 + 8 + 8 + 6`** — an all-out top set, backoff sets around half of it, and a total that is always three times your max. Meet every set and one rep is added, bottom set up; three met sessions and the max itself moves. Miss it and the same numbers come back. Hit 18 when the plan said 16 and every set under it re-shapes mid-workout to the ladder for 18 |
 | Overload nudges | derived from your own set history: a weight, a hold or a rep count that has been the same for N days over M sessions, with the suggestion applied to every unlogged set in one tap. Planks and push-ups get the same treatment as the barbell — `3× at 2:00 — try 2:15`. Silent on an exercise running a ladder: two systems prescribing one exercise's reps is one of them being wrong |
 | Plate maths | `20 + 2×10 + 2×2.5` under the weight cell of a barbell lift. It informs and never rounds: a weight your plates cannot make shows no line rather than the nearest one |
+| More than one gym | a plate list per building, one of them active. Switch it in Settings and every plate breakdown redraws for the rack that is actually behind you |
+| Bests | the heaviest set, the most reps, and the best set by load × reps, on the exercise's own screen — and one green line on the card the moment a set in this session beats one. Compared on the load your BODY moved, so `+20 kg` at 82 kg outranks `+20 kg` at 78. No medals, no banners |
+| Back off when it stalls | three sessions at one weight with no extra rep and the card says so, with one loadable session at 85% to reset it. A statement, not a button: cutting a block's weight is not a one-tap decision. Never on a ladder — that scheme answers a missed session itself |
 | History | every finished workout, newest first, by month: date, duration, sets, volume, each exercise in the app's shorthand **and its total** — `+40 kg · 4 4 4` with `12 reps total` under it. Tapping a workout anywhere in the app opens that workout |
 | The log is the log | it lives in SQLite, it is read before the first frame, and it survives the process being killed — `close all` included. If it ever cannot be READ, the app says so and states how many workouts are on disk rather than showing you an empty list, and it refuses to write a backup that would be missing them |
 | Workout numbers | every workout carries an ordinal — `Workout 92`. Pin the number on any one session (`Set the workout number` inside it) and every other workout counts from there, backwards and forwards, so a log that starts at 91 because ninety happened before this app says so |
 | Graphs | `History → Graphs`: reps per workout and kilograms per workout over time, or pick one exercise for its reps per session and top weight per session. Each line states its own direction — `up 34 reps since 11 Jun` — because the shape is visible but the arithmetic isn't |
-| Sets per cluster | pull 42 · push 31 · legs 8, over 4 weeks, 12 weeks or all of it. Counts and bars, and a zero is the point |
+| Calendar | `History → Cal`: which days you trained, a month at a time, gaps and all. A filled square is a day with a workout. No streak, no flame, nothing to break |
+| Sets per cluster | pull 42 · push 31 · legs 8, over 4 weeks, 12 weeks or all of it. Counts and bars, and a zero is the point. Type a weekly target for a cluster and the row reads `14 / 16` and measures against it — your number, not a textbook's |
+| Bodyweight over time | a third line on the graphs, and the reason it is there: a bodyweight set is only readable against what you weighed the day you did it, so the log keeps a reading per day and every past session is priced with its own |
+| How did that go | one tap on the Finish sheet — easy, right, brutal — and it appears on the history row. One number for the session, never one per set |
 | Numbers it will not fake | volume needs a bodyweight to weigh a push-up or an assisted pull-up. Without one the clause is dropped rather than printed short, and no bodyweight is ever guessed |
 | Correct a typo | inside an open workout, one logged set at a time, on the same ± chips. Everything derived from it is recomputed rather than patched |
-| Settings | every duration the app counts, plus sound, vibration, screen-on and notification switches. Your bodyweight, which is what makes push-ups and assisted work countable. Which plates the gym has. And what you actually rest, measured, with one tap to adopt it |
+| Settings | every duration the app counts, plus sound, vibration, screen-on and notification switches. Your bodyweight, which is what makes push-ups and assisted work countable. Which plates each gym has. Weekly set targets, if you want them. And what you actually rest, measured, with one tap to adopt it |
 | Export / Import | everything you own — exercises, routines, the sequence, every workout with its set rows, your settings — as one readable JSON file, and back again through the phone's file browser. The pinned workout number travels with it, because it is the one fact that cannot be recomputed. `Add workouts from a file` merges a second phone's log instead of replacing yours; a CSV of every set row is there too, for a spreadsheet |
+| Backups happen on their own | pick a folder once and the whole log is written into it every week, four copies deep, without being asked. Settings states the age of the last one — `Today`, `12 days ago`, `Never` — because a backup you have to remember is a backup you do not have |
+| Bring in old training | `Import old workouts from a CSV`: a spreadsheet of sets from before this app existed becomes workouts, and the exercises it mentions and you do not have get created rather than left dangling. Adds; never replaces |
+| Health Connect | off by default. Switch it on and a finished workout is written as one exercise session — start, end, name — so a watch or a health app knows you trained. Nothing is ever read back, and the sets never leave |
 
 ## The rep ladder
 
@@ -126,14 +135,16 @@ src/navigation/AppShell     five tabs and a stack; no tab bar during a session
 src/screens/                one file per screen, all plain props-and-callbacks
 src/components/             SetRow, ExerciseCard, TimerPill, primitives,
                             ErrorBoundary, ConfirmSheet…
-src/hooks/                  the two timers and the count-in
-src/lib/                    the decisions: overload, set timer, count-in cue,
-                            muscles, draft, routine plan, rest, superset,
-                            balance, rest history, plates, reorder, completed
-                            workout,
-                            history, trends, shape, units, backup, csv — all
-                            pure, all tested. Plus beeper/notify/feedback, the
-                            three wrappers around native side effects that must
+src/hooks/                  the two timers, the count-in, and the auto-backup
+src/lib/                    the decisions: overload, deload, set timer, count-in
+                            cue, muscles, draft, routine plan, rest, superset,
+                            balance, rest history, plates, warm-up, records,
+                            reorder, completed workout, gyms, bodyweight log,
+                            calendar, auto-backup, history, trends, shape, units,
+                            backup, csv, csv import — all
+                            pure, all tested. Plus beeper/notify/feedback/health
+                            connect, the wrappers around native side effects that
+                            must
                             never throw mid-set
 src/state/                  the live session, the finished workouts, the library
                             (+ the sequence), the settings — zustand, every one

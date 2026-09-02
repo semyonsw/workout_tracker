@@ -92,6 +92,7 @@ import {
   writeWorkouts,
 } from './historyDb';
 import { currentSettings } from './settingsStore';
+import { bodyweightAt } from '../lib/bodyweightLog';
 import type { CountUnit, ID, LoadMode, RecentSessionSummary, SetHistory } from '../types/models';
 
 interface WorkoutHistoryState {
@@ -322,7 +323,12 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
      * computed once from the value the app has at this instant and never
      * recomputed — history is not rewritten when a setting changes.
      */
-    const workout = buildCompletedWorkout(session, endedAt, currentSettings().bodyweightKg ?? null);
+    const workout = buildCompletedWorkout(
+      session,
+      endedAt,
+      currentSettings().bodyweightKg ?? null,
+      session.effort,
+    );
     if (!workout) return null;
 
     /*
@@ -526,9 +532,27 @@ function writeRecomputed(
   workoutId: ID,
   sets: SetHistory[],
 ): boolean {
-  const bodyweightKg = currentSettings().bodyweightKg ?? null;
+  /*
+   * THE BODYWEIGHT OF THE DAY THAT WORKOUT HAPPENED, not today's.
+   *
+   * This used to read the current scalar, which made editing one rep in a session
+   * from June silently reprice the whole session at September's weight —
+   * `effectiveLoadKg` multiplies a bodyweight into every pull-up, dip and assisted
+   * set, so the number is different for every session in the log. `bodyweightAt`
+   * is the only honest lookup and `lib/bodyweightLog.ts` has the argument.
+   *
+   * Falls back to the scalar for a log with nothing in it, which is what a device
+   * that has never typed a weight has — and there `effectiveLoadKg` returns null
+   * and the volume drops the clause rather than printing a figure that undercounts.
+   */
+  const settings = currentSettings();
   const workouts = get().workouts.map((w) =>
-    w.id === workoutId ? recomputeWorkout({ ...w, sets }, bodyweightKg) : w,
+    w.id === workoutId
+      ? recomputeWorkout(
+          { ...w, sets },
+          bodyweightAt(settings.bodyweightLog, w.startedAt) ?? settings.bodyweightKg ?? null,
+        )
+      : w,
   );
 
   /*
@@ -643,6 +667,15 @@ function sanitizeWorkout(value: unknown): CompletedWorkout | null {
       typeof raw.volumeIsPartial === 'boolean'
         ? raw.volumeIsPartial
         : sets.some((row) => row.countUnit === 'reps' && row.loadMode !== 'external'),
+    /*
+     * One of three words or absent — never repaired to a default. An unanswered
+     * session and an easy one are different facts, and inventing the second from
+     * the first would put a word in the user's mouth on every workout they logged
+     * before the question existed.
+     */
+    ...(raw.effort === 'easy' || raw.effort === 'right' || raw.effort === 'hard'
+      ? { effort: raw.effort }
+      : {}),
     exercises,
     sets,
   };

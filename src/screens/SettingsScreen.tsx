@@ -59,7 +59,7 @@
  * deadline; this screen only ever asks for a nudge.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
@@ -87,24 +87,42 @@ import {
 } from '../lib/backup';
 import {
   describeError,
+  folderLabel,
+  pickFolder,
   pickJsonFile,
   readTextFile,
   saveCsvFile,
   saveJsonFile,
 } from '../lib/backupFile';
 import { csvBaseName, workoutsToCsv } from '../lib/csv';
+import { describeCsvPlan, parseSetsCsv, planCsvImport, type CsvImportPlan } from '../lib/csvImport';
 import { LADDER_SETS, describeLadder, ladderForMax } from '../lib/repLadder';
 import { commit, countFinal, countTick, tap } from '../lib/feedback';
 import { restMedians } from '../lib/restHistory';
 import { formatClock, formatWeight, kgToLb, lbToKg, unitLabel, weightSteps } from '../lib/units';
 import {
   applyBackup,
+  applyCsvImport,
   currentSnapshot,
   exportBackupText,
   mergeBackupWorkouts,
 } from '../state/dataTransfer';
 import { useLibrary } from '../state/libraryStore';
-import { SETTING_LIMITS, useSettings, type NumericSetting } from '../state/settingsStore';
+import {
+  platesInForce,
+  SETTING_LIMITS,
+  useSettings,
+  type NumericSetting,
+} from '../state/settingsStore';
+import { MAX_GYMS } from '../lib/gyms';
+import { CLUSTERS, clusterLabel } from '../lib/muscles';
+import { describeBackupAge } from '../lib/autoBackup';
+import {
+  healthConnectState,
+  requestHealthConnect,
+  type HealthConnectState,
+} from '../lib/healthConnect';
+import { runBackupNow } from '../hooks/useAutoBackup';
 import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import type { UnitSystem } from '../types/models';
@@ -129,6 +147,14 @@ const BODYWEIGHT_START_KG = 70;
  * non-canonical set fails).
  */
 const PLATE_SIZES_KG = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5];
+
+/**
+ * The clusters, in the order the library files them.
+ *
+ * `CLUSTERS` from `lib/muscles.ts` rather than a literal here, so a cluster added
+ * to the type appears in this list without anybody remembering to add it.
+ */
+const CLUSTER_ROWS = CLUSTERS;
 
 const UNIT_OPTIONS: readonly { value: UnitSystem; label: string }[] = [
   { value: 'metric', label: 'Kilograms' },
@@ -213,10 +239,41 @@ export function SettingsScreen() {
 
   /** A parsed file waiting for a yes: importing replaces everything. */
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  /** A parsed set table waiting for a yes. Adds; never replaces. */
+  const [pendingCsv, setPendingCsv] = useState<{ name: string; plan: CsvImportPlan } | null>(null);
+
+  /**
+   * Whether Health Connect is installed, granted, or not there at all.
+   *
+   * Checked once when this screen opens, because the answer can change outside the
+   * app — the user can revoke the permission in Android's own settings, or uninstall
+   * Health Connect — and a row that reported a stale `On` would be lying about where
+   * their training data goes. `unavailable` hides the row entirely: an app that
+   * offers a switch for something not installed sends people looking for it.
+   */
+  const [healthConnect, setHealthConnect] = useState<HealthConnectState>('unavailable');
+  useEffect(() => {
+    let alive = true;
+    void healthConnectState().then((state) => {
+      if (alive) setHealthConnect(state);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   /** One line under the buttons: what the last export or import actually did. */
   const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
   /** A picker is open or a file is being read. Stops a second tap racing it. */
   const [busy, setBusy] = useState(false);
+  /** Which gym's plate row is open for editing. Null = just the switcher. */
+  const [editingGymId, setEditingGymId] = useState<string | null>(null);
+
+  /*
+   * The plates in force. `platesInForce` resolves a dangling `activeGymId` rather
+   * than trusting it, so the chips can never render against a gym that was deleted.
+   */
+  const activePlates = platesInForce(settings);
+  const gymBeingEdited = settings.gyms.find((gym) => gym.id === editingGymId) ?? null;
 
   const bump = (key: NumericSetting, direction: 1 | -1) => {
     tap();
@@ -279,9 +336,161 @@ export function SettingsScreen() {
         return;
       }
       commit();
+      /*
+       * A MANUAL EXPORT COUNTS AS A BACKUP, and it also teaches the automatic one
+       * where to write. Both matter: without the first, "last backup 40 days ago"
+       * would be a lie told to somebody who exported this morning; without the
+       * second, the app would ask for a folder permission it was just handed.
+       */
+      settings.recordBackup(new Date().toISOString());
+      const adopted = outcome.folderUri != null && settings.autoBackupFolderUri == null;
+      if (adopted) settings.setAutoBackupFolder(outcome.folderUri);
+
       setDataStatus({
         tone: 'ok',
-        text: `Saved ${outcome.name} to ${outcome.where} — ${describeCounts(onThisPhone())}.`,
+        text: `Saved ${outcome.name} to ${outcome.where} — ${describeCounts(onThisPhone())}.${
+          adopted ? ' Automatic backups will go to that folder from now on.' : ''
+        }`,
+      });
+    } catch (error) {
+      setDataStatus({ tone: 'quiet', text: describeError(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Turn sharing on (asking for the permission) or off.
+   *
+   * Off is unconditional and instant — withdrawing consent must never depend on a
+   * dialog resolving. On requires the grant, and a denied dialog leaves the switch
+   * off rather than on-and-broken.
+   */
+  const toggleHealthConnect = async () => {
+    tap();
+    if (settings.shareToHealthConnect) {
+      settings.setShareToHealthConnect(false);
+      return;
+    }
+
+    const state = await healthConnectState();
+    if (state === 'ready') {
+      settings.setShareToHealthConnect(true);
+      setHealthConnect('ready');
+      return;
+    }
+
+    const granted = await requestHealthConnect();
+    setHealthConnect(granted ? 'ready' : state);
+    settings.setShareToHealthConnect(granted);
+    if (!granted) {
+      setDataStatus({
+        tone: 'quiet',
+        text: 'Health Connect did not grant permission, so nothing will be shared.',
+      });
+    }
+  };
+
+  /**
+   * IMPORT OLD WORKOUTS from a set table — the training that predates this app.
+   *
+   * Deliberately a different verb from the two JSON imports beside it: this ADDS
+   * workouts and never replaces anything, and it is the only import that can create
+   * library rows (a sheet refers to exercises this phone has never heard of — see
+   * `lib/csvImport.ts`). Two steps, like the backup import: parse and report, then
+   * apply on a confirmation, because "38 workouts and 4 new exercises" is a thing
+   * somebody should see before it happens.
+   */
+  const importSetsCsv = async () => {
+    if (busy) return;
+    tap();
+    setBusy(true);
+    setDataStatus(null);
+    try {
+      const file = await pickJsonFile();
+      if (!file) {
+        setDataStatus({ tone: 'quiet', text: 'No file picked.' });
+        return;
+      }
+
+      const parsed = parseSetsCsv(await readTextFile(file.uri));
+      if (parsed.error) {
+        setDataStatus({ tone: 'quiet', text: `${file.name}: ${parsed.error}` });
+        return;
+      }
+
+      // The library as it is right now: the planner matches names against it and
+      // only invents a row where nothing matches.
+      const plan = planCsvImport(parsed, useLibrary.getState().exercises);
+      if (plan.workouts.length === 0) {
+        setDataStatus({
+          tone: 'quiet',
+          text: `${file.name}: no readable sets${parsed.skipped > 0 ? ` (${parsed.skipped} rows skipped)` : ''}.`,
+        });
+        return;
+      }
+
+      setPendingCsv({ name: file.name, plan });
+    } catch (error) {
+      setDataStatus({ tone: 'quiet', text: describeError(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** The second step: the user has seen the counts and said yes. */
+  const applyPendingCsv = () => {
+    if (!pendingCsv) return;
+    commit();
+    const applied = applyCsvImport(pendingCsv.plan);
+    setPendingCsv(null);
+    setDataStatus({
+      tone: 'ok',
+      text: `Added ${applied.workoutsAdded} ${
+        applied.workoutsAdded === 1 ? 'workout' : 'workouts'
+      } · ${applied.setsAdded} sets${
+        applied.exercisesAdded > 0 ? ` · ${applied.exercisesAdded} new exercises` : ''
+      }. Slashed dates were read day-first.`,
+    });
+  };
+
+  /**
+   * `Back up now`, and `Choose a folder` when there isn't one.
+   *
+   * The same write path the unattended one uses (`runBackupNow`), so the rotation
+   * and the stamp cannot disagree between the two. Where no folder has been granted
+   * this asks for one first, because that grant is the whole difference between a
+   * backup that survives an uninstall and one that dies with it.
+   */
+  const backUpNow = async () => {
+    if (busy) return;
+    tap();
+    setBusy(true);
+    setDataStatus(null);
+    try {
+      let folder = settings.autoBackupFolderUri;
+      if (!folder) {
+        const picked = await pickFolder();
+        if (!picked) {
+          setDataStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
+          return;
+        }
+        settings.setAutoBackupFolder(picked);
+        folder = picked;
+      }
+
+      const result = await runBackupNow(true);
+      if (!result.wrote) {
+        setDataStatus({
+          tone: 'quiet',
+          text: 'Could not write to that folder. Pick it again to re-grant access.',
+        });
+        return;
+      }
+      commit();
+      setDataStatus({
+        tone: 'ok',
+        text: `Backed up ${result.name} to ${folderLabel(folder)} — ${describeCounts(onThisPhone())}.`,
       });
     } catch (error) {
       setDataStatus({ tone: 'quiet', text: describeError(error) });
@@ -293,9 +502,10 @@ export function SettingsScreen() {
   /**
    * EXPORT SETS — the same log, flat, one row per set.
    *
-   * A copy you can read, not a second backup: there is no CSV import and there will
-   * not be one, because a table of set rows carries no exercises, no routines and
-   * no settings. `lib/csv.ts` has the whole argument.
+   * A copy you can read, and the format `Import old workouts from a CSV` reads back.
+   * Still not a backup: a table of set rows carries no routines, no sequence and no
+   * settings, so the JSON file is the only thing that restores. `lib/csv.ts` and
+   * `lib/csvImport.ts` have both halves of that argument.
    */
   const exportSets = async () => {
     if (busy) return;
@@ -421,7 +631,7 @@ export function SettingsScreen() {
     });
   };
 
-  const asking = confirming != null || pendingImport != null;
+  const asking = confirming != null || pendingImport != null || pendingCsv != null;
 
   return (
     <View className="flex-1 bg-bg">
@@ -623,13 +833,40 @@ export function SettingsScreen() {
               breakdown the app draws. It informs and never rounds — a target these
               plates cannot make shows no line at all rather than the nearest
               loadable weight. */}
-          <Kicker className="mx-lg mb-sm mt-xxl">Plates</Kicker>
+          {/* WHERE YOU ARE TRAINING. One row of chips, and it only appears once
+              there is more than one gym — a lifter with a single rack should not
+              have to know this feature exists. Switching changes which plate list
+              every barbell breakdown is drawn from, live. */}
+          {settings.gyms.length > 1 ? (
+            <>
+              <Kicker tone="green" className="mx-lg mb-sm mt-xxl">
+                Gym · {settings.gyms.find((g) => g.id === settings.activeGymId)?.name ?? ''}
+              </Kicker>
+              <View className="mx-lg flex-row flex-wrap">
+                {settings.gyms.map((gym) => (
+                  <SelectChip
+                    key={gym.id}
+                    label={gym.name}
+                    selected={gym.id === settings.activeGymId}
+                    onPress={() => {
+                      tap();
+                      settings.setActiveGym(gym.id);
+                    }}
+                  />
+                ))}
+              </View>
+            </>
+          ) : null}
+
+          <Kicker className="mx-lg mb-sm mt-xxl">
+            {settings.gyms.length > 1 ? 'Plates · this gym' : 'Plates'}
+          </Kicker>
           <View className="mx-lg flex-row flex-wrap">
             {PLATE_SIZES_KG.map((plate) => (
               <SelectChip
                 key={plate}
                 label={String(plate)}
-                selected={settings.availablePlatesKg.includes(plate)}
+                selected={activePlates.includes(plate)}
                 onPress={() => {
                   tap();
                   settings.togglePlate(plate);
@@ -638,8 +875,116 @@ export function SettingsScreen() {
             ))}
           </View>
           <Text className="mx-lg text-label text-ink-faint">
-            Which plates this gym has, in kilograms. Only used to work out what goes on the bar; it
-            never changes a weight you have typed.
+            Which plates {settings.gyms.length > 1 ? 'this gym' : 'your gym'} has, in kilograms.
+            Only used to work out what goes on the bar; it never changes a weight you have typed.
+          </Text>
+
+          {/* ADDING A SECOND GYM is what makes the switcher appear. Seeded from
+              the plates you already have, because a second rack is nearly always
+              the same one minus the heavy plates. */}
+          <ListCard className="mx-lg mt-lg">
+            {settings.gyms.map((gym, index) => (
+              <View key={gym.id}>
+                {index > 0 ? <Separator inset={0} /> : null}
+                <SettingRow
+                  label={gym.name}
+                  value={`${gym.platesKg.length} sizes`}
+                  valueTone="faint"
+                  onPress={
+                    settings.gyms.length > 1
+                      ? () => {
+                          tap();
+                          settings.setActiveGym(gym.id);
+                          setEditingGymId(gym.id === editingGymId ? null : gym.id);
+                        }
+                      : undefined
+                  }
+                />
+              </View>
+            ))}
+            {gymBeingEdited && settings.gyms.length > 1 ? (
+              <>
+                <Separator inset={0} />
+                <TextButton
+                  label={`Remove ${gymBeingEdited.name}`}
+                  onPress={() => {
+                    tap();
+                    settings.removeGym(gymBeingEdited.id);
+                    setEditingGymId(null);
+                  }}
+                />
+              </>
+            ) : null}
+            {settings.gyms.length < MAX_GYMS ? (
+              <>
+                <Separator inset={0} />
+                <TextButton
+                  label="Add another gym"
+                  tone="green"
+                  onPress={() => {
+                    tap();
+                    settings.addGym(`Gym ${settings.gyms.length + 1}`);
+                  }}
+                />
+              </>
+            ) : null}
+          </ListCard>
+          <Text className="mx-lg mt-sm text-label text-ink-faint">
+            A gym is a name and the plates on its rack — nothing else. Tap one to make it the
+            current gym; the chips above then edit that gym&apos;s plates.
+          </Text>
+
+          {/* ----------------------------------------------------------
+              WEEKLY SETS PER MUSCLE GROUP — targets, and every one optional.
+
+              `lib/balance.ts` counts sets per cluster and refuses to score them:
+              "a count, not a score". That refusal is right about somebody else's
+              model of your recovery, and it is the reason there is no MEV/MRV
+              band imported from a textbook here. It is not right about a number
+              YOU chose — a target you typed is a fact about your plan, and
+              comparing this week against it is arithmetic you would otherwise do
+              in your head.
+
+              So: nothing is set by default, `—` means no opinion, and where a
+              target exists the History tab's row reads `14 / 16` and its bar
+              measures against it instead of against the busiest cluster. Nothing
+              turns red, nothing warns, and going over is not an error. */}
+          <Kicker className="mx-lg mb-sm mt-xxl">Weekly sets</Kicker>
+          <ListCard className="mx-lg">
+            {CLUSTER_ROWS.map((cluster, index) => {
+              const target = settings.weeklySetTargets[cluster];
+              return (
+                <View key={cluster}>
+                  {index > 0 ? <Separator /> : null}
+                  <StepperRow
+                    label={clusterLabel(cluster)}
+                    value={target == null ? '—' : `${target} sets`}
+                    onDecrease={() => {
+                      tap();
+                      /*
+                       * Stepping below zero CLEARS the target rather than pinning
+                       * it at 0, which is how the control is switched off without a
+                       * second affordance. Zero itself is a real answer — "I am not
+                       * training legs this block" — so it is one step above off.
+                       */
+                      if (target == null) return;
+                      settings.setWeeklyTarget(cluster, target <= 0 ? undefined : target - 1);
+                    }}
+                    onIncrease={() => {
+                      tap();
+                      // The first tap on `+` starts at a number rather than at 1:
+                      // nobody's weekly target for a muscle group is one set, and
+                      // ten taps to reach a plausible one is a control nobody uses.
+                      settings.setWeeklyTarget(cluster, target == null ? 12 : target + 1);
+                    }}
+                  />
+                </View>
+              );
+            })}
+          </ListCard>
+          <Text className="mx-lg mt-sm text-label text-ink-faint">
+            Optional. Set one and the History tab compares this window against it; leave it at
+            &ldquo;—&rdquo; and the counts stay counts.
           </Text>
 
           {/* ---------------------------------------------------------- */}
@@ -696,6 +1041,99 @@ export function SettingsScreen() {
               valueTone={onDisk == null || onDisk !== workoutCount ? 'muted' : 'faint'}
             />
             <Separator inset={0} />
+            {/*
+              AUTOMATIC BACKUP — the row that makes the two below it optional.
+
+              `lib/backup.ts` says a backup is "the only thing standing between a
+              year of training and a factory reset", and then made it a button:
+              protection only as good as the user's memory of a screen they have no
+              other reason to open. So it happens on its own, and this row is the
+              receipt — the AGE of the last copy, in words, because "is it recent
+              enough" is the only question it answers and a date makes the reader do
+              the arithmetic.
+
+              It cannot be on without a folder: Android's only durable destination
+              is a granted directory, and the app's own sandbox dies with the app —
+              which is one of the exact events a backup exists to survive. So the
+              row states which of the two facts is missing.
+            */}
+            <SettingRow
+              label="Last backup"
+              value={describeBackupAge(settings.lastBackupAt)}
+              valueTone={settings.lastBackupAt == null ? 'muted' : 'faint'}
+            />
+            <Separator inset={0} />
+            <SettingRow
+              label="Back up automatically"
+              value={
+                !settings.autoBackupEnabled
+                  ? 'Off'
+                  : settings.autoBackupFolderUri == null
+                    ? 'Needs a folder'
+                    : `Every ${settings.autoBackupIntervalDays} days · ${folderLabel(settings.autoBackupFolderUri)}`
+              }
+              valueTone={
+                settings.autoBackupEnabled && settings.autoBackupFolderUri == null
+                  ? 'muted'
+                  : 'faint'
+              }
+              onPress={() => {
+                tap();
+                settings.setAutoBackupEnabled(!settings.autoBackupEnabled);
+              }}
+            />
+            {settings.autoBackupEnabled ? (
+              <>
+                <Separator inset={0} />
+                <StepperRow
+                  label="Backup every"
+                  value={`${settings.autoBackupIntervalDays} days`}
+                  onDecrease={() => bump('autoBackupIntervalDays', -1)}
+                  onIncrease={() => bump('autoBackupIntervalDays', 1)}
+                />
+              </>
+            ) : null}
+            <Separator inset={0} />
+            <TextButton
+              label={
+                settings.autoBackupFolderUri == null ? 'Choose a backup folder' : 'Back up now'
+              }
+              tone="green"
+              onPress={() => void backUpNow()}
+            />
+            <Separator inset={0} />
+            {/*
+              HEALTH CONNECT — the one thing this app sends anywhere.
+
+              Off until it is switched on, and switching it on asks for the
+              permission then and there rather than at launch or at `Finish`: a
+              dialog in front of somebody who has just finished a workout is the app
+              interrupting the one moment it should get out of the way.
+
+              The row says WHAT LEAVES, because that is the only question worth
+              answering here — a session's start, end and name, and nothing else.
+              There is no per-set record type in Health Connect, so exporting the
+              sets is not something this could do even if it wanted to.
+            */}
+            {healthConnect !== 'unavailable' ? (
+              <>
+                <SettingRow
+                  label="Share workouts with Health Connect"
+                  value={
+                    !settings.shareToHealthConnect
+                      ? 'Off'
+                      : healthConnect === 'ready'
+                        ? 'On · start, end and name'
+                        : 'Needs permission'
+                  }
+                  valueTone={
+                    settings.shareToHealthConnect && healthConnect !== 'ready' ? 'muted' : 'faint'
+                  }
+                  onPress={() => void toggleHealthConnect()}
+                />
+                <Separator inset={0} />
+              </>
+            ) : null}
             <TextButton label="Export data" tone="green" onPress={() => void exportData()} />
             <Separator inset={0} />
             <TextButton label="Export sets as CSV" tone="green" onPress={() => void exportSets()} />
@@ -715,6 +1153,16 @@ export function SettingsScreen() {
               label="Add workouts from a file"
               tone="green"
               onPress={() => void importData('merge')}
+            />
+            <Separator inset={0} />
+            {/* The third import, and the only one that reads a spreadsheet. Named
+                for the job it does — bringing in training that happened before
+                this app — because "import CSV" beside two other imports is three
+                rows nobody can tell apart. */}
+            <TextButton
+              label="Import old workouts from a CSV"
+              tone="green"
+              onPress={() => void importSetsCsv()}
             />
             <Separator inset={0} />
             <TextButton label="Reset settings to defaults" onPress={() => setConfirming('reset')} />
@@ -813,6 +1261,30 @@ export function SettingsScreen() {
           cancelLabel="Not now"
           onConfirm={confirmImport}
           onCancel={() => setPendingImport(null)}
+        />
+      ) : null}
+
+      {/* The CSV import states the two things that make it different from the two
+          above: it can CREATE exercises, and it read the dates a particular way.
+          Both are things somebody should learn before the import, not after. */}
+      {pendingCsv ? (
+        <ConfirmSheet
+          title={`Add ${pendingCsv.plan.workouts.length} old ${
+            pendingCsv.plan.workouts.length === 1 ? 'workout' : 'workouts'
+          }?`}
+          body={[
+            `${pendingCsv.name}: ${describeCsvPlan(pendingCsv.plan)}.`,
+            pendingCsv.plan.newExercises.length > 0
+              ? `Exercises the file mentions that you do not have will be created, unfiled — you can give them muscle groups afterwards.`
+              : '',
+            'Nothing already here is changed or removed, and your routines and settings are not touched.',
+          ]
+            .filter((line) => line !== '')
+            .join(' ')}
+          confirmLabel="Add them"
+          cancelLabel="Not now"
+          onConfirm={applyPendingCsv}
+          onCancel={() => setPendingCsv(null)}
         />
       ) : null}
 

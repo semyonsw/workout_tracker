@@ -118,8 +118,11 @@ import { resolveRest } from '../lib/rest';
 import { describeLadderOutcomes, ladderOutcomes } from '../lib/repLadder';
 import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import { supersetPosition } from '../lib/superset';
+import { describeWarmup, warmupSets, type WarmupSet } from '../lib/warmup';
+import { beatSomething, recordsBeatenBy } from '../lib/records';
+import { formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
-import { useSettings } from '../state/settingsStore';
+import { platesInForce, useSettings } from '../state/settingsStore';
 import { PrimaryButton } from '../components/primitives';
 import { palette } from '../theme/tokens';
 import type { ID, RoutineItem, UnitSystem } from '../types/models';
@@ -244,6 +247,7 @@ export function ActiveWorkoutScreen({
   const uncompleteSet = useActiveWorkout((s) => s.uncompleteSet);
   const patchSet = useActiveWorkout((s) => s.patchSet);
   const addSet = useActiveWorkout((s) => s.addSet);
+  const addWarmupSets = useActiveWorkout((s) => s.addWarmupSets);
   const removeSet = useActiveWorkout((s) => s.removeSet);
   const removeLastSet = useActiveWorkout((s) => s.removeLastSet);
   const removeEntry = useActiveWorkout((s) => s.removeEntry);
@@ -256,6 +260,7 @@ export function ActiveWorkoutScreen({
   const startSetTimer = useActiveWorkout((s) => s.startSetTimer);
   const commitSetTimer = useActiveWorkout((s) => s.commitSetTimer);
   const startRestNow = useActiveWorkout((s) => s.startRestNow);
+  const setSessionEffort = useActiveWorkout((s) => s.setSessionEffort);
 
   /*
    * The live between-sets setting. Each card resolves its OWN rest from it
@@ -267,10 +272,105 @@ export function ActiveWorkoutScreen({
    */
   const restSeconds = useSettings((s) => s.restSecondsBetweenSets);
   /*
-   * The gym's plates, for the `20 + 2×10` line under a barbell lift. A stable
-   * reference out of the store, which is what keeps `SetRow`'s memo working.
+   * The plates of whichever gym the user says they are in, for the `20 + 2×10`
+   * line under a barbell lift. Memoized on the two stable references it derives
+   * from, because `platesInForce` builds a fresh array and `SetRow` is memoized:
+   * a new array identity every render would repaint eighteen rows on every tick
+   * of the rest timer.
    */
-  const availablePlatesKg = useSettings((s) => s.availablePlatesKg);
+  /*
+   * Today's bodyweight, for reading a bodyweight-loaded set against its own record.
+   * The scalar rather than the log, because every set being compared here happened
+   * in this session — today is the only day involved.
+   */
+  const bodyweightKg = useSettings((s) => s.bodyweightKg);
+  const gyms = useSettings((s) => s.gyms);
+  const activeGymId = useSettings((s) => s.activeGymId);
+  const availablePlatesKg = useMemo(
+    () => platesInForce({ gyms, activeGymId }),
+    [gyms, activeGymId],
+  );
+
+  /**
+   * The warm-up rows each exercise would get, keyed by entry.
+   *
+   * ONE PASS FOR THE WHOLE SESSION, memoized, because the alternative is running
+   * `loadableAtOrBelow`'s plate walk inside a render that happens four times a
+   * second while a rest timer ticks. Keyed by entry rather than by exercise, since
+   * two entries can be the same movement at different weights.
+   *
+   * An exercise is absent from the map when there is nothing to offer — see
+   * `warmupSets` for the four cases — and the card reads that as "no row".
+   */
+  const warmupPlans = useMemo(() => {
+    const plans: Record<ID, { sets: WarmupSet[]; summary: string }> = {};
+    for (const entry of session?.entries ?? []) {
+      // Nothing to warm up for once the exercise is under way.
+      if (entry.sets.some((set) => set.isCompleted)) continue;
+      // The first working set's weight is what the rungs are a fraction of.
+      const working = entry.sets.find((set) => !set.isWarmup)?.weightKg ?? null;
+      const sets = warmupSets({
+        workingWeightKg: working,
+        exercise: entry.exercise,
+        availablePlatesKg,
+      });
+      const summary = describeWarmup(sets);
+      if (summary) plans[entry.localId] = { sets, summary };
+    }
+    return plans;
+  }, [availablePlatesKg, session?.entries]);
+
+  /**
+   * The best each exercise has broken in this session, keyed by entry.
+   *
+   * Read off LOGGED rows only, and compared against the bests copied onto the entry
+   * when the session was built — so the second good set of a day does not stop
+   * reading as a best because the first one already moved the bar. Memoized on the
+   * entries, because it walks every logged set and this screen re-renders on every
+   * tick of the rest timer.
+   */
+  const bestLines = useMemo(() => {
+    const lines: Record<ID, string> = {};
+    for (const entry of session?.entries ?? []) {
+      const bests = entry.bests;
+      if (!bests) continue;
+
+      let best: { weightKg: number | null; count: number } | null = null;
+      for (const set of entry.sets) {
+        if (!set.isCompleted || set.isWarmup) continue;
+        const beaten = recordsBeatenBy(set, bests, entry.exercise, bodyweightKg ?? null);
+        if (!beatSomething(beaten)) continue;
+        // The last one that beat something — a session that keeps climbing should
+        // report where it got to, not where it started.
+        best = set;
+      }
+      if (!best) continue;
+
+      lines[entry.localId] = entry.exercise.requiresWeight
+        ? `${formatWeight(best.weightKg, unitSystem, entry.exercise.loadMode)} ${unitLabel(unitSystem)} × ${formatCount(best.count, entry.exercise.countUnit)}`
+        : formatCount(best.count, entry.exercise.countUnit);
+    }
+    return lines;
+  }, [bodyweightKg, session?.entries, unitSystem]);
+
+  /**
+   * Stalled lifts, keyed by entry.
+   *
+   * Suppressed wherever the overload nudge is already speaking: "add a rep" and
+   * "take some weight off" on one card is one of them wrong, and the deload wins
+   * because three failed sessions is newer information than a stale weight.
+   *
+   * Memoized for the same reason the warm-up plan is — it walks history and this
+   * screen re-renders four times a second while a rest timer runs.
+   */
+  const deloadMessages = useMemo(() => {
+    const out: Record<ID, string> = {};
+    for (const entry of session?.entries ?? []) {
+      if (entry.overload.shouldNudge && !entry.overloadAccepted) continue;
+      if (entry.deload?.shouldSuggest) out[entry.localId] = entry.deload.message;
+    }
+    return out;
+  }, [session?.entries]);
 
   /** The one open card, or null when the user has shut the one they are on. */
   const expandedEntryId =
@@ -643,6 +743,21 @@ export function ActiveWorkoutScreen({
                     onPatchSet={(setId: ID, patch: Partial<DraftSet>) =>
                       patchSet(entry.localId, setId, patch)
                     }
+                    /*
+                      WARM-UP. Decided here rather than in the card because it
+                      needs the gym's plates and `lib/warmup.ts` — the card renders
+                      the offer and nothing else. Both props go undefined together
+                      when there is nothing to add, so the row disappears rather
+                      than becoming a control that does nothing.
+                    */
+                    bestLine={bestLines[entry.localId] ?? null}
+                    deloadMessage={deloadMessages[entry.localId] ?? null}
+                    warmupSummary={warmupPlans[entry.localId]?.summary ?? null}
+                    onAddWarmup={
+                      warmupPlans[entry.localId]
+                        ? () => addWarmupSets(entry.localId, warmupPlans[entry.localId].sets)
+                        : undefined
+                    }
                     onAddSet={() => addSet(entry.localId)}
                     onRemoveSet={(setId) => removeSet(entry.localId, setId)}
                     onRemoveLastSet={() => removeLastSet(entry.localId)}
@@ -681,6 +796,11 @@ export function ActiveWorkoutScreen({
           loggedCount={progress.done}
           planChange={describePlannedSetDiff(planChanges)}
           ladderChange={ladderChange}
+          effort={session.effort}
+          onSetEffort={(effort) => {
+            tap();
+            setSessionEffort(effort);
+          }}
           onConfirm={() => void commitFinish()}
           onConfirmAndUpdatePlan={() => void commitFinish(true)}
           onDismiss={() => setConfirming(null)}

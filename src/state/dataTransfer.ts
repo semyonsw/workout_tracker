@@ -41,6 +41,7 @@
  */
 
 import { serializeBackup, type BackupCounts, type BackupPayload } from '../lib/backup';
+import type { CsvImportPlan } from '../lib/csvImport';
 import { useLibrary } from './libraryStore';
 import { sanitizeSettings, useSettings } from './settingsStore';
 import { useWorkoutHistory } from './workoutHistoryStore';
@@ -135,6 +136,35 @@ export function mergeBackupWorkouts(payload: Pick<BackupPayload, 'workouts'>): M
   }
 
   return { workoutsAdded, setsAdded };
+}
+
+/**
+ * Apply a planned CSV import: the exercises it needs, then the workouts.
+ *
+ * IN THAT ORDER, and it is the whole reason this lives here rather than in the
+ * screen. `libraryStore` rule 1 is that the log must never refer to an exercise that
+ * does not exist; writing the workouts first would leave every imported row pointing
+ * at nothing for as long as it took the next statement to run, and a crash in
+ * between would leave it that way permanently.
+ *
+ * Exercises are added only where the id is genuinely new, so re-running the same
+ * file — which produces the same ids by design (see `planCsvImport`) — adds nothing
+ * twice.
+ */
+export function applyCsvImport(plan: CsvImportPlan): MergedCounts & { exercisesAdded: number } {
+  const library = useLibrary.getState();
+  const known = new Set(library.exercises.map((e) => e.id));
+
+  let exercisesAdded = 0;
+  for (const exercise of plan.newExercises) {
+    if (known.has(exercise.id)) continue;
+    library.addExercise(exercise);
+    known.add(exercise.id);
+    exercisesAdded += 1;
+  }
+
+  const merged = mergeBackupWorkouts({ workouts: plan.workouts });
+  return { ...merged, exercisesAdded };
 }
 
 /**

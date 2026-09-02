@@ -49,7 +49,23 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { palette } from '../theme/tokens';
-import { PrimaryButton } from './primitives';
+import { Kicker, PrimaryButton, SelectChip } from './primitives';
+import type { SessionEffort } from '../types/models';
+
+/**
+ * The three answers, in the order they run from easy to hard.
+ *
+ * `Right` in the middle rather than "Moderate" or "OK": the useful reading of a
+ * session is whether it was pitched correctly, and "right" is the word a lifter
+ * actually uses for a day that went to plan.
+ */
+const EFFORT_CHOICES: readonly SessionEffort[] = ['easy', 'right', 'hard'];
+
+const EFFORT_LABELS: Record<SessionEffort, string> = {
+  easy: 'Easy',
+  right: 'Right',
+  hard: 'Brutal',
+};
 
 interface FinishSheetProps {
   /** Sets the user planned but never logged. Drives the whole copy. */
@@ -72,6 +88,15 @@ interface FinishSheetProps {
    * see the number that did it, not because there is anything to decide.
    */
   ladderChange: string | null;
+  /**
+   * HOW IT FELT, and the answer already given if the sheet has been here before.
+   *
+   * One tap, three choices, and skipping it is pressing the button that was already
+   * there — which is the whole reason it can live on this sheet at all. `SessionEffort`
+   * has the argument for why this exists when per-set RPE deliberately does not.
+   */
+  effort?: SessionEffort;
+  onSetEffort?: (effort: SessionEffort) => void;
   onConfirm: () => void;
   /** Finish, and write the session's set counts back to the routine. */
   onConfirmAndUpdatePlan: () => void;
@@ -83,6 +108,8 @@ export function FinishSheet({
   loggedCount,
   planChange,
   ladderChange,
+  effort,
+  onSetEffort,
   onConfirm,
   onConfirmAndUpdatePlan,
   onDismiss,
@@ -127,6 +154,33 @@ export function FinishSheet({
             the button is a choice about the routine. */}
         {planChange ? (
           <Text className="mt-lg text-body tabular-nums text-ink">{planChange}</Text>
+        ) : null}
+
+        {/*
+          HOW DID THAT GO — above the buttons, because it is about the session and
+          the buttons are about what to do with it.
+
+          `Kicker` + three chips, the same pair the create screen uses for muscles,
+          so there is nothing new to learn. Nothing is preselected: an answer the
+          user did not give must not be recorded, and tapping the selected one again
+          takes it back — which is why there is no fourth chip reading `Skip`.
+        */}
+        {onSetEffort ? (
+          <>
+            <Kicker tone={effort ? 'green' : 'faint'} className="mt-xl">
+              How did that go{effort ? ` · ${EFFORT_LABELS[effort].toLowerCase()}` : ''}
+            </Kicker>
+            <View className="mt-sm flex-row">
+              {EFFORT_CHOICES.map((choice) => (
+                <SelectChip
+                  key={choice}
+                  label={EFFORT_LABELS[choice]}
+                  selected={effort === choice}
+                  onPress={() => onSetEffort(choice)}
+                />
+              ))}
+            </View>
+          </>
         ) : null}
 
         <View className="mt-xl">

@@ -15,6 +15,7 @@ import type {
   OverloadPolicy,
   RepLadder,
   Routine,
+  SessionEffort,
   SetHistory,
   UnitSystem,
 } from '../types/models';
@@ -23,6 +24,8 @@ import { resolveRest } from './rest';
 import { summarizeSessionSets } from './history';
 import { evaluateOverload, type OverloadVerdict } from './progressiveOverload';
 import { LADDER_SETS, describeLadder, ladderOf, ladderTargets } from './repLadder';
+import { exerciseBests, type BodyweightLookup, type ExerciseBests } from './records';
+import { evaluateDeload, type DeloadVerdict } from './deload';
 
 /* ------------------------------------------------------------------ */
 /* Draft shapes (in-memory, screen-local)                              */
@@ -105,18 +108,50 @@ export interface DraftEntry {
   sets: DraftSet[];
   /** Computed once at session start — history doesn't change mid-workout. */
   overload: OverloadVerdict;
+  /**
+   * The back-off suggestion for a stalled lift, or absent.
+   *
+   * Computed once at build time for exactly the same reason `overload` is, and
+   * absent rather than a `shouldSuggest: false` object so that a session persisted
+   * by an older build rehydrates without one. `lib/deload.ts` decides it, and the
+   * card renders it only when the overload nudge is silent — two contradictory
+   * suggestions on one card is one of them wrong.
+   */
+  deload?: DeloadVerdict;
   /** Set when the user accepts the nudge, so we don't nag twice. */
   overloadAccepted: boolean;
   /** Human summary of last session for the collapsed card: "+25 kg · 12 12 12". */
   lastSessionSummary: string | null;
   /** Terser variant for the expanded header, which already states the target. */
   lastSessionShort: string | null;
+  /**
+   * The standing bests for this movement, as of the moment the session was built.
+   *
+   * A COPY at build time, for the same reason `ladder` and `supersetGroup` are: the
+   * card compares the row under the thumb against these, and a comparison that
+   * reached back into history mid-session would start counting sets from THIS
+   * workout as the record to beat — so the third set of a good day would stop
+   * reading as a best because the second set already moved the bar.
+   *
+   * Absent when there is no history to have a best from, which is every exercise
+   * the first time it is performed. `lib/records.ts` owns the arithmetic.
+   */
+  bests?: ExerciseBests;
 }
 
 export interface DraftSession {
   localId: ID;
   routineId?: ID;
   title: string;
+  /**
+   * How the session felt, set on the Finish sheet a moment before it is saved.
+   *
+   * On the DRAFT rather than passed straight to `saveSession` because the sheet can
+   * be dismissed and reopened — `Keep going` then `Finish` again — and an answer
+   * the user already gave should still be selected when they come back. It reaches
+   * history through `buildCompletedWorkout`. See `SessionEffort`.
+   */
+  effort?: SessionEffort;
   /**
    * When the workout actually STARTED, or null while it hasn't.
    *
@@ -325,6 +360,10 @@ export interface BuildDraftParams {
    * and the user owns both numbers.
    */
   defaultTransitionRestSeconds?: number;
+  /** Passed through to every entry's bests. See `BuildEntryParams`. */
+  bodyweightAtDate?: BodyweightLookup;
+  /** Passed through to every entry's deload check. See `BuildEntryParams`. */
+  availablePlatesKg?: readonly number[];
   /**
    * When the workout began. Null — the default — is a session that is only being
    * looked at; see `DraftSession.startedAt`.
@@ -353,6 +392,18 @@ export interface BuildEntryParams {
   unitSystem: UnitSystem;
   restSeconds: number;
   transitionRestSeconds: number;
+  /**
+   * What the lifter weighed on a given day, for comparing bodyweight-loaded sets
+   * against each other honestly. Absent = no bodyweight is known, and the two
+   * load-based bests are simply absent too. See `lib/bodyweightLog.ts`.
+   */
+  bodyweightAtDate?: BodyweightLookup;
+  /**
+   * The plates of the gym in force, so a deload suggestion is a weight that can
+   * actually be loaded. Absent = no suggestion involving a barbell is offered,
+   * which is the same silence the plate label keeps.
+   */
+  availablePlatesKg?: readonly number[];
   /** The routine item's superset group, if it is in one. See `DraftEntry`. */
   supersetGroup?: string;
   /** What the header states — "4 × 8–10". */
@@ -459,6 +510,12 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
     overloadAccepted: false,
     lastSessionSummary: summarizeLastSession(previous, exercise),
     lastSessionShort: summarizeLastSession(previous, exercise, 'short'),
+    bests: exerciseBests(history, exercise, params.bodyweightAtDate),
+    deload: evaluateDeload({
+      exercise,
+      history,
+      availablePlatesKg: params.availablePlatesKg,
+    }),
   };
 }
 
@@ -471,6 +528,8 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
     unitSystem,
     defaultRestSeconds,
     defaultTransitionRestSeconds = defaultRestSeconds + 30,
+    bodyweightAtDate,
+    availablePlatesKg,
     startedAt = null,
     now = new Date(),
   } = params;
@@ -504,6 +563,8 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
          */
         restSeconds: resolveRest(exercise, defaultRestSeconds).seconds,
         transitionRestSeconds: defaultTransitionRestSeconds,
+        bodyweightAtDate,
+        availablePlatesKg,
         /*
          * Carried onto the entry rather than looked up later. The session is what
          * `completeSet` and the cards read, and a store action reaching back into

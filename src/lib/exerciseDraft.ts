@@ -45,6 +45,8 @@ import type { LoadMode } from '../types/models';
 /** The editable shape of an exercise. A draft, not an `Exercise` yet. */
 export interface ExerciseDraft {
   name: string;
+  /** One line of form or setup, shown on the card mid-session. See `Exercise.cue`. */
+  cue: string;
   /** Primary first — the first one picked decides the cluster. */
   muscleGroups: MuscleGroup[];
   requiresWeight: boolean;
@@ -205,6 +207,7 @@ export function emptyExerciseDraft(
 ): ExerciseDraft {
   const draft: ExerciseDraft = {
     name,
+    cue: '',
     muscleGroups: muscle ? [muscle] : [],
     requiresWeight: true,
     countUnit: 'reps',
@@ -295,6 +298,7 @@ export function exerciseToDraft(exercise: Exercise, restSeconds = 120): Exercise
 
   return {
     name: exercise.name,
+    cue: exercise.cue ?? '',
     muscleGroups: [...exercise.muscleGroups],
     requiresWeight: exercise.requiresWeight,
     countUnit: exercise.countUnit,
@@ -349,6 +353,13 @@ export function draftToExercise(
     id,
     ownerId,
     name: draft.name.trim(),
+    /*
+     * Trimmed, capped, and OMITTED when empty rather than stored as `''`. An
+     * absent key is how "this movement has no cue" is spelled — the card checks
+     * for a string it can render, and a row of empty quotes on disk is a field
+     * pretending to have a value.
+     */
+    ...(draft.cue.trim() === '' ? {} : { cue: draft.cue.trim().slice(0, 120) }),
     muscleGroups: draft.muscleGroups,
     requiresWeight: draft.requiresWeight,
     countUnit: draft.countUnit,

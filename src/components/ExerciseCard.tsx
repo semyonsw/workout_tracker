@@ -132,6 +132,34 @@ interface ExerciseCardProps {
   onRemoveLastSet: () => void;
   onAcceptOverload: () => void;
   onDismissOverload: () => void;
+  /**
+   * Put generated warm-up rows on top of this exercise.
+   *
+   * Absent = no control, which is what an exercise with nothing to warm up for
+   * should get rather than a row that does nothing: unweighted work, a session
+   * already under way, or a working weight the plates cannot make a fraction of.
+   * The SCREEN decides that, because deciding it needs the gym's plates and
+   * `lib/warmup.ts`; the card only renders the offer and names what it will add.
+   */
+  onAddWarmup?: () => void;
+  /** "40 × 5 · 60 × 5 · 80 × 3" — what `onAddWarmup` is about to do. */
+  warmupSummary?: string | null;
+  /**
+   * A best this exercise has broken IN THIS SESSION, already logged: "85 kg × 5".
+   *
+   * The screen computes it, because comparing a row against the standing bests
+   * needs the bodyweight of today and `lib/records.ts`, and a card is composition.
+   * Null — the normal case — renders nothing at all.
+   */
+  bestLine?: string | null;
+  /**
+   * "3 sessions at 80 kg without a rep. One session at 67.5 kg resets it."
+   *
+   * Computed by the screen — it needs the gym's plates and `lib/deload.ts` — and
+   * null on all but a genuinely stalled movement, which is most of them most of
+   * the time.
+   */
+  deloadMessage?: string | null;
   /** Start the clock for a set, or stop the one already running on it. */
   onPressTimer: (setId: ID) => void;
   /**
@@ -172,6 +200,10 @@ function ExerciseCardComponent({
   onRemoveLastSet,
   onAcceptOverload,
   onDismissOverload,
+  onAddWarmup,
+  warmupSummary,
+  bestLine,
+  deloadMessage,
   onPressTimer,
   restSeconds = 0,
   onStartRest,
@@ -336,7 +368,59 @@ function ExerciseCardComponent({
             <Text className="text-label text-ink-faint"> · last: {entry.lastSessionShort}</Text>
           ) : null}
         </Text>
+
+        {/*
+          A BEST, ONCE IT HAS HAPPENED — and only once it has.
+
+          Appended to this line rather than given a block of its own, because it is
+          the same kind of statement as `last:`: what the log now says about this
+          movement. `green-bright` is the app's one accent and it is doing the same
+          job here it does everywhere else — this is new — but there is no medal, no
+          banner and no sound. `lib/records.ts` has the argument: other trackers
+          announce a PR mid-set, and that is a different product's idea of why
+          somebody trains.
+        */}
+        {bestLine ? (
+          <Text className="mt-xs text-label tabular-nums text-green-bright">
+            New best · {bestLine}
+          </Text>
+        ) : null}
+
+        {/* THE CUE. Only on the OPEN card — this whole block is the expanded
+            header — because that is the card you are working out of, and a
+            reminder about elbow position on four collapsed rows is noise. Faint
+            and single-line: it is reference, and it must never compete with the
+            numbers below it. */}
+        {entry.exercise.cue ? (
+          <Text numberOfLines={1} className="mt-xs text-label text-ink-faint">
+            {entry.exercise.cue}
+          </Text>
+        ) : null}
       </Pressable>
+
+      {/*
+        A STALL, stated and nothing else — no `Use` button beside it.
+
+        The nudge below it is an offer, because "add 2.5 kg" is one number written
+        into the unlogged sets and trivially undone. Cutting a session's weight is a
+        decision about a training block, and an app that took it on one tap would be
+        rewriting a plan off three data points. So this is a sentence, in the plain
+        `surface-alt` a fact gets, rather than the `green-wash` the app reserves for
+        progressive overload. `lib/deload.ts` has the argument.
+
+        It renders only when the nudge does not: two contradictory suggestions —
+        "add a rep" and "take some weight off" — on one card is one of them wrong,
+        and the screen picks the deload because three failed sessions is newer
+        information than a stale weight.
+      */}
+      {deloadMessage ? (
+        <View className="mx-lg mb-sm flex-row items-center rounded-surface bg-surface-alt py-md pl-lg pr-lg">
+          <Icon name="trending-down" size={16} color={palette.inkMuted} />
+          <Text className="ml-md flex-1 text-label tabular-nums text-ink-muted">
+            {deloadMessage}
+          </Text>
+        </View>
+      ) : null}
 
       <OverloadNudge
         verdict={entry.overload}
@@ -443,6 +527,37 @@ function ExerciseCardComponent({
             <Text className="ml-sm text-label text-ink-muted">{removeLabel}</Text>
           </Pressable>
         </View>
+
+        {/* WARM-UP, and it states the numbers it is about to add.
+            Its own full-width row rather than a third of the one above, for the
+            same reason `Rest` gets one: it is not a decision about the set count.
+            It names the weights because a button that silently inserts three rows
+            at the top of the exercise you are about to start is one the user has to
+            undo to find out about — and because seeing `40 × 5 · 60 × 5 · 80 × 3`
+            is how you notice that today's working weight is wrong. */}
+        {onAddWarmup && warmupSummary ? (
+          <>
+            <View className="h-hairline bg-hairline" />
+            <Pressable
+              onPress={() => {
+                tap();
+                onAddWarmup();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Add warm-up sets: ${warmupSummary}`}
+              className="min-h-row flex-row items-center justify-center px-lg py-sm"
+            >
+              <Icon name="plus" size={13} color={palette.greenBright} />
+              <Text className="ml-sm text-label font-medium text-green-bright">Warm-up</Text>
+              <Text
+                numberOfLines={1}
+                className="ml-sm flex-shrink text-label tabular-nums text-ink-faint"
+              >
+                {warmupSummary}
+              </Text>
+            </Pressable>
+          </>
+        ) : null}
 
         {/* Rest, on demand — its own row under the two set controls rather than a
             third of the same one: it is not about the set count, and three targets

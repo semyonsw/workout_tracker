@@ -114,14 +114,41 @@ export async function writeToFolder(
   baseName: string,
   contents: string,
   mimeType: string = JSON_MIME,
-): Promise<string> {
+): Promise<{ name: string; uri: string }> {
   const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
     folderUri,
     baseName,
     mimeType,
   );
   await FileSystem.writeAsStringAsync(fileUri, contents);
-  return displayName(fileUri);
+  /*
+   * The URI as well as the name, because the automatic backup has to be able to
+   * DELETE this file later: SAF cannot overwrite (a second write becomes
+   * `name (1).json`), so an unattended weekly copy is only sustainable if the old
+   * ones can be rotated out, and a URI is the only handle SAF accepts.
+   */
+  return { name: displayName(fileUri), uri: fileUri };
+}
+
+/**
+ * Delete one file by URI. Best-effort: a `false` is not worth reporting.
+ *
+ * Used only by the backup rotation, and only on URIs this app wrote itself. A
+ * delete that fails leaves one extra copy in a folder, which is the mildest
+ * possible failure — so it is swallowed rather than surfaced, and the next
+ * rotation will try the same file again.
+ */
+export async function deleteFile(uri: string): Promise<boolean> {
+  try {
+    if (canPickFolder()) {
+      await FileSystem.StorageAccessFramework.deleteAsync(uri);
+      return true;
+    }
+    await FileSystem.deleteAsync(uri, { idempotent: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Write into the app's own documents directory. Returns the full path. */
@@ -137,9 +164,18 @@ export async function writeToAppFolder(
   return fileUri.replace('file://', '');
 }
 
-/** What `saveJsonFile` did. `cancelled` is a user decision, not a failure. */
+/**
+ * What `saveJsonFile` did. `cancelled` is a user decision, not a failure.
+ *
+ * `folderUri` is present only when the file went into a folder the user granted —
+ * i.e. not on the sandbox fallback. It is carried back so the AUTOMATIC backup can
+ * adopt that grant: the moment somebody exports by hand, the app knows a durable
+ * place to write, and asking a second time for the same permission on a settings
+ * row would be the app not paying attention. See `lib/autoBackup.ts`.
+ */
 export type SaveOutcome =
-  { saved: true; name: string; where: string } | { saved: false; cancelled: true };
+  | { saved: true; name: string; where: string; folderUri?: string }
+  | { saved: false; cancelled: true };
 
 /**
  * Write the file somewhere the user picked and can find again.
@@ -177,8 +213,8 @@ async function saveTextFile(
   const folder = await pickFolder();
   if (!folder) return { saved: false, cancelled: true };
 
-  const name = await writeToFolder(folder, baseName, contents, mimeType);
-  return { saved: true, name, where: folderLabel(folder) };
+  const { name } = await writeToFolder(folder, baseName, contents, mimeType);
+  return { saved: true, name, where: folderLabel(folder), folderUri: folder };
 }
 
 export interface PickedFile {
