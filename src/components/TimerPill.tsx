@@ -2,7 +2,10 @@
  * TimerPill — the one instrument the whole gym-facing app is built around.
  *
  *   ╭───────────────────────────────────────╮
- *   │  1:28            +15      Skip        │  ← 92-high content row
+ *   │                                       │
+ *   │   1:28                          ⏸     │  ← the clock owns the top
+ *   │   BETWEEN SETS                        │
+ *   │                    −15   +15    Skip  │  ← controls, underneath
  *   │ ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░ │  ← drain line
  *   ╰───────────────────────────────────────╯
  *
@@ -19,6 +22,13 @@
  *     where the eye lands and where nothing else competes. It used to float at the
  *     bottom over the thumb, which is the right place for a button and the wrong
  *     place for a display.
+ *   • THE CONTENT IS A COLUMN, and that is what let the clock get big. It was one
+ *     row — clock on the left, every control on the right — which capped the
+ *     numerals at whatever was left after four thumb targets: about 114 dp on a
+ *     360 dp phone, or 52 pt of type. Stacking the controls under the clock hands
+ *     the numerals the full width, which is the only way to read a countdown from
+ *     across a gym floor rather than from arm's length. The pill got taller in
+ *     exchange, and the pill is the one thing on the screen that has earned it.
  *   • IT TAKES ITS OWN SPACE rather than floating over the rows: at this size an
  *     overlay would cover the set it belongs to. It still carries the app's single
  *     real shadow, so it reads as the layer above the list.
@@ -47,10 +57,11 @@
  *
  * ── AND WHY THE CLOCK SIZES ITSELF IN `style` ──────────────────────────────
  *
- * Same reason, plus one more: `allowFontScaling={false}`. The row is a fixed
- * height that clips, so a phone set to a large system font would otherwise push
- * the numerals out of a pill that cannot grow. The clock is already the biggest
- * text in the app; it does not need the OS to make it bigger.
+ * Same reason, plus one more: `allowFontScaling={false}`. The clock is already by
+ * some distance the biggest text in the app and it is sized to fill the width it
+ * has; letting the OS scale it on top of that pushes a five-character clock past
+ * the pill's edge on a narrow phone, which is the one stretch of the countdown
+ * anybody is actually watching.
  */
 
 import type { ReactNode } from 'react';
@@ -138,10 +149,16 @@ export function TimerPill({ inverted = false, remainingFraction, children }: Tim
         ]}
         className="overflow-hidden rounded-pill"
       >
-        <View
-          style={{ height: size.timer }}
-          className="flex-row items-center justify-between px-xl"
-        >
+        {/*
+          A COLUMN, and a MINIMUM height rather than a fixed one.
+
+          Each pill supplies exactly two children — the clock block and the
+          controls block — and in a column those stack without either pill knowing
+          it. Fixed height became wrong the moment the clock grew: `size.timer` is
+          now the floor that stops a two-control pill reading as a different
+          instrument from a four-control one, and the content sets the rest.
+        */}
+        <View style={{ minHeight: size.timer }} className="justify-center px-xl py-lg">
           {children}
         </View>
 
@@ -181,11 +198,20 @@ export function PillClock({
       allowFontScaling={false}
       numberOfLines={1}
       style={{
-        // The two biggest type sizes in the app, and the reason the pill is 92
-        // high: a rest countdown has to be legible from across the gym floor.
-        fontSize: variant === 'count' ? 64 : 52,
-        lineHeight: variant === 'count' ? 68 : 56,
-        letterSpacing: -1.5,
+        /*
+         * The two biggest type sizes in the app by a wide margin, and the reason
+         * the pill is 132 high with its controls stacked underneath.
+         *
+         * 84 is what a five-character clock (`12:05`) fits in across the pill's
+         * full inner width on a 320 dp phone — the narrowest thing this app is
+         * expected to run on — so the number never clips and never shrinks. The
+         * get-ready count goes further still at 104: it is a single digit with
+         * nothing beside it, and it is read off the floor while you are getting
+         * into position under a bar.
+         */
+        fontSize: variant === 'count' ? 104 : 84,
+        lineHeight: variant === 'count' ? 108 : 88,
+        letterSpacing: -2.5,
         fontWeight: '600',
         fontVariant: ['tabular-nums'],
         color: tone.clock,

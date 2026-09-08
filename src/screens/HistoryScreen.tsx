@@ -19,8 +19,16 @@
  *   │ │    1   40 kg    4 reps               ⌄   │ │
  *   │ │        −2  −0.5   40 KG   +0.5  +2       │ │  ← one row, correcting
  *   │ │        Reps    Remove set        Done    │ │
+ *   │ │  + Add a set          Remove exercise    │ │
  *   │ │  Plank                   2:00 · 2:00     │ │
  *   │ │                                4:00 TOTAL │ │
+ *   │ │  + Add an exercise                       │ │
+ *   │ │  Edit name, date and length              │ │
+ *   │ │  ╭ Pull + swimming                     ╮ │ │
+ *   │ │  │ Date       17 Aug 2026   ( − )( + ) │ │ │
+ *   │ │  │ Started    17:00         ( − )( + ) │ │ │
+ *   │ │  ╰ Took       74 min        ( − )( + ) ╯ │ │
+ *   │ │  Workout number: 92                      │ │
  *   │ │  Delete this workout                     │ │
  *   │ └──────────────────────────────────────────┘ │
  *   │ ┌──────────────────────────────────────────┐ │
@@ -44,6 +52,22 @@
  *    same ± chips the session uses. 40 kg typed where 4 was meant used to cost the
  *    whole session — delete the workout and re-enter it was the only route, and it
  *    also took those sets out of what the prefills and the suggestions read.
+ *  • AND NEITHER IS A MIS-TAP. The same argument applied to everything a session
+ *    gets wrong that is NOT one number: a set removed by accident, an exercise
+ *    dropped by `Remove exercise` on the wrong card, a workout finished an hour
+ *    after it ended because the phone was in a bag, a session dated to the wrong
+ *    day because it ran past midnight. So an open workout can also gain a set,
+ *    gain or lose an exercise, be renamed, be moved in time and be told how long
+ *    it took — every one of them through `lib/workoutEdit.ts`, and every one of
+ *    them regenerating the record rather than patching it.
+ *
+ *    THE STRUCTURAL EDITS ARE WHERE THEIR SUBJECT IS. `+ Add a set` and `Remove
+ *    exercise` appear under the exercise whose rows are open, because that is the
+ *    exercise the user is looking at and the only one for which "one more" is
+ *    unambiguous. The workout-level ones — name, date, length — are behind one
+ *    row, shut by default: history is read far more often than it is corrected,
+ *    and five controls between the reader and the sets would tax the common case
+ *    to serve the rare one.
  *
  *    Every number around the corrected row is REGENERATED, never patched: the
  *    store hands the new row list to `recomputeWorkout`, which reruns
@@ -96,7 +120,14 @@ import { ConfirmSheet } from '../components/ConfirmSheet';
 import { Icon } from '../components/Icon';
 import { NumberSheet } from '../components/NumberSheet';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { Kicker, ListCard, Segmented, Separator } from '../components/primitives';
+import {
+  FieldWell,
+  Kicker,
+  ListCard,
+  Segmented,
+  Separator,
+  StepperRow,
+} from '../components/primitives';
 import {
   BALANCE_WINDOWS,
   balanceWindowDays,
@@ -123,6 +154,7 @@ import {
 import { historyTotals } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import { useSettings } from '../state/settingsStore';
+import { DURATION_LIMITS, formatTimeOfDay } from '../lib/workoutEdit';
 import type { Exercise, ID, SessionEffort, SetHistory, UnitSystem } from '../types/models';
 
 /**
@@ -131,6 +163,18 @@ import type { Exercise, ID, SessionEffort, SetHistory, UnitSystem } from '../typ
  * Lower case, because it is a clause in a sentence of facts and not a label:
  * `6 exercises · 18 sets · 4 720 kg · brutal`.
  */
+/** One day, in the minutes the retime stepper counts in. */
+const MINUTES_PER_DAY = 1440;
+
+/**
+ * The step on the `Started` row, in minutes.
+ *
+ * Fifteen, not one: nobody corrects the start of a finished workout to the minute,
+ * and the reason to touch this row at all is a phone that was in a bag for half an
+ * hour. Four taps an hour is the right coarseness for that.
+ */
+const TIME_STEP_MINUTES = 15;
+
 const EFFORT_WORDS: Record<SessionEffort, string> = {
   easy: 'easy',
   right: 'right',
@@ -192,6 +236,27 @@ export interface HistoryScreenProps {
   ) => void;
   /** Remove one logged set. False when it was refused — the last row of a workout. */
   onDeleteSet: (workoutId: ID, setId: ID) => boolean;
+  /**
+   * Change what a finished workout IS: its name, when it happened, how long it took.
+   *
+   * `shiftMinutes` nudges the start and drags every set's date with it — see
+   * `lib/workoutEdit.ts` on why those cannot move independently.
+   */
+  onEditWorkout: (
+    workoutId: ID,
+    patch: { title?: string; shiftMinutes?: number; durationMinutes?: number },
+  ) => void;
+  /** One more row on an exercise the workout already has. */
+  onAddSet: (workoutId: ID, exerciseId: ID) => void;
+  /** Take an exercise out, rows and all. False when it was the last one. */
+  onRemoveExercise: (workoutId: ID, exerciseId: ID) => boolean;
+  /**
+   * Open the library picker to put an exercise INTO a finished workout.
+   *
+   * Optional because it is the one edit on this screen that needs navigation, and a
+   * caller with nowhere to push should render no row rather than a dead one.
+   */
+  onAddExercise?: (workoutId: ID) => void;
   /** Pin this workout's number; everything else renumbers from it. */
   onSetNumber: (id: ID, number: number) => void;
   /** The `Log | Graphs` switch, rendered under the header by whoever owns it. */
@@ -208,6 +273,10 @@ export function HistoryScreen({
   onDelete,
   onEditSet,
   onDeleteSet,
+  onEditWorkout,
+  onAddSet,
+  onRemoveExercise,
+  onAddExercise,
   numbers,
   onSetNumber,
   toolbar,
@@ -411,6 +480,14 @@ export function HistoryScreen({
                           unitSystem={unitSystem}
                           onEditSet={(setId, patch) => onEditSet(workout.id, setId, patch)}
                           onDeleteSet={(setId) => onDeleteSet(workout.id, setId)}
+                          onEditWorkout={(patch) => onEditWorkout(workout.id, patch)}
+                          onAddSet={(exerciseId) => onAddSet(workout.id, exerciseId)}
+                          onRemoveExercise={(exerciseId) =>
+                            onRemoveExercise(workout.id, exerciseId)
+                          }
+                          onAddExercise={
+                            onAddExercise ? () => onAddExercise(workout.id) : undefined
+                          }
                           onPress={() => {
                             tap();
                             setOpenId((current) => (current === workout.id ? null : workout.id));
@@ -479,6 +556,10 @@ function WorkoutRow({
   onEditSet,
   onDeleteSet,
   onEditNumber,
+  onEditWorkout,
+  onAddSet,
+  onRemoveExercise,
+  onAddExercise,
 }: {
   workout: CompletedWorkout;
   /** Its ordinal, or undefined / below 1 when the pinning leaves it without one. */
@@ -490,12 +571,36 @@ function WorkoutRow({
   onEditSet: (setId: ID, patch: { weightKg?: number | null; count?: number }) => void;
   onDeleteSet: (setId: ID) => boolean;
   onEditNumber: () => void;
+  /** Rename it, move it in time, or say how long it took. */
+  onEditWorkout: (patch: {
+    title?: string;
+    shiftMinutes?: number;
+    durationMinutes?: number;
+  }) => void;
+  /** One more row on an exercise this workout already has. */
+  onAddSet: (exerciseId: ID) => void;
+  /** Take an exercise out, rows and all. False when it was the last one. */
+  onRemoveExercise: (exerciseId: ID) => boolean;
+  /** Open the library picker for this workout. Absent = no way to navigate there. */
+  onAddExercise?: () => void;
 }) {
   const exerciseCount = workout.exercises.length;
   const numbered = number != null && number >= 1;
   /** The exercise whose logged sets are listed, and the set being corrected. */
   const [openExerciseId, setOpenExerciseId] = useState<ID | null>(null);
   const [editing, setEditing] = useState<{ setId: ID; field: 'weight' | 'count' } | null>(null);
+  /**
+   * The workout-level edit block is SHUT by default.
+   *
+   * What you want from history is almost always a glance — the file header says so
+   * — and a name field, three steppers and an `Add an exercise` row on every open
+   * workout would put five controls between the reader and the sets they came to
+   * see. One row reveals them, which is the same shape `Set the workout number`
+   * already had.
+   */
+  const [editingWorkout, setEditingWorkout] = useState(false);
+  /** The name, while it is being typed. Committed on blur — see the field below. */
+  const [draftTitle, setDraftTitle] = useState(workout.title);
 
   return (
     <View>
@@ -615,9 +720,158 @@ function WorkoutRow({
                       />
                     ))
                   : null}
+
+                {/* THE TWO STRUCTURAL EDITS, and only on the exercise whose rows
+                    are open — which is the exercise the user is looking at, and
+                    the only one for which "one more set" is unambiguous.
+
+                    `+ Add a set` is the way back from a mis-tapped ✕, and it is
+                    the reason a set row's ✕ can stay a single tap. `Remove
+                    exercise` is `ink-faint` rather than green because it takes
+                    something away, the same weight `Delete this workout` has. */}
+                {listing ? (
+                  <View className="flex-row px-lg pb-sm">
+                    <Pressable
+                      onPress={() => {
+                        tap();
+                        onAddSet(exercise.exerciseId);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add a set to ${exercise.name}`}
+                      className="h-hit flex-1 justify-center"
+                    >
+                      <Text className="text-label font-medium text-green-bright">+ Add a set</Text>
+                    </Pressable>
+
+                    {exerciseCount > 1 ? (
+                      <Pressable
+                        onPress={() => {
+                          undo();
+                          if (onRemoveExercise(exercise.exerciseId)) {
+                            setOpenExerciseId(null);
+                            setEditing(null);
+                          }
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${exercise.name} from this workout`}
+                        className="h-hit justify-center"
+                      >
+                        <Text className="text-label font-medium text-ink-faint">
+                          Remove exercise
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
             );
           })}
+
+          {/* An exercise the session missed, or one removed by mistake. Above the
+              edit block because it is about the CONTENT of the workout, which is
+              what everything above it is too. */}
+          {onAddExercise ? (
+            <Pressable
+              onPress={() => {
+                tap();
+                onAddExercise();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Add an exercise to this workout"
+              className="h-hit justify-center px-lg"
+            >
+              <Text className="text-label font-medium text-green-bright">+ Add an exercise</Text>
+            </Pressable>
+          ) : null}
+
+          {/* WHAT THE WORKOUT IS: its name, when it happened, how long it took.
+
+              Behind one row, because history is read far more often than it is
+              corrected. Every control in here is the app's own ± idiom rather than
+              a native picker: there is no date picker in this codebase, a stepper
+              needs no permissions and no module, and the edits people actually
+              make to a finished session are small ones — a day out because it ran
+              past midnight, an hour because the phone was in a bag, a duration
+              that kept counting on the walk home. */}
+          <Pressable
+            onPress={() => {
+              tap();
+              setDraftTitle(workout.title);
+              setEditingWorkout((open) => !open);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: editingWorkout }}
+            accessibilityLabel={`Edit the name, date and length of ${workout.title}`}
+            className="h-hit justify-center px-lg"
+          >
+            <Text className="text-label font-medium text-green-bright">
+              {editingWorkout ? 'Done editing' : 'Edit name, date and length'}
+            </Text>
+          </Pressable>
+
+          {editingWorkout ? (
+            <View className="px-lg pb-sm">
+              <Kicker className="mb-sm">Name</Kicker>
+              <FieldWell
+                value={draftTitle}
+                placeholder="Workout name"
+                onChangeText={setDraftTitle}
+                /*
+                 * Committed on BLUR, not on every keystroke. Every write here
+                 * recomputes the record and re-sorts the log, and doing that once
+                 * per typed character would rebuild the list under the keyboard.
+                 */
+                onBlur={() => onEditWorkout({ title: draftTitle })}
+                accessibilityLabel="Workout name"
+              />
+
+              <View className="mt-md overflow-hidden rounded-surface border border-hairline bg-surface">
+                <StepperRow
+                  label="Date"
+                  hint="Every set in this workout moves with it"
+                  value={formatShortDate(workout.startedAt)}
+                  onDecrease={() => {
+                    tap();
+                    onEditWorkout({ shiftMinutes: -MINUTES_PER_DAY });
+                  }}
+                  onIncrease={() => {
+                    tap();
+                    onEditWorkout({ shiftMinutes: MINUTES_PER_DAY });
+                  }}
+                />
+                <Separator />
+                <StepperRow
+                  label="Started"
+                  value={formatTimeOfDay(workout.startedAt)}
+                  onDecrease={() => {
+                    tap();
+                    onEditWorkout({ shiftMinutes: -TIME_STEP_MINUTES });
+                  }}
+                  onIncrease={() => {
+                    tap();
+                    onEditWorkout({ shiftMinutes: TIME_STEP_MINUTES });
+                  }}
+                />
+                <Separator />
+                <StepperRow
+                  label="Took"
+                  value={`${workout.durationMinutes} min`}
+                  onDecrease={() => {
+                    tap();
+                    onEditWorkout({
+                      durationMinutes: workout.durationMinutes - DURATION_LIMITS.step,
+                    });
+                  }}
+                  onIncrease={() => {
+                    tap();
+                    onEditWorkout({
+                      durationMinutes: workout.durationMinutes + DURATION_LIMITS.step,
+                    });
+                  }}
+                />
+              </View>
+            </View>
+          ) : null}
 
           {/* Renumbering sits above delete because it is the one you actually
               reach for, and both are inside the open row for the same reason:

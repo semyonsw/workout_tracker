@@ -2,14 +2,16 @@
  * RestTimerPill — the rest countdown, at the top of the session.
  *
  *   running   ╭───────────────────────────────────────╮
- *             │  1:28                             ⏸    │
- *             │  BETWEEN SETS      −15  +15      Skip │
+ *             │  1:28                             ⏸   │
+ *             │  BETWEEN SETS                         │
+ *             │                   −15  +15      Skip  │
  *             │ ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░ │
  *             ╰───────────────────────────────────────╯
  *
  *   paused    ╭───────────────────────────────────────╮
- *             │  1:28                             ▶    │
- *             │  PAUSED            −15  +15      Skip │
+ *             │  1:28                             ▶   │
+ *             │  PAUSED                               │
+ *             │                   −15  +15      Skip  │
  *             │ ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░ │
  *             ╰───────────────────────────────────────╯
  *
@@ -39,7 +41,8 @@
  *   • THE ± STEP IS THE USER'S. Read from Settings rather than hard-coded at 15,
  *     so the chip's label and what it does can never drift apart.
  *   • THE LABEL SITS UNDER THE CLOCK, not beside it. Four controls and an inline
- *     label do not both fit on a 360 dp phone — see `PillLabel`.
+ *     label do not both fit on a 360 dp phone — see `PillLabel` — and at the size
+ *     the clock is now, nothing fits beside it at all.
  *   • It renders only while resting and unmounts cleanly. No permanent chrome.
  */
 
@@ -93,7 +96,9 @@ export function RestTimerPill() {
       inverted={finalTen}
       remainingFraction={totalSeconds > 0 ? remaining / totalSeconds : 0}
     >
-      <View className="flex-1">
+      {/* The clock block. No `flex-1`: the pill's content is a column now, and a
+          growing first child would push the controls off the bottom. */}
+      <View>
         <PillClock
           value={formatClock(remaining)}
           tone={tone}
@@ -108,7 +113,10 @@ export function RestTimerPill() {
         </PillLabel>
       </View>
 
-      <View className="flex-row items-center">
+      {/* The controls, UNDER the clock and right-aligned as a group — which is
+          where they were when the pill was one row, so the hand that has learned
+          `Skip`'s position finds it in the same corner. */}
+      <View className="mt-sm flex-row items-center justify-end">
         {/* Minus first, plus second — the order they sit in on every other ±
             control in the app, and the order they read in the label `± step`. */}
         <StepChip

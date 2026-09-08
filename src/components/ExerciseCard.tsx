@@ -261,7 +261,7 @@ function ExerciseCardComponent({
         accessibilityHint={onLift ? 'Long press, then slide to reorder' : undefined}
         style={[
           dimmed ? { opacity: 0.4 } : null,
-          glowing ? { boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 14, color: GLOW }] } : null,
+          glowing ? { boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 18, color: GLOW }] } : null,
         ]}
         className={[
           'mx-lg mb-sm rounded-surface border p-lg',

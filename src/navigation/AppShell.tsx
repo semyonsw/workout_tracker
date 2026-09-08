@@ -94,11 +94,14 @@ type Route =
       /**
        * Where the picked exercise goes. `session` appends it to the WORKOUT IN
        * FLIGHT with one set — the neck work decided on halfway through pull day —
-       * rather than editing any routine. Same picker, same create flow underneath;
-       * only the destination differs, which is why this is a field and not a
-       * second screen.
+       * rather than editing any routine. `history` puts it into a workout that
+       * already happened, which is the way back from a `Remove exercise` on the
+       * wrong card. Same picker, same create flow underneath; only the destination
+       * differs, which is why this is a field and not three screens.
        */
-      target?: 'routine' | 'session';
+      target?: 'routine' | 'session' | 'history';
+      /** The finished workout to add to. Only read when `target` is `history`. */
+      workoutId?: ID;
     }
   | {
       name: 'createExercise';
@@ -175,6 +178,10 @@ export function AppShell() {
   const deleteWorkout = useWorkoutHistory((s) => s.deleteWorkout);
   const updateWorkoutSet = useWorkoutHistory((s) => s.updateWorkoutSet);
   const deleteWorkoutSet = useWorkoutHistory((s) => s.deleteWorkoutSet);
+  const editWorkout = useWorkoutHistory((s) => s.editWorkout);
+  const addWorkoutSet = useWorkoutHistory((s) => s.addWorkoutSet);
+  const addWorkoutExercise = useWorkoutHistory((s) => s.addWorkoutExercise);
+  const deleteWorkoutExercise = useWorkoutHistory((s) => s.deleteWorkoutExercise);
   const numbering = useWorkoutHistory((s) => s.numbering);
   const setWorkoutNumber = useWorkoutHistory((s) => s.setWorkoutNumber);
 
@@ -773,11 +780,17 @@ export function AppShell() {
   }
 
   if (top?.name === 'addExercise') {
-    const { routineId, target } = top;
+    const { routineId, target, workoutId } = top;
     return (
       <LibraryTab
         query={query}
-        kicker={target === 'session' ? 'Add to workout' : 'Add exercise'}
+        kicker={
+          target === 'session'
+            ? 'Add to workout'
+            : target === 'history'
+              ? 'Add to that workout'
+              : 'Add exercise'
+        }
         exercises={exercises}
         matches={matches}
         recentlyUsed={recentlyUsed}
@@ -790,6 +803,17 @@ export function AppShell() {
             const exercise = exercisesById[exerciseId];
             if (exercise) addExerciseToSession(exercise);
             return popToSession();
+          }
+          if (target === 'history') {
+            /*
+             * Into a workout that already happened, with one set. Back to the
+             * History tab rather than to the picker, and the workout is already
+             * open there — `openWorkout` set `focusWorkoutId` on the way in, so
+             * the row the user was editing is the row they land on.
+             */
+            const exercise = exercisesById[exerciseId];
+            if (exercise && workoutId) addWorkoutExercise(workoutId, exercise);
+            return pop();
           }
           if (!routineId) return push({ name: 'exerciseHistory', exerciseId });
           appendToRoutine(routineId, exerciseId);
@@ -932,6 +956,18 @@ export function AppShell() {
             onSetNumber={setWorkoutNumber}
             onEditSet={updateWorkoutSet}
             onDeleteSet={deleteWorkoutSet}
+            onEditWorkout={editWorkout}
+            onAddSet={addWorkoutSet}
+            onRemoveExercise={deleteWorkoutExercise}
+            /*
+             * The one edit on that screen that needs navigation: the picker is a
+             * pushed route, so the tab cannot open it itself. `focusWorkoutId` is
+             * set on the way out so the workout is open again on the way back.
+             */
+            onAddExercise={(workoutId) => {
+              setFocusWorkoutId(workoutId);
+              push({ name: 'addExercise', routineId: null, target: 'history', workoutId });
+            }}
           />
         ) : null}
 
@@ -1001,6 +1037,10 @@ function HistoryTab({
   onSetNumber,
   onEditSet,
   onDeleteSet,
+  onEditWorkout,
+  onAddSet,
+  onRemoveExercise,
+  onAddExercise,
 }: {
   workouts: CompletedWorkout[];
   loadFailed: boolean;
@@ -1014,6 +1054,10 @@ function HistoryTab({
   onSetNumber: (id: ID, number: number) => void;
   onEditSet: HistoryScreenProps['onEditSet'];
   onDeleteSet: HistoryScreenProps['onDeleteSet'];
+  onEditWorkout: HistoryScreenProps['onEditWorkout'];
+  onAddSet: HistoryScreenProps['onAddSet'];
+  onRemoveExercise: HistoryScreenProps['onRemoveExercise'];
+  onAddExercise: HistoryScreenProps['onAddExercise'];
 }) {
   const [view, setView] = useState<'log' | 'graphs' | 'calendar'>('log');
 
@@ -1069,6 +1113,10 @@ function HistoryTab({
       onSetNumber={onSetNumber}
       onEditSet={onEditSet}
       onDeleteSet={onDeleteSet}
+      onEditWorkout={onEditWorkout}
+      onAddSet={onAddSet}
+      onRemoveExercise={onRemoveExercise}
+      onAddExercise={onAddExercise}
       toolbar={toolbar}
     />
   );

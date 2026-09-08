@@ -93,7 +93,34 @@ import {
 } from './historyDb';
 import { currentSettings } from './settingsStore';
 import { bodyweightAt } from '../lib/bodyweightLog';
-import type { CountUnit, ID, LoadMode, RecentSessionSummary, SetHistory } from '../types/models';
+import {
+  addExerciseToWorkout,
+  addSetToWorkout,
+  removeExerciseFromWorkout,
+  renameWorkout,
+  retimeWorkout,
+  setWorkoutDuration,
+  shiftWorkout,
+} from '../lib/workoutEdit';
+import type {
+  CountUnit,
+  Exercise,
+  ID,
+  LoadMode,
+  RecentSessionSummary,
+  SetHistory,
+} from '../types/models';
+
+/**
+ * An id for a row added to a workout that already happened.
+ *
+ * Prefixed with the session it belongs to and stamped, so it cannot collide with a
+ * row the session logged at the time (`draftToSetHistory` ids come off the draft's
+ * own set ids) nor with a second row added a moment later.
+ */
+function newRowId(workoutId: ID): ID {
+  return `${workoutId}_add_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
 
 interface WorkoutHistoryState {
   /** Finished workouts, newest first. */
@@ -143,6 +170,36 @@ interface WorkoutHistoryState {
    * `deleteWorkout`, which asks first. Returns false when nothing was removed.
    */
   deleteWorkoutSet: (workoutId: ID, setId: ID) => boolean;
+
+  /* --- editing a finished workout: see `lib/workoutEdit.ts` ---------- */
+  /**
+   * Change what the workout IS: its name, when it started, how long it took.
+   *
+   * `startedAt` re-dates every row in it, because `SetHistory.performedAt` is the
+   * workout's own instant denormalised onto each set — a header that moved without
+   * them would put a session on Tuesday whose sets every analysis still reads as
+   * Wednesday's. `lib/workoutEdit.ts` owns that and the rest of the arithmetic.
+   *
+   * An absent key means "leave it". Returns false when the workout is gone.
+   */
+  editWorkout: (
+    workoutId: ID,
+    patch: { title?: string; startedAt?: Date; shiftMinutes?: number; durationMinutes?: number },
+  ) => boolean;
+  /** One more row on an exercise the workout already has. */
+  addWorkoutSet: (workoutId: ID, exerciseId: ID) => boolean;
+  /**
+   * Put an exercise into a finished workout, with one row — the way back from a
+   * `Remove exercise` on the wrong card. Takes the LIBRARY row, because the record
+   * keeps a snapshot of the name and the shape rather than a pointer.
+   */
+  addWorkoutExercise: (workoutId: ID, exercise: Exercise) => boolean;
+  /**
+   * Take an exercise out, rows and all. Refused when it is the last one — that is
+   * `deleteWorkout`, which asks first.
+   */
+  deleteWorkoutExercise: (workoutId: ID, exerciseId: ID) => boolean;
+
   clearHistory: () => void;
   /**
    * Re-read the log from disk and adopt it. Returns how many workouts are now in
@@ -419,6 +476,64 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
     );
   },
 
+  editWorkout: (workoutId, patch) => {
+    const workout = get().workouts.find((w) => w.id === workoutId);
+    if (!workout) return false;
+
+    /*
+     * Folded in order, each step over the result of the last, because they
+     * interact: a duration change moves `endedAt` off the CURRENT start, and a
+     * retime carries the duration with it. Doing them in one pass over the original
+     * record would make the outcome depend on which key the caller happened to set.
+     *
+     * The bodyweight is read once, from the workout as it is now — a retime that
+     * crossed a weigh-in would otherwise price the session at two different
+     * bodyweights depending on the order of these lines. Reading it before the move
+     * is the honest one: it is the weight that was true when the session happened.
+     */
+    const bodyweightKg = bodyweightFor(workout);
+    let next = workout;
+    if (patch.title !== undefined) next = renameWorkout(next, patch.title, bodyweightKg);
+    if (patch.durationMinutes !== undefined) {
+      next = setWorkoutDuration(next, patch.durationMinutes, bodyweightKg);
+    }
+    if (patch.startedAt !== undefined) next = retimeWorkout(next, patch.startedAt, bodyweightKg);
+    if (patch.shiftMinutes !== undefined) {
+      next = shiftWorkout(next, patch.shiftMinutes, bodyweightKg);
+    }
+
+    return writeEdited(set, get, next);
+  },
+
+  addWorkoutSet: (workoutId, exerciseId) => {
+    const workout = get().workouts.find((w) => w.id === workoutId);
+    if (!workout) return false;
+
+    const next = addSetToWorkout(workout, exerciseId, newRowId(workoutId), bodyweightFor(workout));
+    return next ? writeEdited(set, get, next) : false;
+  },
+
+  addWorkoutExercise: (workoutId, exercise) => {
+    const workout = get().workouts.find((w) => w.id === workoutId);
+    if (!workout) return false;
+
+    const next = addExerciseToWorkout(
+      workout,
+      exercise,
+      newRowId(workoutId),
+      bodyweightFor(workout),
+    );
+    return next ? writeEdited(set, get, next) : false;
+  },
+
+  deleteWorkoutExercise: (workoutId, exerciseId) => {
+    const workout = get().workouts.find((w) => w.id === workoutId);
+    if (!workout) return false;
+
+    const next = removeExerciseFromWorkout(workout, exerciseId, bodyweightFor(workout));
+    return next ? writeEdited(set, get, next) : false;
+  },
+
   clearHistory: () => {
     clearAllWorkouts();
     // The pin points at a workout that has just stopped existing.
@@ -526,6 +641,49 @@ export async function migrateHistoryIfNeeded(): Promise<void> {
  * rather than special-cased: the rows are the user's, and a workout that reads
  * "0 sets" after they marked everything a warm-up is exactly what they asked for.
  */
+/**
+ * The bodyweight to price a workout's volume with: what the lifter weighed the day
+ * it happened.
+ *
+ * Split out of `writeRecomputed` because `lib/workoutEdit.ts` needs the same number
+ * — every edit in that file recomputes the record itself — and two lookups of "what
+ * did I weigh then" is one of them being today's.
+ */
+function bodyweightFor(workout: CompletedWorkout): number | null {
+  const settings = currentSettings();
+  return bodyweightAt(settings.bodyweightLog, workout.startedAt) ?? settings.bodyweightKg ?? null;
+}
+
+/**
+ * Store one edited workout: database first, then state, then re-sort.
+ *
+ * THE SORT IS NOT DECORATION. `workouts` is newest-first and `workoutNumbers`
+ * derives every ordinal from that order, so a retimed workout that stayed where it
+ * was in the array would render under the wrong month heading and renumber the
+ * column around it. Every other edit leaves the order alone and the sort is a
+ * no-op, which is cheaper than deciding per action whether it moved.
+ */
+function writeEdited(
+  set: (partial: Partial<WorkoutHistoryState>) => void,
+  get: () => WorkoutHistoryState,
+  next: CompletedWorkout,
+): boolean {
+  /*
+   * The database first, as everywhere else in this store: a state update that lands
+   * before a write that throws is a screen showing a correction that is not on
+   * disk. `writeWorkouts` deletes and reinserts the row list inside one
+   * transaction, which is what stops a removed set surviving as an orphan.
+   */
+  writeWorkouts([next]);
+
+  set({
+    workouts: get()
+      .workouts.map((w) => (w.id === next.id ? next : w))
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()),
+  });
+  return true;
+}
+
 function writeRecomputed(
   set: (partial: Partial<WorkoutHistoryState>) => void,
   get: () => WorkoutHistoryState,
@@ -545,22 +703,10 @@ function writeRecomputed(
    * that has never typed a weight has — and there `effectiveLoadKg` returns null
    * and the volume drops the clause rather than printing a figure that undercounts.
    */
-  const settings = currentSettings();
   const workouts = get().workouts.map((w) =>
-    w.id === workoutId
-      ? recomputeWorkout(
-          { ...w, sets },
-          bodyweightAt(settings.bodyweightLog, w.startedAt) ?? settings.bodyweightKg ?? null,
-        )
-      : w,
+    w.id === workoutId ? recomputeWorkout({ ...w, sets }, bodyweightFor(w)) : w,
   );
 
-  /*
-   * The database first, as everywhere else in this store: a state update that lands
-   * before a write that throws is a screen showing a correction that is not on
-   * disk. `writeWorkouts` deletes and reinserts the row list inside one
-   * transaction, which is what stops a removed set surviving as an orphan.
-   */
   const corrected = workouts.find((w) => w.id === workoutId);
   if (corrected) writeWorkouts([corrected]);
 

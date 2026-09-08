@@ -18,13 +18,21 @@
  *     sideways when the ring arrives, and they must not shift back when the ✓
  *     lands and it moves to the row below.
  *   • AND THE RING IS NOT THE ONLY THING THAT SAYS SO. The ringed row is TALLER
- *     (64 rather than 56) and its two numbers are one step up the type scale,
- *     bold, and carry the app's one `glow` behind them. A 2 dp outline is a
- *     detail you have to look for; the numbers you are about to do are the thing
- *     you read at arm's length, mid-set, through sweat, so they are the thing
- *     that grows. It costs 8 dp of layout on ONE row in the session, and the row
- *     above it gives exactly that back as the ✓ lands — which is why the numbers
- *     under the thumb still do not move sideways, only the row's own height does.
+ *     (64 rather than 56) and its set number, its weight and its count all go
+ *     GREEN, two steps up the type scale, bold, with the app's one `glow` behind
+ *     them. A 2 dp outline is a detail you have to look for; the numbers you are
+ *     about to do are the thing you read at arm's length, mid-set, through sweat,
+ *     so they are the thing that grows. It costs 8 dp of layout on ONE row in the
+ *     session, and the row above it gives exactly that back as the ✓ lands —
+ *     which is why the numbers under the thumb still do not move sideways, only
+ *     the row's own height does.
+ *
+ *     GREEN OUTRANKS THE GHOST, on this row only. A prefilled value renders
+ *     `ink-faint` everywhere else and that is real information — "carried over,
+ *     untouched" — but on the one row that means DO THIS NEXT, "do this next" is
+ *     the louder fact, and the ghost state is still readable on every other row of
+ *     the card. Green here is the same green the ring is drawn in and the same
+ *     green the card's name goes: one accent, one meaning, three places.
  *   • The row arrives PRE-FILLED with last session's numbers, rendered faint
  *     ("ghost") on a lifted `surface-alt` background. That is the visual promise
  *     of "tap ✓ if nothing changed" — logging an identical set costs ONE tap.
@@ -176,8 +184,16 @@ function SetRowComponent({
       ].join(' ')}
     >
       {/* Set index — never a tap target, purely a landmark. `W` for a warm-up:
-          see the file header. */}
-      <Text className="w-[24px] text-micro font-semibold uppercase tabular-nums text-ink-faint">
+          see the file header. It goes green and up a size on the ringed row with
+          the numbers beside it: it is the label OF those numbers, and a micro
+          `ink-faint` 3 next to a 30 dp green weight reads as a different row's. */}
+      <Text
+        className={[
+          'w-[24px] font-semibold uppercase tabular-nums',
+          ring ? 'text-label text-green-bright' : 'text-micro text-ink-faint',
+        ].join(' ')}
+        style={ring ? NUMERAL_GLOW : undefined}
+      >
         {workingNumber == null ? 'W' : workingNumber}
       </Text>
 
@@ -279,7 +295,9 @@ function SetRowComponent({
             borderRadius: 14,
             borderWidth: 2,
             borderColor: palette.greenBright,
-            boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 12, color: GLOW }],
+            // 18 rather than 12: the ring has to bloom as much as the numerals
+            // inside it now do, or the outline reads as the sharper of two edges.
+            boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 18, color: GLOW }],
           }}
         />
       ) : null}
@@ -288,16 +306,33 @@ function SetRowComponent({
 }
 
 /**
+ * The halo behind an up-next numeral.
+ *
+ * Inline, not className: a text glow is `textShadow*`, which NativeWind has no
+ * utility for. Offset zero and a wide radius, so it is a halo AROUND the numeral
+ * rather than a shadow under it — and declared once here so the set index, the
+ * weight and the count cannot bloom by different amounts.
+ */
+const NUMERAL_GLOW = {
+  textShadowColor: GLOW,
+  textShadowOffset: { width: 0, height: 0 },
+  textShadowRadius: 16,
+} as const;
+
+/**
  * One number + its micro unit, baseline-aligned.
  *
  * Focused, it grows a `surface` chip behind itself with a −8 left margin, so
  * the chip appears *around* the value without the value sliding sideways. The
  * number under the thumb must not move when it is tapped.
  *
- * `emphasis` is the up-next row: a size up the scale, bold, and glowing. The glow
- * is the app's ONE glow (`theme/tokens`), the same value the ring around this row
- * is drawn with — a second, stronger green would be a second meaning, and there is
- * only one thing being said here.
+ * `emphasis` is the up-next row: GREEN, two sizes up the scale, bold, and glowing.
+ * The glow is the app's ONE glow (`theme/tokens`), the same value the ring around
+ * this row is drawn with — a second, stronger green would be a second meaning, and
+ * there is only one thing being said here.
+ *
+ * The `tone` prop is IGNORED under emphasis, deliberately: see the file header on
+ * why green outranks the prefill ghost on this one row.
  */
 function ValueCell({
   width,
@@ -333,33 +368,23 @@ function ValueCell({
     >
       <Text
         className={[
-          emphasis ? 'text-title-lg font-bold' : 'text-title font-semibold',
-          'tabular-nums',
-          tone,
-        ].join(' ')}
-        /*
-         * Inline, not className: a text glow is `textShadow*`, which NativeWind
-         * has no utility for. Offset zero and a wide radius, so it is a halo
-         * around the numeral rather than a shadow under it.
-         */
-        style={
           emphasis
-            ? {
-                textShadowColor: GLOW,
-                textShadowOffset: { width: 0, height: 0 },
-                textShadowRadius: 10,
-              }
-            : undefined
-        }
+            ? 'text-title-xl font-bold text-green-bright'
+            : `text-title font-semibold ${tone}`,
+          'tabular-nums',
+        ].join(' ')}
+        style={emphasis ? NUMERAL_GLOW : undefined}
       >
         {value}
       </Text>
       <Text
         className={[
           'ml-xs font-semibold uppercase',
-          // The unit rides with the number, one notch behind it: `KG` at micro
-          // beside a 26 dp numeral reads as a different row's label.
-          emphasis ? 'text-label text-ink-muted' : 'text-micro text-ink-faint',
+          // The unit rides with the number, one notch behind it in size and in
+          // colour: `KG` at micro beside a 30 dp numeral reads as a different
+          // row's label, and `KG` in full green would compete with the number it
+          // belongs to.
+          emphasis ? 'text-label text-green' : 'text-micro text-ink-faint',
         ].join(' ')}
       >
         {unit}

@@ -2,16 +2,19 @@
  * SetTimerPill — the clock on the set you are in the middle of.
  *
  *   get ready          ╭─────────────────────────────────────╮
- *                      │ 3  GET READY       Start now     ✕  │
+ *                      │ 3  GET READY                        │
+ *                      │                  Start now       ✕  │
  *                      ╰─────────────────────────────────────╯
  *
  *   countdown, 2:00    ╭─────────────────────────────────────╮
- *   plank              │ 1:24  PLANK        +15   Stop    ✕  │
+ *   plank              │ 1:24  PLANK                         │
+ *                      │            +15       Stop        ✕  │
  *                      │ ▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░ │
  *                      ╰─────────────────────────────────────╯
  *
  *   count up           ╭─────────────────────────────────────╮
- *   dead hang          │ 0:47  HOLDING            Stop    ✕  │
+ *   dead hang          │ 0:47  HOLDING                       │
+ *                      │                      Stop        ✕  │
  *                      ╰─────────────────────────────────────╯
  *
  * Same slot, same instrument, same shadow and same colours as the rest timer —
@@ -64,7 +67,10 @@ export function SetTimerPill() {
 
   return (
     <TimerPill inverted={finalTen} remainingFraction={reading.remainingFraction}>
-      <View className="flex-1 flex-row items-baseline">
+      {/* The clock and its label share a baseline: this pill carries at most two
+          controls, so the name of the exercise still fits beside the numerals.
+          No `flex-1` — the pill's content is a column (see `TimerPill`). */}
+      <View className="flex-row items-baseline">
         <PillClock
           value={preparing ? reading.display : formatClock(reading.display)}
           tone={tone}
@@ -78,7 +84,8 @@ export function SetTimerPill() {
         <PillLabel tone={tone}>{label}</PillLabel>
       </View>
 
-      <View className="flex-row items-center">
+      {/* Under the clock and right-aligned, exactly as the rest pill's are. */}
+      <View className="mt-sm flex-row items-center justify-end">
         {preparing ? (
           <Pressable
             onPress={startNow}

@@ -48,6 +48,12 @@ module.exports = {
       // ✓ and a ▶. This is the one step between them, so "bigger" is a real
       // step in the scale rather than a transform nobody else can reuse.
       'title-lg': ['26px', { lineHeight: '32px', letterSpacing: '-0.6px' }],
+      // The SEVENTH, and the up-next row's numbers moved onto it: 26 read as
+      // "slightly larger" and the point of that row is that it is findable
+      // without being read. 30 is the largest numeral that still leaves the ✓ and
+      // the ▶ their thumb targets on a 360 dp phone with a five-character weight
+      // in the cell — past it the row starts clipping instead of shouting.
+      'title-xl': ['30px', { lineHeight: '36px', letterSpacing: '-0.8px' }],
       display: ['40px', { lineHeight: '44px', letterSpacing: '-1.2px' }],
     },
     spacing: {
@@ -64,7 +70,7 @@ module.exports = {
       hit: '44px', // minimum tap target
       row: '56px', // set rows, list rows
       'row-lg': '64px', // editor / library rows (two lines of text)
-      timer: '92px', // the content row of the timer pill — keep in sync with `size.timer`
+      timer: '132px', // the timer pill's minimum height — keep in sync with `size.timer`
       well: '96px', // numeric wells
     },
     extend: {

@@ -98,6 +98,16 @@ for a sentence with a curly apostrophe or an em dash in it reports 0 matches on 
 bundle that contains the string. Either grep an ASCII-only fragment, or match
 `s.encode('utf-16-le')` in Python.
 
+**And a STRING, not a number.** Numeric literals go into Hermes's constant pool
+rather than into the bytecode as text, so grepping for `fontSize:104` or `64:52`
+returns 0 on a bundle that sets exactly those — and so does grepping for the value
+you replaced, which makes the result look like a failed build twice over. A purely
+numeric change therefore has no direct probe: grep something textual that moved
+with it. A `className` is usually the closest thing, since a layout change almost
+always rewrites one (`justify-center px-xl py-lg` is what proved the timer pill's
+restructure shipped), and checking that the string you REMOVED is now absent is the
+other half of the proof.
+
 ## `.gitignore` has `*.apk`
 
 The committed APK is force-added. `git add -f workout-tracker-<version>.apk`, or the

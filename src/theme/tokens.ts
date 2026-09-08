@@ -58,11 +58,17 @@ export const size = {
   /**
    * The inner row of the timer pill.
    *
-   * 92, not the spec's 54: the numerals inside it are the thing you read from
-   * across the room while the phone lies on a bench, and at anything smaller the
-   * row clips them.
+   * 132, and it has grown twice for the same reason: the numerals inside it are the
+   * thing you read from across the room while the phone lies on a bench. It was 54
+   * in the spec, then 92, and it is now the height a clock at 84 pt needs with its
+   * label and its controls stacked under it.
+   *
+   * A MINIMUM rather than a fixed height now (see `TimerPill`), because the pill
+   * stopped being one row: the clock owns the top of it and the controls sit
+   * underneath, so the content decides the height and this is the floor that keeps
+   * a short pill from looking like a different instrument.
    */
-  timer: 92,
+  timer: 132,
   /** Bottom tab bar — exists only outside a session. */
   tabBar: 64,
 } as const;
@@ -71,13 +77,24 @@ export const size = {
  * The one GLOW, and the only thing in the app that is not a hairline or a surface
  * step doing the job of elevation.
  *
- * `green-bright` at a third, spread behind two marks and no others: the current
- * exercise's card while it is shut, and the row of the set that should happen next.
- * Both marks are complete without it — a `green-bright` border and a `green-bright`
- * name carry the meaning — so a renderer that drops `boxShadow` loses gloss and not
+ * `green-bright` spread behind two marks and no others: the current exercise's card
+ * while it is shut, and the row of the set that should happen next. Both marks are
+ * complete without it — a `green-bright` border and `green-bright` numerals carry
+ * the meaning — so a renderer that drops `boxShadow` loses gloss and not
  * information. That is the condition on which it is allowed to exist.
+ *
+ * IT USED TO BE 0.34 AND IT WAS TOO POLITE. At a third alpha the halo is something
+ * you notice on a desk and not on a bench: the phone is a metre away, face-up,
+ * under gym lighting, and the whole job of this value is to make one row findable
+ * without reading it. 0.6 is still translucent — it never becomes a fill, and the
+ * numerals under it stay legible — but it reads as a lit row rather than a slightly
+ * softer edge.
+ *
+ * Still ONE value. The ring, the card and the numerals all use it; only the blur
+ * radius differs, because a 2 dp outline and a 30 dp numeral need different spreads
+ * to bloom by the same amount.
  */
-export const glow = 'rgba(63,169,108,0.34)';
+export const glow = 'rgba(63,169,108,0.6)';
 
 /**
  * The app's ONLY shadow. It belongs to the timer pill and nothing else — the

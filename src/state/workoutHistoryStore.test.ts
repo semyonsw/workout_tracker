@@ -21,6 +21,7 @@ import { buildDraftSession, type DraftSession } from '../lib/draft';
 import { historyByExerciseId, type CompletedWorkout } from '../lib/completedWorkout';
 import { evaluateOverload } from '../lib/progressiveOverload';
 import { seedExercises, seedRoutine, seedUser } from '../data/seed';
+import { DEFAULT_SETTINGS, useSettings } from './settingsStore';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
 import type { Exercise, ID } from '../types/models';
 
@@ -74,6 +75,12 @@ beforeEach(async () => {
   // `loadFailed` is state like any other, and one test that simulates an
   // unreadable database would otherwise leave it set for every test after it.
   useWorkoutHistory.setState({ loadFailed: false });
+  /*
+   * ...and so is the bodyweight. This store reads it to price a workout's volume,
+   * so a test that sets one would otherwise leave every test after it weighing
+   * bodyweight sets it never meant to.
+   */
+  useSettings.getState().importSettings(DEFAULT_SETTINGS);
 });
 
 /* ------------------------------------------------------------------ */
@@ -1258,5 +1265,185 @@ describe('a log that could not be read is not an empty log', () => {
 
     db().execSync('DROP TABLE workouts;');
     expect(useWorkoutHistory.getState().countOnDisk()).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * EDITING A WORKOUT THAT ALREADY HAPPENED.
+ *
+ * `lib/workoutEdit.test.ts` pins the arithmetic; these are the three things only
+ * the store can get wrong: the edit has to reach SQLITE (a correction that lives in
+ * memory is one an app restart throws away), a retimed workout has to end up in the
+ * right PLACE in the log (the array is newest-first and every ordinal derives from
+ * that order), and the refusals have to hold.
+ */
+describe('editing a finished workout', () => {
+  function saved(count = 3, weightKg = 40) {
+    useWorkoutHistory.getState().clearHistory();
+    const stored = useWorkoutHistory
+      .getState()
+      .saveSession(loggedDraft('2026-08-17T17:00:00.000Z', count, weightKg));
+    if (!stored) throw new Error('nothing was saved');
+    return stored;
+  }
+
+  const current = (id: string) => useWorkoutHistory.getState().workouts.find((w) => w.id === id);
+  /** The same workout, read back off disk rather than out of memory. */
+  const onDisk = (id: string) => (readAllWorkouts() as CompletedWorkout[]).find((w) => w.id === id);
+
+  it('renames it, on disk as well as on screen', () => {
+    const workout = saved();
+    expect(useWorkoutHistory.getState().editWorkout(workout.id, { title: 'Pull, short' })).toBe(
+      true,
+    );
+    expect(current(workout.id)?.title).toBe('Pull, short');
+    expect(onDisk(workout.id)?.title).toBe('Pull, short');
+  });
+
+  it('moves it in time, dragging every set’s date with it', () => {
+    const workout = saved();
+    useWorkoutHistory.getState().editWorkout(workout.id, { shiftMinutes: -1440 });
+
+    const moved = current(workout.id);
+    expect(moved?.startedAt).toBe('2026-08-16T17:00:00.000Z');
+    // The rule from `lib/workoutEdit.ts`: `performedAt` IS the workout's date,
+    // denormalised onto every row, so the two cannot move independently.
+    for (const row of moved?.sets ?? []) expect(row.performedAt).toBe('2026-08-16T17:00:00.000Z');
+    for (const row of onDisk(workout.id)?.sets ?? []) {
+      expect(row.performedAt).toBe('2026-08-16T17:00:00.000Z');
+    }
+  });
+
+  it('re-sorts the log, so a retimed workout lands under the right month', () => {
+    /*
+     * `workouts` is newest-first and `workoutNumbers` derives every ordinal from
+     * that order — a moved workout left where it was would render under the wrong
+     * heading and renumber the column around it.
+     */
+    useWorkoutHistory.getState().clearHistory();
+    const older = useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-10T17:00:00.000Z'));
+    const newer = useWorkoutHistory.getState().saveSession(loggedDraft('2026-08-17T17:00:00.000Z'));
+    expect(useWorkoutHistory.getState().workouts.map((w) => w.id)).toEqual([newer?.id, older?.id]);
+
+    // Drag the newer one three weeks back, behind the older one.
+    useWorkoutHistory.getState().editWorkout(newer!.id, { shiftMinutes: -1440 * 21 });
+    expect(useWorkoutHistory.getState().workouts.map((w) => w.id)).toEqual([older?.id, newer?.id]);
+  });
+
+  it('sets how long it took, moving the end and not the start', () => {
+    const workout = saved();
+    useWorkoutHistory.getState().editWorkout(workout.id, { durationMinutes: 61 });
+
+    const edited = current(workout.id);
+    expect(edited?.durationMinutes).toBe(61);
+    expect(edited?.startedAt).toBe(workout.startedAt);
+    expect(onDisk(workout.id)?.durationMinutes).toBe(61);
+  });
+
+  it('adds a set, and the summary and the totals move with it', () => {
+    const workout = saved(3, 40);
+    const exerciseId = workout.exercises[0].exerciseId;
+    const before = current(workout.id);
+    const snapshotBefore = before?.exercises.find((e) => e.exerciseId === exerciseId);
+
+    expect(useWorkoutHistory.getState().addWorkoutSet(workout.id, exerciseId)).toBe(true);
+
+    const after = current(workout.id);
+    const snapshotAfter = after?.exercises.find((e) => e.exerciseId === exerciseId);
+    expect(after?.sets.length).toBe((before?.sets.length ?? 0) + 1);
+    expect(after?.setCount).toBe((before?.setCount ?? 0) + 1);
+    /*
+     * The exercise's own numbers, not the workout's volume: the seed routine opens
+     * with a bodyweight movement and these tests set no bodyweight, so
+     * `effectiveLoadKg` correctly refuses to weigh those rows and the volume stays
+     * 0 with `volumeIsPartial` set. That is the silence `lib/bodyweightLog.ts`
+     * exists to keep, and asserting a volume here would be asserting a figure the
+     * app is deliberately not printing.
+     */
+    expect(snapshotAfter?.setCount).toBe((snapshotBefore?.setCount ?? 0) + 1);
+    expect(snapshotAfter?.totalCount).toBeGreaterThan(snapshotBefore?.totalCount ?? 0);
+    expect(snapshotAfter?.summary).not.toBe(snapshotBefore?.summary);
+    // ...and it is on disk, not just in memory.
+    expect(onDisk(workout.id)?.sets.length).toBe((before?.sets.length ?? 0) + 1);
+  });
+
+  it('prices an edited workout at the bodyweight of ITS OWN day', () => {
+    /*
+     * The bug `lib/bodyweightLog.ts` was written to remove, checked from the store
+     * side: an edit to a session from August must not re-cost it at today's weight.
+     */
+    useSettings.getState().importSettings({
+      ...useSettings.getState(),
+      bodyweightLog: [
+        { at: '2026-09-01T07:00:00.000Z', kg: 90 },
+        { at: '2026-08-01T07:00:00.000Z', kg: 80 },
+      ],
+      bodyweightKg: 90,
+    });
+
+    const workout = saved(3, 20);
+    const exerciseId = workout.exercises[0].exerciseId;
+    useWorkoutHistory.getState().addWorkoutSet(workout.id, exerciseId);
+
+    // The added row is `+20 kg` of added-bodyweight work on 17 August, so it is
+    // weighed at 80 + 20 = 100 and not at 90 + 20.
+    const rows = current(workout.id)?.sets.filter((r) => r.exerciseId === exerciseId) ?? [];
+    const added = rows.at(-1);
+    expect(added?.weightKg).toBe(20);
+    expect(current(workout.id)?.totalVolumeKg).toBe(
+      rows.filter((r) => !r.isWarmup).reduce((sum, r) => sum + (80 + 20) * r.count, 0),
+    );
+  });
+
+  it('refuses to add a set to an exercise the workout does not contain', () => {
+    const workout = saved();
+    expect(useWorkoutHistory.getState().addWorkoutSet(workout.id, 'ex_nope')).toBe(false);
+  });
+
+  it('puts an exercise back in, with one set', () => {
+    const workout = saved();
+    const absent = seedExercises.find((e) => !workout.exercises.some((x) => x.exerciseId === e.id));
+    expect(absent).toBeDefined();
+
+    expect(useWorkoutHistory.getState().addWorkoutExercise(workout.id, absent!)).toBe(true);
+    const after = current(workout.id);
+    expect(after?.exercises.some((e) => e.exerciseId === absent!.id)).toBe(true);
+    expect(after?.sets.some((row) => row.exerciseId === absent!.id)).toBe(true);
+    expect(onDisk(workout.id)?.exercises.some((e) => e.exerciseId === absent!.id)).toBe(true);
+  });
+
+  it('refuses to add an exercise that is already in it', () => {
+    const workout = saved();
+    const present = exercisesById[workout.exercises[0].exerciseId];
+    expect(useWorkoutHistory.getState().addWorkoutExercise(workout.id, present)).toBe(false);
+  });
+
+  it('removes an exercise, rows and all', () => {
+    const workout = saved();
+    const extra = seedExercises.find((e) => !workout.exercises.some((x) => x.exerciseId === e.id));
+    useWorkoutHistory.getState().addWorkoutExercise(workout.id, extra!);
+
+    expect(useWorkoutHistory.getState().deleteWorkoutExercise(workout.id, extra!.id)).toBe(true);
+    const after = current(workout.id);
+    expect(after?.exercises.some((e) => e.exerciseId === extra!.id)).toBe(false);
+    expect(after?.sets.some((row) => row.exerciseId === extra!.id)).toBe(false);
+    expect(onDisk(workout.id)?.sets.some((row) => row.exerciseId === extra!.id)).toBe(false);
+  });
+
+  it('refuses to remove the last exercise — that is deleting the workout', () => {
+    const workout = saved();
+    const only = current(workout.id)?.exercises[0].exerciseId;
+    expect(useWorkoutHistory.getState().deleteWorkoutExercise(workout.id, only!)).toBe(false);
+    // Still there, and still on disk.
+    expect(current(workout.id)).toBeDefined();
+    expect(onDisk(workout.id)?.sets.length).toBeGreaterThan(0);
+  });
+
+  it('does nothing for a workout that is not there', () => {
+    expect(useWorkoutHistory.getState().editWorkout('nope', { title: 'x' })).toBe(false);
+    expect(useWorkoutHistory.getState().addWorkoutSet('nope', 'ex_x')).toBe(false);
+    expect(useWorkoutHistory.getState().deleteWorkoutExercise('nope', 'ex_x')).toBe(false);
   });
 });

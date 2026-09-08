@@ -252,6 +252,7 @@ export function FieldWell({
   autoFocus = false,
   selectAllOnFocus = false,
   keyboardType = 'default',
+  onBlur,
   accessibilityLabel,
 }: {
   value: string;
@@ -272,6 +273,16 @@ export function FieldWell({
   selectAllOnFocus?: boolean;
   /** `number-pad` for a field that only ever holds digits. */
   keyboardType?: 'default' | 'number-pad';
+  /**
+   * Fired when the field loses focus — the moment to COMMIT a value whose write is
+   * expensive.
+   *
+   * `onChangeText` fires per keystroke, which is right for a search query and wrong
+   * for anything that rebuilds a list: renaming a finished workout recomputes the
+   * record and re-sorts the log, and doing that eleven times while somebody types
+   * `Pull, short` would rebuild the screen under the keyboard. See `HistoryScreen`.
+   */
+  onBlur?: () => void;
   accessibilityLabel: string;
 }) {
   const box = [
@@ -296,6 +307,7 @@ export function FieldWell({
           autoFocus={autoFocus}
           selectTextOnFocus={selectAllOnFocus}
           keyboardType={keyboardType}
+          onBlur={onBlur}
           accessibilityLabel={accessibilityLabel}
           returnKeyType="done"
           className={`flex-1 ${textClass}`}
