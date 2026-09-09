@@ -61,8 +61,15 @@ import {
 } from './TimerPill';
 import { Icon } from './Icon';
 
-/** What kind of rest is running, in the fewest words that distinguish them. */
-function restLabel(source: RestSource | null, isPaused: boolean): string {
+/**
+ * What kind of rest is running, in the fewest words that distinguish them.
+ *
+ * Exported for focus mode, which shows the same countdown at four times the size
+ * and must not word it differently: `BETWEEN SETS` and `NEXT EXERCISE` are the two
+ * lengths the user sets separately, and this label is how you check, mid-workout,
+ * that the two numbers in Settings are doing what they say.
+ */
+export function restLabel(source: RestSource | null, isPaused: boolean): string {
   if (isPaused) return 'paused';
   if (source === 'transition') return 'next exercise';
   if (source === 'set') return 'between sets';

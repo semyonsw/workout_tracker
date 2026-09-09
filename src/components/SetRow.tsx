@@ -56,6 +56,16 @@
  *     it did, and "set 2 of 5" must mean the second of five sets that counted.
  *     Same `ink-faint` as the numbers, because it is the same kind of landmark
  *     and not a warning; the toggle lives in `QuickAdjust`, beside `Remove set`.
+ *   • THE RINGED ROW IS ALSO THE DOOR INTO FOCUS MODE. Tapping its numbers, or
+ *     long-pressing it, opens the full-screen sheet instead of the inline editor —
+ *     and ONLY on that row. `QuickAdjust` is unchanged on every other row of every
+ *     card, and the long press stays off the card header, which is the reorder
+ *     handle (`useDragReorder`). The trade is deliberate and it is stated here
+ *     because it is a control that moved: the up-next row's `Type`, `Warm-up` and
+ *     `Remove set` now live one screen away — focus mode's ± nudge covers the
+ *     common edit, and the row's own editor is one ✓ or one tap on another row
+ *     away. What that buys is the numbers you are about to lift at 56 dp instead
+ *     of 30, on a screen with nothing else on it.
  *   • A BARBELL LIFT gets what goes on the bar, under the weight cell:
  *     `20 + 2×10 + 2×2.5`. Only when the exercise declares a `barWeightKg`, so a
  *     machine, a dumbbell and a cable stack never show one — a plate breakdown for
@@ -98,6 +108,14 @@ interface SetRowProps {
    * one the cursor is on. Rings the row in green — see the file header.
    */
   isUpNext?: boolean;
+  /**
+   * Open focus mode. Present ONLY on the up-next row — see the file header.
+   *
+   * When it is present it REPLACES this row's inline editor: the numbers and a
+   * long press both go to the sheet, whose ± nudge is the same chips at four
+   * times the size.
+   */
+  onOpenFocus?: () => void;
   /** Which field (if any) is currently open in the inline editor. */
   focusedField: SetField | null;
   /** This exercise is clock-driven: render the ▶. */
@@ -123,6 +141,7 @@ function SetRowComponent({
   unitSystem,
   isNext,
   isUpNext = false,
+  onOpenFocus,
   focusedField,
   isTimed = false,
   isTiming = false,
@@ -169,20 +188,40 @@ function SetRowComponent({
     onPressTimer?.();
   };
 
-  return (
-    <View
-      className={[
-        // `min-h` rather than a fixed `h-row`: the plate line adds 14 dp and only
-        // on the rows that have one, so a barbell card grows and a machine card is
-        // exactly the height it has always been. The ringed row takes the taller
-        // 64 dp, because its numbers are a size up — see the file header.
-        ring ? 'min-h-row-lg py-sm' : plateLabel ? 'min-h-row py-sm' : 'h-row',
-        'flex-row items-center px-lg',
-        // The primed row is the only one that lifts. Logged and later rows sit
-        // flush on the card so "next" is unambiguous at a glance.
-        isNext && !done ? 'bg-surface-alt' : 'bg-transparent',
-      ].join(' ')}
-    >
+  /**
+   * WHAT THE NUMBERS OPEN. The ringed row goes to focus mode; every other row
+   * opens its own inline editor, exactly as it always has.
+   */
+  const openWeight = ring && onOpenFocus ? onOpenFocus : () => onFocusField('weight');
+  const openCount = ring && onOpenFocus ? onOpenFocus : () => onFocusField('count');
+
+  const rowClass = [
+    // `min-h` rather than a fixed `h-row`: the plate line adds 14 dp and only
+    // on the rows that have one, so a barbell card grows and a machine card is
+    // exactly the height it has always been. The ringed row takes the taller
+    // 64 dp, because its numbers are a size up — see the file header.
+    ring ? 'min-h-row-lg py-sm' : plateLabel ? 'min-h-row py-sm' : 'h-row',
+    'flex-row items-center px-lg',
+    // The primed row is the only one that lifts. Logged and later rows sit
+    // flush on the card so "next" is unambiguous at a glance.
+    isNext && !done ? 'bg-surface-alt' : 'bg-transparent',
+  ].join(' ');
+
+  /*
+   * A LONG PRESS ON THE ROW ITSELF, and only the ringed one.
+   *
+   * The children are built ONCE and handed to whichever container this row needs,
+   * rather than through a component declared in here: a component defined during
+   * render is a new type on every render, and React would unmount and rebuild the
+   * whole row — four Pressables and an inline editor — every time the clock ticked.
+   *
+   * `onLongPress` with no `onPress`: the cells and the ✓ inside keep their own
+   * taps (a child Pressable wins the touch), and a short press on the row's empty
+   * middle does nothing, which is what it did before. The card header keeps the
+   * long press that lifts it for reordering — a row is not a reorder handle.
+   */
+  const rowChildren = (
+    <>
       {/* Set index — never a tap target, purely a landmark. `W` for a warm-up:
           see the file header. It goes green and up a size on the ringed row with
           the numbers beside it: it is the label OF those numbers, and a micro
@@ -207,7 +246,7 @@ function SetRowComponent({
               tone={valueTone}
               emphasis={ring}
               focused={focusedField === 'weight'}
-              onPress={() => onFocusField('weight')}
+              onPress={openWeight}
               accessibilityLabel={`Weight ${formatWeight(set.weightKg, unitSystem, exercise.loadMode)} ${unitLabel(unitSystem)}`}
             />
             {/* Micro, ink-faint, under the number it describes: it is reference,
@@ -235,7 +274,7 @@ function SetRowComponent({
         tone={valueTone}
         emphasis={ring}
         focused={focusedField === 'count'}
-        onPress={() => onFocusField('count')}
+        onPress={openCount}
         accessibilityLabel={`${set.count} ${countUnitLabel(exercise.countUnit)}`}
       />
 
@@ -301,7 +340,20 @@ function SetRowComponent({
           }}
         />
       ) : null}
-    </View>
+    </>
+  );
+
+  return ring && onOpenFocus ? (
+    <Pressable
+      onLongPress={onOpenFocus}
+      delayLongPress={280}
+      accessibilityHint="Long press for focus mode"
+      className={rowClass}
+    >
+      {rowChildren}
+    </Pressable>
+  ) : (
+    <View className={rowClass}>{rowChildren}</View>
   );
 }
 

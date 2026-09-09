@@ -55,6 +55,25 @@ module.exports = {
       // in the cell — past it the row starts clipping instead of shouting.
       'title-xl': ['30px', { lineHeight: '36px', letterSpacing: '-0.8px' }],
       display: ['40px', { lineHeight: '44px', letterSpacing: '-1.2px' }],
+      // The EIGHTH, NINTH and TENTH, and all three exist only inside focus mode
+      // (`components/FocusMode.tsx`) — the full-screen sheet where one fact owns
+      // the screen and there is no list, no pill and no header competing with it.
+      //
+      // `focus-work` is the set you are about to do: one step above `display` and
+      // less than half the clock, so the hierarchy between "what am I doing" and
+      // "how long until I do it" is never in doubt. Sized on the worst realistic
+      // line — `+120 kg × 12 reps` with its units left at `title` — which lands at
+      // 314 of the 328 dp a 360 dp phone has inside the gutter.
+      'focus-work': ['56px', { lineHeight: '60px', letterSpacing: '-1.6px' }],
+      // `focus-clock` is the countdown. `PillClock` keeps 84 on the session
+      // screen, where four controls share the row with it; this is the largest
+      // step that still keeps `10:00` inside the same 328 dp at weight 600.
+      'focus-clock': ['120px', { lineHeight: '118px', letterSpacing: '-4px' }],
+      // `focus-count` is the get-ready count — one digit, nothing beside it, read
+      // off the floor while you get into position under a bar. The pill's own
+      // `count` variant is 104 for exactly that job; this is the same idea with a
+      // whole screen instead of a pill.
+      'focus-count': ['160px', { lineHeight: '150px', letterSpacing: '-6px' }],
     },
     spacing: {
       0: '0px',
@@ -68,6 +87,19 @@ module.exports = {
       xl: '24px',
       xxl: '40px',
       hit: '44px', // minimum tap target
+      // THE THREE FOCUS-MODE TARGETS. Sized for a thumb that is not aiming: the
+      // phone is flat on a bench, the hand is coming from above, and the screen is
+      // read from two metres. `focus-done` is the widest circle that leaves the
+      // 16 dp gutter and still clears Android's swipe-up strip by 24 — 4× the area
+      // of `hit` and the only control on the screen while it is there.
+      'focus-done': '176px',
+      // `Finish workout` takes DONE's slot and deliberately not its geometry: the
+      // thumb finds it by position, the eye sees it has changed, and finishing is
+      // the one commit in this app that is not one tap to undo.
+      'focus-finish': '112px',
+      // `Start` / `Stop` / `✕` on a timed set: the floor for a control that is
+      // pressed mid-hold, and half of `focus-finish` so the two read as one family.
+      'focus-action': '96px',
       row: '56px', // set rows, list rows
       'row-lg': '64px', // editor / library rows (two lines of text)
       timer: '132px', // the timer pill's minimum height — keep in sync with `size.timer`

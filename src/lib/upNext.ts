@@ -52,17 +52,14 @@ export interface UpNext {
   setId: ID;
 }
 
-/**
- * The set to do next, or null when there is nothing left (or no session).
- *
- * Null on a finished session is what turns every glow off — the work is done, and
- * a mark pointing at the last logged set would read as "do this again".
- */
-export function upNextSet(session: DraftSession | null): UpNext | null {
-  if (!session) return null;
+interface FlatSet extends UpNext {
+  isCompleted: boolean;
+  completedAt: string | null;
+}
 
-  /* The session flattened into list order — the order a thumb moves down it. */
-  const flat: { entryId: ID; setId: ID; isCompleted: boolean; completedAt: string | null }[] = [];
+/** The session as one list, in the order a thumb moves down it. */
+function flatten(session: DraftSession): FlatSet[] {
+  const flat: FlatSet[] = [];
   for (const entry of session.entries) {
     for (const set of entry.sets) {
       flat.push({
@@ -73,14 +70,20 @@ export function upNextSet(session: DraftSession | null): UpNext | null {
       });
     }
   }
+  return flat;
+}
 
-  /*
-   * The most recently logged set. Ties, and rows old enough to have no
-   * `completedAt` at all, fall back to position: later in the list wins, which is
-   * the order they were almost certainly done in.
-   */
+/**
+ * Index of the most recently logged set, or −1 when nothing is logged.
+ *
+ * Ties, and rows old enough to carry no `completedAt` at all, fall back to
+ * position: later in the list wins, which is the order they were almost certainly
+ * done in.
+ */
+function lastLoggedIndex(flat: readonly FlatSet[]): number {
   let lastDone = -1;
   let lastAt: string | null = null;
+
   flat.forEach((row, index) => {
     if (!row.isCompleted) return;
     if (lastDone === -1) {
@@ -97,6 +100,35 @@ export function upNextSet(session: DraftSession | null): UpNext | null {
       lastAt = row.completedAt;
     }
   });
+
+  return lastDone;
+}
+
+/**
+ * The set logged most recently, or null when nothing has been logged yet.
+ *
+ * The other half of the rule above, and it is worth its own export: focus mode
+ * reads it to say what you are walking away FROM ("you were on wide pull-ups"),
+ * and `undo last set` takes back exactly this one.
+ */
+export function lastLoggedSet(session: DraftSession | null): UpNext | null {
+  if (!session) return null;
+  const flat = flatten(session);
+  const index = lastLoggedIndex(flat);
+  return index === -1 ? null : { entryId: flat[index].entryId, setId: flat[index].setId };
+}
+
+/**
+ * The set to do next, or null when there is nothing left (or no session).
+ *
+ * Null on a finished session is what turns every glow off — the work is done, and
+ * a mark pointing at the last logged set would read as "do this again".
+ */
+export function upNextSet(session: DraftSession | null): UpNext | null {
+  if (!session) return null;
+
+  const flat = flatten(session);
+  const lastDone = lastLoggedIndex(flat);
 
   /* Forward from the last ✓, then round again for anything skipped above it. */
   for (let i = lastDone + 1; i < flat.length; i += 1) {

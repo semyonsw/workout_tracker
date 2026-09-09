@@ -46,6 +46,7 @@ npm run lint             # also what CI runs, on every push
 | The clock, up top | one very big pill under the session header — an 84 pt countdown with its controls stacked underneath, readable from across the gym floor — shared by the rest countdown and the clock on a timed set. `−15`, `+15`, `⏸` and `Skip`; it names which rest it is running, and inverts to a green slab for the last ten seconds. The ± sets the rest for every set that follows, not just the one you are in |
 | Count-in | the last N seconds of any countdown tick out loud and land on a long tone. Off screen it is a pair of scheduled notifications carrying the app's own WAVs, because a JS interval does not survive Doze |
 | Timed sets | ▶ on the row: a get-ready count, then either a countdown that logs itself at the bell (a 2:00 plank, a boxing round) or an open hold you stop (a dead hang) |
+| Focus mode | the session screen with everything but the work taken away, one swipe deep: the set you are about to do at 56 pt with a 176 dp `DONE` under your thumb, and — the moment you press it — a 120 pt rest countdown with the next exercise, weight and reps named underneath, so you already know what to walk to before the clock runs out. A new machine says so in words and names the one you are leaving. Timed sets keep all four of their phases in here, ± chips change the numbers without leaving, and the rest keeps running if you swipe back out |
 | Training sequence | optional, off by default. Build an order — push → pull → push — and the home screen names the next one up and advances when you finish it. Off means invisible |
 | Routines | add, rename, reorder by long-press-and-slide, remove an exercise with the ✕ on its row, delete the routine |
 | The plan is editable | tap a row in the routine editor and it opens in place: sets, the rep range, and how long to rest, all on ± chips. Rest names which of the two it is using — this exercise's own, or your Settings value — and can be put back to following Settings |
@@ -141,7 +142,8 @@ src/lib/                    the decisions: overload, deload, set timer, count-in
                             balance, rest history, plates, warm-up, records,
                             reorder, completed workout, gyms, bodyweight log,
                             calendar, auto-backup, history, trends, shape, units,
-                            backup, csv, csv import — all
+                            backup, csv, csv import, up next, focus plan, set
+                            nudge, summary clamp — all
                             pure, all tested. Plus beeper/notify/feedback/health
                             connect, the wrappers around native side effects that
                             must

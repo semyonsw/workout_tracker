@@ -104,6 +104,26 @@
  * The cursor stays, and keeps the two jobs that are actually about the view: which
  * card is open, and which card the auto-scroll chases.
  *
+ * ── FOCUS MODE IS THIS SCREEN WITH EVERYTHING ELSE TAKEN AWAY ───────────────
+ *
+ * `components/FocusMode.tsx` — a sheet over this screen, opened from the `Focus`
+ * row in the open card or from the up-next row itself, holding the two facts this
+ * screen has to fit around a header, a pill and eighteen rows: the set you are
+ * about to do, and how long until you do it.
+ *
+ * It is a SHEET rather than a route because rest keeps running when you leave it,
+ * and this screen's own pill picks the countdown up mid-flight. Two things follow
+ * from that and both are here rather than in the sheet:
+ *
+ *   • `focusOpen` is screen-local and NOT persisted, for the same reason
+ *     `collapsedId` is not: reopening the app should show you the session, not the
+ *     fact that focus mode was open at some point.
+ *   • NO PILL RENDERS WHILE IT IS OPEN. `useRestTimer` and `useSetTimer` schedule
+ *     notifications, count the last seconds out loud and hold the keep-awake
+ *     lock; the sheet runs its own instance of each, and two live instances would
+ *     double all three. The deadline lives in the store, so the hand-off costs
+ *     nothing — see `FocusMode`'s header.
+ *
  * ── HOW THE DRAG WORKS ──────────────────────────────────────────────────────
  *
  * LONG PRESS, THEN SLIDE — `hooks/useDragReorder.ts`, shared with the routine
@@ -122,6 +142,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { ExerciseCard } from '../components/ExerciseCard';
 import { FinishSheet } from '../components/FinishSheet';
+import { FocusMode } from '../components/FocusMode';
 import { Icon } from '../components/Icon';
 import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -235,6 +256,8 @@ export function ActiveWorkoutScreen({
    * see the file header.
    */
   const [collapsedId, setCollapsedId] = useState<ID | null>(null);
+  /** Focus mode is open over this screen. See the file header. */
+  const [focusOpen, setFocusOpen] = useState(false);
 
   /* --- store bindings: one selector per slice, never the whole store --- */
   const session = useActiveWorkout((s) => s.session);
@@ -697,7 +720,7 @@ export function ActiveWorkoutScreen({
           Each renders null when it isn't running, so this is either one pill or
           nothing at all.
         */}
-        {setTimer ? <SetTimerPill /> : <RestTimerPill />}
+        {focusOpen ? null : setTimer ? <SetTimerPill /> : <RestTimerPill />}
 
         <ScrollView
           ref={scrollRef}
@@ -747,6 +770,12 @@ export function ActiveWorkoutScreen({
                        after the one last logged, which is not the same question as
                        "is it open" or "is it the cursor". See the file header. */
                     upNextSetId={upNext?.entryId === entry.localId ? upNext.setId : null}
+                    /* And the door into focus mode, on that same card only —
+                       focus mode always shows the work, so the row that opens it
+                       belongs where the work is. */
+                    onOpenFocus={
+                      upNext?.entryId === entry.localId ? () => setFocusOpen(true) : undefined
+                    }
                     unitSystem={unitSystem}
                     /* The bracket down a superset's left edge. Computed here
                        because only the screen can see the cards either side. */
@@ -816,6 +845,19 @@ export function ActiveWorkoutScreen({
           </View>
         </ScrollView>
       </View>
+
+      {/* FOCUS MODE. After the list so it covers it, before the sheets so
+          `FinishSheet` and `ConfirmSheet` still paint on top — pressing
+          `Finish workout` in the sheet opens the same sheet everything else
+          opens, over the top of it. */}
+      {focusOpen ? (
+        <FocusMode
+          unitSystem={unitSystem}
+          elapsedMinutes={isStarted ? elapsedMinutes : null}
+          onClose={() => setFocusOpen(false)}
+          onFinish={() => setConfirming('finish')}
+        />
+      ) : null}
 
       {confirming === 'finish' ? (
         <FinishSheet

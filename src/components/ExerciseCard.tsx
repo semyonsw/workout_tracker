@@ -126,6 +126,15 @@ interface ExerciseCardProps {
   isLifted?: boolean;
   /** Another card is being dragged, so this one is not the subject right now. */
   dimmed?: boolean;
+  /**
+   * Open focus mode on the session's next set.
+   *
+   * Only handed to the card that HOLDS that set (see `upNextSetId`), because focus
+   * mode always shows the work: a `Focus` row on a card you opened to read would
+   * take you somewhere else in the session, which is the same confusion the glow
+   * was moved off the cursor to avoid.
+   */
+  onOpenFocus?: () => void;
   /** Tap: open this card, or shut it when it is already the open one. */
   onToggleExpanded: () => void;
   /** Long press — the screen turns this into a drag. Absent = not reorderable. */
@@ -197,6 +206,7 @@ function ExerciseCardComponent({
   timingSetId = null,
   isLifted = false,
   dimmed = false,
+  onOpenFocus,
   onToggleExpanded,
   onLift,
   onToggleSet,
@@ -464,6 +474,9 @@ function ExerciseCardComponent({
                  one last logged (`lib/upNext.ts`), which on a card being read
                  rather than worked is no row at all. */
               isUpNext={set.localId === upNextSetId}
+              /* The two gestures on the up-next row — see `SetRow`. Passed only
+                 for that row, which is what scopes them to it. */
+              onOpenFocus={set.localId === upNextSetId ? onOpenFocus : undefined}
               focusedField={focus?.setId === set.localId ? focus.field : null}
               isTimed={isTimed}
               isTiming={timingSetId === set.localId}
@@ -585,6 +598,33 @@ function ExerciseCardComponent({
               <Text className="ml-sm text-label tabular-nums text-ink-muted">
                 Rest {formatClock(restSeconds)}
               </Text>
+            </Pressable>
+          </>
+        ) : null}
+
+        {/* FOCUS MODE, named. The two gestures that also open it — the up-next
+            row's numbers, and a long press on that row — are not discoverable on
+            their own, and every other affirmative action in this card is offered
+            as a row of exactly this shape.
+
+            Above `Remove exercise` and below `Rest`, with the other two
+            full-width affirmative rows, rather than at the very bottom: a control
+            you press mid-set should not sit under the one that deletes the
+            exercise. */}
+        {onOpenFocus ? (
+          <>
+            <View className="h-hairline bg-hairline" />
+            <Pressable
+              onPress={() => {
+                tap();
+                onOpenFocus();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Open focus mode on your next set"
+              className="h-row flex-row items-center justify-center"
+            >
+              <Icon name="play" size={14} color={palette.greenBright} />
+              <Text className="ml-sm text-label font-medium text-green-bright">Focus</Text>
             </Pressable>
           </>
         ) : null}

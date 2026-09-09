@@ -43,16 +43,8 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import { tap } from '../lib/feedback';
 import type { DraftSet } from '../lib/draft';
 import type { Exercise, UnitSystem } from '../types/models';
-import {
-  countStep,
-  countUnitLabel,
-  formatCount,
-  formatWeight,
-  kgToLb,
-  lbToKg,
-  unitLabel,
-  weightSteps,
-} from '../lib/units';
+import { nudgeSet, nudgeSteps } from '../lib/setNudge';
+import { countUnitLabel, formatCount, formatWeight, lbToKg, unitLabel } from '../lib/units';
 import type { SetField } from './SetRow';
 
 interface QuickAdjustProps {
@@ -85,9 +77,7 @@ export function QuickAdjust({
    * pattern off its unit's natural step — one rep and two, fifteen seconds and
    * thirty.
    */
-  const { fine, coarse } = isWeight
-    ? weightSteps(unitSystem)
-    : { fine: countStep(exercise.countUnit), coarse: countStep(exercise.countUnit) * 2 };
+  const { fine, coarse } = nudgeSteps(field, exercise.countUnit, unitSystem);
   const chips = [-coarse, -fine, fine, coarse];
 
   const displayValue = isWeight
@@ -99,24 +89,17 @@ export function QuickAdjust({
     if (typing) inputRef.current?.focus();
   }, [typing]);
 
-  /** Apply a relative nudge, clamped at zero and snapped to a loadable step. */
+  /**
+   * Apply a relative nudge — the arithmetic lives in `lib/setNudge.ts`.
+   *
+   * Extracted when focus mode grew the same chips at four times the size: which
+   * steps, whose units, what is clamped and what is deliberately NOT snapped are
+   * four decisions, and two screens holding their own copy of them is two screens
+   * that will eventually disagree about a half-kilo.
+   */
   const bump = (delta: number) => {
     tap();
-
-    if (isWeight) {
-      const currentDisplay =
-        set.weightKg == null ? 0 : unitSystem === 'imperial' ? kgToLb(set.weightKg) : set.weightKg;
-      /*
-       * Not snapped to any step. Snapping is what made a 0.5 chip useless on an
-       * exercise carrying a 2.5 kg increment — every tap rounded itself away.
-       * `toFixed(2)` only keeps 0.1-style float drift out of a 40 px numeral.
-       */
-      const nextDisplay = Math.max(0, Number((currentDisplay + delta).toFixed(2)));
-      onChange({ weightKg: unitSystem === 'imperial' ? lbToKg(nextDisplay) : nextDisplay });
-      return;
-    }
-
-    onChange({ count: Math.max(0, set.count + delta) });
+    onChange(nudgeSet(set, field, delta, unitSystem));
   };
 
   const commitTyped = () => {
