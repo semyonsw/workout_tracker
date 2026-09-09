@@ -16,15 +16,17 @@
  * list as they move through the gym, and can shut the list down to eight names when
  * what they want is the shape of the session rather than the numbers in it.
  *
- * ── OPEN IS NOT THE SAME AS CURRENT ─────────────────────────────────────────
+ * ── OPEN IS NOT THE SAME AS UP NEXT ─────────────────────────────────────────
  *
- * `isExpanded` is "this card is showing its sets". `isCurrent` is "the set you
- * should be doing is in this exercise" — the session's cursor, which the screen
- * owns. They usually agree, and the two moments they do not are exactly the two
- * moments the distinction earns itself: the user has shut the card they are on, and
- * the user is reading a card further down the list.
+ * `isExpanded` is "this card is showing its sets". `upNextSetId` is "the one set
+ * of the whole session that should happen next is this one, and it is in here" —
+ * a fact about the LOG, computed by `lib/upNext.ts` and handed down. They usually
+ * agree, and the two moments they do not are exactly the two moments the
+ * distinction earns itself: the user has shut the card they are on, and the user
+ * is reading a card further down the list. Opening a card to read it does not move
+ * the mark; only a ✓ does.
  *
- * A CURRENT CARD IS MARKED IN GREEN, and it is the same green in both states:
+ * THE CARD HOLDING THE NEXT SET IS MARKED IN GREEN, the same green in both states:
  *
  *   • Shut — the name goes `green-bright` and the card takes a green ring. With
  *     everything closed this is the only thing on screen saying where you are.
@@ -98,10 +100,14 @@ interface ExerciseCardProps {
   /** This card is showing its sets. At most one card in the list is. */
   isExpanded: boolean;
   /**
-   * The session's cursor is on this exercise — the next set to do is one of these.
-   * Not the same question as `isExpanded`; see the file header.
+   * THE session's next set, when it is one of this card's — otherwise null.
+   *
+   * Decided by `lib/upNext.ts` off what has been logged, not by which card is
+   * open: reaching down the list to read an exercise must not move the mark off
+   * the set you are about to do. Exactly one card in the list gets a non-null
+   * value, and it is the card that glows. See the file header.
    */
-  isCurrent: boolean;
+  upNextSetId?: ID | null;
   unitSystem: UnitSystem;
   /**
    * Where this card sits in a superset run. Computed by the screen, which is the
@@ -184,7 +190,7 @@ interface ExerciseCardProps {
 function ExerciseCardComponent({
   entry,
   isExpanded,
-  isCurrent,
+  upNextSetId = null,
   unitSystem,
   superset = 'none',
   availablePlatesKg,
@@ -235,9 +241,10 @@ function ExerciseCardComponent({
   /* ---------------------------------------------------------------- */
   if (!isExpanded) {
     /*
-     * The glow. Only on the CURRENT exercise, only while it still has a set left,
-     * and only while nothing is being dragged — a green ring on a dimmed card in a
-     * list where another card is in the air is two signals fighting.
+     * The glow. Only on the card holding the session's next set — which already
+     * means it has a set left — and only while nothing is being dragged: a green
+     * ring on a dimmed card in a list where another card is in the air is two
+     * signals fighting.
      *
      * `boxShadow` is the app's one deliberate exception to "exactly one shadow"
      * (`theme/tokens.ts`), and it is spent here because this mark has to be
@@ -245,7 +252,7 @@ function ExerciseCardComponent({
      * never instead of it: on a renderer that ignores it the green ring and the
      * green name still say everything.
      */
-    const glowing = isCurrent && !allDone && !isLifted && !dimmed;
+    const glowing = upNextSetId != null && !isLifted && !dimmed;
     return (
       <Pressable
         onPress={onToggleExpanded}
@@ -451,10 +458,12 @@ function ExerciseCardComponent({
               exercise={entry.exercise}
               unitSystem={unitSystem}
               isNext={set.localId === nextSetId}
-              /* The mark for "do this one". Only in the exercise the session's
-                 cursor is on — every card has a next row, only one has THE next
-                 row, and outlining all of them would mark nothing. */
-              isUpNext={isCurrent && set.localId === nextSetId}
+              /* The mark for "do this one". Every card has a next row; only one
+                 row in the session is THE next row, and outlining all of them
+                 would mark nothing. `upNextSetId` is that row — the set after the
+                 one last logged (`lib/upNext.ts`), which on a card being read
+                 rather than worked is no row at all. */
+              isUpNext={set.localId === upNextSetId}
               focusedField={focus?.setId === set.localId ? focus.field : null}
               isTimed={isTimed}
               isTiming={timingSetId === set.localId}

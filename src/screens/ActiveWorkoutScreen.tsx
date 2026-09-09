@@ -83,11 +83,26 @@
  * the new card opens, which is the behaviour that made one-card-at-a-time worth
  * having in the first place.
  *
- * A SHUT CARD THAT IS THE CURRENT ONE GLOWS. It has to: with everything closed the
+ * A SHUT CARD HOLDING THE NEXT SET GLOWS. It has to: with everything closed the
  * list is eight names and nothing else, and "where was I" is then a question the
- * user has to answer by remembering. `isCurrent` is that mark — the name goes
- * green-bright and the card takes a green ring, the same green the next set's row
- * outline uses inside the open card, because both mean THIS IS THE WORK.
+ * user has to answer by remembering. The name goes green-bright and the card takes
+ * a green ring, the same green the next set's row outline uses inside the open
+ * card, because both mean THIS IS THE WORK.
+ *
+ * ── AND THE GLOW IS NOT THE CURSOR ──────────────────────────────────────────
+ *
+ * It was, and that was the bug. `activeEntryId` moves when a card is TAPPED,
+ * because tapping an exercise is how you say "I'm doing this now" — so opening a
+ * card just to check what you lifted last week moved the glow onto that card, and
+ * the set you were actually about to do stopped being marked.
+ *
+ * So the mark is derived from the log instead: `upNextSet` (`lib/upNext.ts`) is the
+ * set after the one you last logged, and nothing but a ✓ can move it. Reordering
+ * the list moves it too — an exercise dragged in above the work genuinely is the
+ * next thing to do — which is exactly what the drag is promising.
+ *
+ * The cursor stays, and keeps the two jobs that are actually about the view: which
+ * card is open, and which card the auto-scroll chases.
  *
  * ── HOW THE DRAG WORKS ──────────────────────────────────────────────────────
  *
@@ -118,6 +133,7 @@ import { resolveRest } from '../lib/rest';
 import { describeLadderOutcomes, ladderOutcomes } from '../lib/repLadder';
 import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import { supersetPosition } from '../lib/superset';
+import { upNextSet } from '../lib/upNext';
 import { describeWarmup, warmupSets, type WarmupSet } from '../lib/warmup';
 import { beatSomething, recordsBeatenBy } from '../lib/records';
 import { formatCount, formatWeight, unitLabel } from '../lib/units';
@@ -375,6 +391,16 @@ export function ActiveWorkoutScreen({
   /** The one open card, or null when the user has shut the one they are on. */
   const expandedEntryId =
     activeEntryId != null && activeEntryId === collapsedId ? null : activeEntryId;
+
+  /**
+   * THE set of the whole session that glows — see the file header.
+   *
+   * Memoized on the session because it walks every set of every exercise, and this
+   * screen re-renders four times a second while a rest timer runs. The session's
+   * identity changes on every ✓ and every reorder, which is exactly when the
+   * answer can change.
+   */
+  const upNext = useMemo(() => upNextSet(session), [session]);
 
   const isStarted = session?.startedAt != null;
   const elapsedMinutes = useElapsedMinutes(session?.startedAt ?? null);
@@ -717,9 +743,10 @@ export function ActiveWorkoutScreen({
                   <ExerciseCard
                     entry={entry}
                     isExpanded={entry.localId === expandedEntryId}
-                    /* The cursor, which is not the same question as "is it open" —
-                       a shut card that is the current one is what glows. */
-                    isCurrent={entry.localId === activeEntryId}
+                    /* The glow, and only for the one card that holds it: the set
+                       after the one last logged, which is not the same question as
+                       "is it open" or "is it the cursor". See the file header. */
+                    upNextSetId={upNext?.entryId === entry.localId ? upNext.setId : null}
                     unitSystem={unitSystem}
                     /* The bracket down a superset's left edge. Computed here
                        because only the screen can see the cards either side. */

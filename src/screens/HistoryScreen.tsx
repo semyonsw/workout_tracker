@@ -87,6 +87,14 @@
  *    you actually compare between sessions, and reading a row of per-set counts is
  *    the one piece of mental arithmetic this screen used to make you do. Only when
  *    there was more than one set, because the total of one set is the set.
+ *  • AND NO SUMMARY MAY TAKE THE NAME'S HALF OF THE ROW. Seven held sets of
+ *    fifteen seconds is a legal shorthand and it is wider than the row, so the
+ *    name beside it collapsed to nothing — an exercise line with no exercise on
+ *    it. The summary is clamped to five values before it is rendered
+ *    (`lib/summaryClamp.ts`) with green dots after it, and opening the exercise —
+ *    the tap that lists every set one per line anyway — is what shows the whole
+ *    thing. The dots are inside the row's own Pressable: what they open is what
+ *    the row opens.
  *  • EVERY WORKOUT IS NUMBERED, AND THE NUMBERING IS YOURS. `Workout 92` is an
  *    ordinal, not an id: one workout is pinned to a number you type and every other
  *    one counts from it, forwards and backwards. That is what makes a log that
@@ -139,6 +147,7 @@ import {
 import { tap, undo } from '../lib/feedback';
 import { monthKey, type CompletedExercise, type CompletedWorkout } from '../lib/completedWorkout';
 import { clusterLabel } from '../lib/muscles';
+import { clampSummary } from '../lib/summaryClamp';
 import {
   countStep,
   countUnitLabel,
@@ -659,6 +668,9 @@ function WorkoutRow({
           {workout.exercises.map((exercise) => {
             const total = describeTotal(exercise);
             const listing = openExerciseId === exercise.exerciseId;
+            /* Bounded before it is rendered, so it can never take the name's
+               half of the row. Open, the row shows the whole thing. */
+            const clamped = clampSummary(exercise.summary);
             const rows = listing
               ? workout.sets
                   .filter((row) => row.exerciseId === exercise.exerciseId)
@@ -677,16 +689,45 @@ function WorkoutRow({
                   }}
                   accessibilityRole="button"
                   accessibilityState={{ expanded: listing }}
-                  accessibilityLabel={`${exercise.name}, ${exercise.summary}. Correct a set.`}
+                  accessibilityLabel={`${exercise.name}, ${exercise.summary}. ${
+                    clamped.hidden > 0 && !listing ? `Show all ${exercise.setCount} sets. ` : ''
+                  }Correct a set.`}
                   className="flex-row items-start px-lg py-sm"
                 >
-                  <Text numberOfLines={1} className="flex-1 pr-md text-label font-medium text-ink">
+                  {/* TWO LINES OF NAME, and a column no summary can take.
+
+                      The name used to be `flex-1` beside a column that sized
+                      itself to whatever the shorthand was, and an exercise with
+                      seven held sets rendered a row with NO NAME ON IT — see
+                      `lib/summaryClamp.ts`. `maxWidth` is inline because it is a
+                      percentage and the scale in `tailwind.config.js` is dp on
+                      purpose; this is the one place in the app where the split has
+                      to follow the phone's width rather than a step of the
+                      spacing scale. */}
+                  <Text numberOfLines={2} className="flex-1 pr-md text-label font-medium text-ink">
                     {exercise.name}
                   </Text>
-                  <View className="items-end">
-                    <Text className="text-label tabular-nums text-ink-muted">
-                      {exercise.summary}
-                    </Text>
+                  <View className="shrink items-end" style={{ maxWidth: '56%' }}>
+                    <View className="flex-row items-baseline">
+                      <Text
+                        /* Open, the summary is worth its full height: the rows
+                           under it are the same sets one per line, so a wrapped
+                           shorthand above them is a heading, not a wall. */
+                        numberOfLines={listing ? 3 : 1}
+                        className="shrink text-label tabular-nums text-ink-muted"
+                      >
+                        {listing ? exercise.summary : clamped.text}
+                      </Text>
+                      {/* THE DOTS. Green, because green is what a tap does in this
+                          app, and inside the row's own Pressable rather than a
+                          nested one — the thing they open is the thing the row
+                          opens. */}
+                      {clamped.hidden > 0 && !listing ? (
+                        <Text className="ml-xs text-body font-semibold leading-none text-green-bright">
+                          {'\u2026'}
+                        </Text>
+                      ) : null}
+                    </View>
                     {total ? (
                       <Text className="mt-[2px] text-micro font-semibold uppercase tabular-nums text-green-bright">
                         {total}
