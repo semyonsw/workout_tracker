@@ -59,6 +59,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Icon } from '../components/Icon';
+import { pressedStyle, Reveal } from '../components/motion';
 import { FieldWell, Kicker, ListCard, Separator } from '../components/primitives';
 import { describeShape } from '../lib/exerciseShape';
 import { buildMuscleTree, clusterLabel } from '../lib/muscles';
@@ -169,6 +170,7 @@ export function ExerciseLibraryScreen({
               onPress={() => onCreate(trimmed)}
               accessibilityRole="button"
               accessibilityLabel={`Create ${trimmed}`}
+              style={pressedStyle}
               className="mx-lg mt-xl h-row flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg"
             >
               <Icon name="plus" size={14} color={palette.greenBright} />
@@ -192,8 +194,9 @@ export function ExerciseLibraryScreen({
                     onPress={() => onToggleExpanded(clusterKey(node.cluster))}
                   />
 
-                  {open
-                    ? node.groups.map((group) => {
+                  {open ? (
+                    <Reveal>
+                      {node.groups.map((group) => {
                         const groupOpen = expanded.has(muscleKey(group.muscle));
                         return (
                           <View key={group.muscle}>
@@ -207,7 +210,7 @@ export function ExerciseLibraryScreen({
                             />
 
                             {groupOpen ? (
-                              <>
+                              <Reveal>
                                 {group.exercises.map((exercise) => (
                                   <View key={exercise.id}>
                                     <Separator inset={40} />
@@ -225,12 +228,13 @@ export function ExerciseLibraryScreen({
                                   muscle={group.muscle}
                                   onPress={() => onCreate('', group.muscle)}
                                 />
-                              </>
+                              </Reveal>
                             ) : null}
                           </View>
                         );
-                      })
-                    : null}
+                      })}
+                    </Reveal>
+                  ) : null}
                 </View>
               );
             })}
@@ -248,8 +252,9 @@ export function ExerciseLibraryScreen({
                   indent={0}
                   onPress={() => onToggleExpanded(UNFILED_KEY)}
                 />
-                {expanded.has(UNFILED_KEY)
-                  ? unfiled.map((exercise) => (
+                {expanded.has(UNFILED_KEY) ? (
+                  <Reveal>
+                    {unfiled.map((exercise) => (
                       <View key={exercise.id}>
                         <Separator inset={16} />
                         <ExerciseRow
@@ -259,8 +264,9 @@ export function ExerciseLibraryScreen({
                           onDelete={() => onDelete(exercise)}
                         />
                       </View>
-                    ))
-                  : null}
+                    ))}
+                  </Reveal>
+                ) : null}
               </View>
             ) : null}
           </ListCard>
@@ -274,6 +280,7 @@ export function ExerciseLibraryScreen({
             onPress={() => onCreate('')}
             accessibilityRole="button"
             accessibilityLabel="New exercise"
+            style={pressedStyle}
             className="mx-lg mt-lg h-row flex-row items-center justify-center rounded-surface border border-hairline bg-surface-alt"
           >
             <Icon name="plus" size={14} color={palette.greenBright} />
@@ -292,6 +299,7 @@ export function ExerciseLibraryScreen({
                     onPress={() => onPick(exercise.id)}
                     accessibilityRole="button"
                     accessibilityLabel={exercise.name}
+                    style={pressedStyle}
                     className="h-row flex-row items-center px-lg"
                   >
                     <Text numberOfLines={1} className="flex-1 text-body font-medium text-ink">
@@ -345,6 +353,7 @@ function DisclosureRow({
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
       accessibilityLabel={`${label}, ${count} ${count === 1 ? 'exercise' : 'exercises'}`}
+      style={pressedStyle}
       className={[
         'h-row flex-row items-center pr-lg',
         INDENT[indent],
@@ -405,6 +414,7 @@ function ExerciseRow({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={`${exercise.name}. ${shape}.`}
+        style={pressedStyle}
         className="flex-1 justify-center"
       >
         <Text numberOfLines={1} className="text-body font-medium text-ink">
@@ -423,6 +433,7 @@ function ExerciseRow({
         hitSlop={6}
         accessibilityRole="button"
         accessibilityLabel={`Delete ${exercise.name}`}
+        style={pressedStyle}
         className="h-hit w-hit items-center justify-center rounded-pill border border-hairline"
       >
         <Icon name="minus" size={16} color={palette.inkMuted} />
@@ -444,6 +455,7 @@ function AddToGroupRow({ muscle, onPress }: { muscle: MuscleGroup; onPress: () =
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Add an exercise to ${muscle}`}
+      style={pressedStyle}
       className="h-row flex-row items-center pl-[48px] pr-lg"
     >
       <Icon name="plus" size={14} color={palette.greenBright} />

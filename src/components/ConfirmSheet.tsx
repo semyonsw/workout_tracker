@@ -20,11 +20,15 @@
  * that the SAFE answer is bigger, lower, and also the whole scrim.
  */
 
-import { Pressable, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Easing, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { palette } from '../theme/tokens';
 import { PrimaryButton } from './primitives';
+
+/** Matches `FocusMode.tsx`'s `EASING`. */
+const EASING = Easing.bezier(0.2, 0.8, 0.2, 1);
 
 interface ConfirmSheetProps {
   /** "Delete “Weighted dips”?" — a question, naming the actual subject. */
@@ -47,31 +51,67 @@ export function ConfirmSheet({
 }: ConfirmSheetProps) {
   const insets = useSafeAreaInsets();
 
+  /* Scrim fades in; the sheet fades and rises the last 24dp under it — the same
+     `EASING` as everything else that arrives, at the design's own 260ms. Both
+     run once, on mount: this component exists only while the question is being
+     asked, so there is no later render to guard against replaying it. */
+  const scrim = useRef(new Animated.Value(0)).current;
+  const sheet = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(scrim, {
+      toValue: 1,
+      duration: 180,
+      easing: EASING,
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(sheet, {
+      toValue: 1,
+      duration: 260,
+      easing: EASING,
+      useNativeDriver: true,
+    }).start();
+  }, [scrim, sheet]);
+
   return (
     <View className="absolute inset-0" accessibilityViewIsModal>
       {/* Tapping the scrim is the safe answer: the easy gesture is never the
           irreversible one, even when the easy gesture is a mis-tap. */}
-      <Pressable
+      {/* `style`, not `className`: NativeWind's classes don't reach a node
+          wrapped by `Animated.createAnimatedComponent` — see `FocusRest.tsx`. */}
+      <AnimatedPressable
         onPress={onCancel}
         accessibilityRole="button"
         accessibilityLabel={cancelLabel}
-        className="flex-1"
-        style={{ backgroundColor: palette.scrim }}
+        style={{ flex: 1, backgroundColor: palette.scrim, opacity: scrim }}
       />
 
-      <View
-        style={{ paddingBottom: insets.bottom + 16 }}
-        className="rounded-t-surface border-t border-t-hairline bg-surface px-lg pt-xl"
+      {/* The animated node only carries the transform: NativeWind's classes
+          don't reach it, so the actual surface is the static `View` inside —
+          same split `FocusMode.tsx` uses. */}
+      <Animated.View
+        style={{
+          opacity: sheet,
+          transform: [
+            { translateY: sheet.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) },
+          ],
+        }}
       >
-        <Text className="text-title font-medium text-ink">{title}</Text>
-        {body ? <Text className="mt-sm text-body text-ink-muted">{body}</Text> : null}
+        <View
+          style={{ paddingBottom: insets.bottom + 16 }}
+          className="rounded-t-surface border-t border-t-hairline bg-surface px-lg pt-xl"
+        >
+          <Text className="text-title font-medium text-ink">{title}</Text>
+          {body ? <Text className="mt-sm text-body text-ink-muted">{body}</Text> : null}
 
-        <View className="mt-xl">
-          <PrimaryButton label={confirmLabel} onPress={onConfirm} />
-          <View className="h-sm" />
-          <PrimaryButton label={cancelLabel} variant="ghost" onPress={onCancel} />
+          <View className="mt-xl">
+            <PrimaryButton label={confirmLabel} onPress={onConfirm} />
+            <View className="h-sm" />
+            <PrimaryButton label={cancelLabel} variant="ghost" onPress={onCancel} />
+          </View>
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 }
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);

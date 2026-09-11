@@ -27,6 +27,7 @@ import { BackHandler, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
+import { PanelEnter } from '../components/motion';
 import { PrimaryButton } from '../components/primitives';
 import { Segmented } from '../components/primitives';
 import { TabBar, type TabName } from '../components/TabBar';
@@ -925,7 +926,10 @@ export function AppShell() {
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
 
-      <View className="flex-1">
+      {/* Keyed on the tab, so switching roots remounts this and the arrival
+          replays — the same panel never re-enters just because something inside
+          it re-rendered. See `components/motion.ts`. */}
+      <PanelEnter key={tab} style={{ flex: 1 }}>
         {tab === 'Today' ? (
           <HomeScreen
             inProgress={inProgress}
@@ -1003,7 +1007,7 @@ export function AppShell() {
         ) : null}
 
         {tab === 'Settings' ? <SettingsScreen /> : null}
-      </View>
+      </PanelEnter>
 
       <TabBar active={tab} onSelect={setTab} />
     </View>

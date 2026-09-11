@@ -22,6 +22,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { palette } from '../theme/tokens';
 import { Icon } from './Icon';
+import { pressedStyle } from './motion';
 
 /* ------------------------------------------------------------------ */
 /* Structure                                                           */
@@ -132,7 +133,12 @@ export function SettingRow({
 
   if (!onPress) return body;
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={pressedStyle}
+    >
       {body}
     </Pressable>
   );
@@ -189,6 +195,7 @@ export function StepButton({
       hitSlop={4}
       accessibilityRole="button"
       accessibilityLabel={label}
+      style={pressedStyle}
       className="h-[36px] w-[36px] items-center justify-center rounded-pill border border-hairline bg-surface-alt"
     >
       <Icon name={icon} size={14} color={palette.ink} />
@@ -215,6 +222,7 @@ export function AddRow({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      style={pressedStyle}
       className="h-row flex-row items-center justify-center"
     >
       <Icon name="plus" size={14} color={green ? palette.greenBright : palette.inkFaint} />
@@ -321,6 +329,7 @@ export function FieldWell({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      style={pressedStyle}
       className={box}
     >
       <Text className={textClass}>{value}</Text>
@@ -368,6 +377,7 @@ export function NumericWell({
           ? `${label} ${value} ${unit ?? ''}, adjust`.replace(/\s+/g, ' ').trim()
           : `${label} ${value} ${unit ?? ''}`.replace(/\s+/g, ' ').trim()
       }
+      style={onPress ? pressedStyle : undefined}
       className={[
         'h-well flex-1 justify-between rounded-surface border bg-surface-alt px-lg py-md',
         selected ? 'border-green-bright' : 'border-hairline',
@@ -431,6 +441,7 @@ export function Segmented<T extends string>({
             accessibilityRole="radio"
             accessibilityState={{ selected }}
             accessibilityLabel={option.label}
+            style={pressedStyle}
             className={[
               'h-[36px] flex-1 items-center justify-center rounded-pill',
               selected ? 'bg-green' : '',
@@ -479,6 +490,7 @@ export function SelectChip({
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={label}
+      style={pressedStyle}
       className={[
         'mb-sm mr-sm h-[36px] items-center justify-center rounded-pill px-lg',
         selected ? 'bg-green' : 'border border-hairline bg-surface',
@@ -517,6 +529,7 @@ export function Toggle({
       accessibilityState={{ checked: value }}
       accessibilityLabel={accessibilityLabel}
       hitSlop={8}
+      style={pressedStyle}
       className={[
         'h-[32px] w-[52px] justify-center rounded-pill px-xs',
         value ? 'items-end bg-green' : 'items-start bg-hairline',
@@ -550,6 +563,7 @@ export function PrimaryButton({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      style={pressedStyle}
       className={[
         'h-row items-center justify-center rounded-pill',
         primary ? 'bg-green' : 'border border-hairline bg-surface-alt',
@@ -584,6 +598,7 @@ export function TextButton({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      style={pressedStyle}
       className="h-row items-center justify-center"
     >
       <Text

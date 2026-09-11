@@ -21,6 +21,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '../components/Icon';
+import { pressedStyle } from '../components/motion';
 import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
 import { describeItemsFocus } from '../lib/muscles';
 import { palette } from '../theme/tokens';
@@ -62,6 +63,7 @@ export function RoutineListScreen({
             onPress={onOpenSequence}
             accessibilityRole="button"
             accessibilityLabel="Training sequence"
+            style={pressedStyle}
             className="h-row-lg flex-row items-center px-lg"
           >
             <View className="flex-1 pr-md">
@@ -91,6 +93,7 @@ export function RoutineListScreen({
                     onPress={() => onOpen(routine.id)}
                     accessibilityRole="button"
                     accessibilityLabel={`Edit ${routine.name}`}
+                    style={pressedStyle}
                     className="h-row-lg flex-1 flex-row items-center pl-lg"
                   >
                     <View className="flex-1">
@@ -116,6 +119,7 @@ export function RoutineListScreen({
                       onPress={() => onStartWorkout(routine.id)}
                       accessibilityRole="button"
                       accessibilityLabel={`Open ${routine.name} as a workout`}
+                      style={pressedStyle}
                       className="h-row-lg w-[52px] items-center justify-center"
                     >
                       <View className="h-[32px] w-[32px] items-center justify-center rounded-pill border border-hairline bg-surface-alt">

@@ -126,6 +126,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { Icon } from '../components/Icon';
+import { pressedStyle, Reveal } from '../components/motion';
 import { NumberSheet } from '../components/NumberSheet';
 import { ScreenHeader } from '../components/ScreenHeader';
 import {
@@ -626,6 +627,7 @@ function WorkoutRow({
         ]
           .filter(Boolean)
           .join(' ')}
+        style={pressedStyle}
         className="min-h-[64px] flex-row items-center px-lg py-md"
       >
         {/* The ordinal is its own left column so the numbers line up down the
@@ -664,37 +666,39 @@ function WorkoutRow({
       </Pressable>
 
       {isOpen ? (
-        <View className="bg-surface-alt pb-sm">
-          {workout.exercises.map((exercise) => {
-            const total = describeTotal(exercise);
-            const listing = openExerciseId === exercise.exerciseId;
-            /* Bounded before it is rendered, so it can never take the name's
+        <Reveal>
+          <View className="bg-surface-alt pb-sm">
+            {workout.exercises.map((exercise) => {
+              const total = describeTotal(exercise);
+              const listing = openExerciseId === exercise.exerciseId;
+              /* Bounded before it is rendered, so it can never take the name's
                half of the row. Open, the row shows the whole thing. */
-            const clamped = clampSummary(exercise.summary);
-            const rows = listing
-              ? workout.sets
-                  .filter((row) => row.exerciseId === exercise.exerciseId)
-                  .sort((a, b) => a.setIndex - b.setIndex)
-              : [];
+              const clamped = clampSummary(exercise.summary);
+              const rows = listing
+                ? workout.sets
+                    .filter((row) => row.exerciseId === exercise.exerciseId)
+                    .sort((a, b) => a.setIndex - b.setIndex)
+                : [];
 
-            return (
-              <View key={`${exercise.exerciseId}-${exercise.name}`}>
-                <Pressable
-                  onPress={() => {
-                    tap();
-                    setEditing(null);
-                    setOpenExerciseId((current) =>
-                      current === exercise.exerciseId ? null : exercise.exerciseId,
-                    );
-                  }}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: listing }}
-                  accessibilityLabel={`${exercise.name}, ${exercise.summary}. ${
-                    clamped.hidden > 0 && !listing ? `Show all ${exercise.setCount} sets. ` : ''
-                  }Correct a set.`}
-                  className="flex-row items-start px-lg py-sm"
-                >
-                  {/* TWO LINES OF NAME, and a column no summary can take.
+              return (
+                <View key={`${exercise.exerciseId}-${exercise.name}`}>
+                  <Pressable
+                    onPress={() => {
+                      tap();
+                      setEditing(null);
+                      setOpenExerciseId((current) =>
+                        current === exercise.exerciseId ? null : exercise.exerciseId,
+                      );
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: listing }}
+                    accessibilityLabel={`${exercise.name}, ${exercise.summary}. ${
+                      clamped.hidden > 0 && !listing ? `Show all ${exercise.setCount} sets. ` : ''
+                    }Correct a set.`}
+                    style={pressedStyle}
+                    className="flex-row items-start px-lg py-sm"
+                  >
+                    {/* TWO LINES OF NAME, and a column no summary can take.
 
                       The name used to be `flex-1` beside a column that sized
                       itself to whatever the shorthand was, and an exercise with
@@ -704,65 +708,70 @@ function WorkoutRow({
                       purpose; this is the one place in the app where the split has
                       to follow the phone's width rather than a step of the
                       spacing scale. */}
-                  <Text numberOfLines={2} className="flex-1 pr-md text-label font-medium text-ink">
-                    {exercise.name}
-                  </Text>
-                  <View className="shrink items-end" style={{ maxWidth: '56%' }}>
-                    <View className="flex-row items-baseline">
-                      <Text
-                        /* Open, the summary is worth its full height: the rows
+                    <Text
+                      numberOfLines={2}
+                      className="flex-1 pr-md text-label font-medium text-ink"
+                    >
+                      {exercise.name}
+                    </Text>
+                    <View className="shrink items-end" style={{ maxWidth: '56%' }}>
+                      <View className="flex-row items-baseline">
+                        <Text
+                          /* Open, the summary is worth its full height: the rows
                            under it are the same sets one per line, so a wrapped
                            shorthand above them is a heading, not a wall. */
-                        numberOfLines={listing ? 3 : 1}
-                        className="shrink text-label tabular-nums text-ink-muted"
-                      >
-                        {listing ? exercise.summary : clamped.text}
-                      </Text>
-                      {/* THE DOTS. Green, because green is what a tap does in this
+                          numberOfLines={listing ? 3 : 1}
+                          className="shrink text-label tabular-nums text-ink-muted"
+                        >
+                          {listing ? exercise.summary : clamped.text}
+                        </Text>
+                        {/* THE DOTS. Green, because green is what a tap does in this
                           app, and inside the row's own Pressable rather than a
                           nested one — the thing they open is the thing the row
                           opens. */}
-                      {clamped.hidden > 0 && !listing ? (
-                        <Text className="ml-xs text-body font-semibold leading-none text-green-bright">
-                          {'\u2026'}
+                        {clamped.hidden > 0 && !listing ? (
+                          <Text className="ml-xs text-body font-semibold leading-none text-green-bright">
+                            {'\u2026'}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {total ? (
+                        <Text className="mt-[2px] text-micro font-semibold uppercase tabular-nums text-green-bright">
+                          {total}
                         </Text>
                       ) : null}
                     </View>
-                    {total ? (
-                      <Text className="mt-[2px] text-micro font-semibold uppercase tabular-nums text-green-bright">
-                        {total}
-                      </Text>
-                    ) : null}
-                  </View>
-                </Pressable>
+                  </Pressable>
 
-                {/* The logged rows, one correctable at a time. See the header. */}
-                {listing
-                  ? rows.map((row, index) => (
-                      <LoggedSetRow
-                        key={row.id}
-                        row={row}
-                        number={index + 1}
-                        unitSystem={unitSystem}
-                        editing={editing?.setId === row.id ? editing.field : null}
-                        onFocusField={(field) =>
-                          setEditing((current) =>
-                            current?.setId === row.id && current.field === field
-                              ? null
-                              : { setId: row.id, field },
-                          )
-                        }
-                        onChange={(patch) => onEditSet(row.id, patch)}
-                        onRemove={() => {
-                          if (onDeleteSet(row.id)) setEditing(null);
-                        }}
-                        onDone={() => setEditing(null)}
-                        canRemove={workout.sets.length > 1}
-                      />
-                    ))
-                  : null}
+                  {/* The logged rows, one correctable at a time. See the header. */}
+                  {listing ? (
+                    <Reveal>
+                      {rows.map((row, index) => (
+                        <LoggedSetRow
+                          key={row.id}
+                          row={row}
+                          number={index + 1}
+                          unitSystem={unitSystem}
+                          editing={editing?.setId === row.id ? editing.field : null}
+                          onFocusField={(field) =>
+                            setEditing((current) =>
+                              current?.setId === row.id && current.field === field
+                                ? null
+                                : { setId: row.id, field },
+                            )
+                          }
+                          onChange={(patch) => onEditSet(row.id, patch)}
+                          onRemove={() => {
+                            if (onDeleteSet(row.id)) setEditing(null);
+                          }}
+                          onDone={() => setEditing(null)}
+                          canRemove={workout.sets.length > 1}
+                        />
+                      ))}
+                    </Reveal>
+                  ) : null}
 
-                {/* THE TWO STRUCTURAL EDITS, and only on the exercise whose rows
+                  {/* THE TWO STRUCTURAL EDITS, and only on the exercise whose rows
                     are open — which is the exercise the user is looking at, and
                     the only one for which "one more set" is unambiguous.
 
@@ -770,62 +779,67 @@ function WorkoutRow({
                     the reason a set row's ✕ can stay a single tap. `Remove
                     exercise` is `ink-faint` rather than green because it takes
                     something away, the same weight `Delete this workout` has. */}
-                {listing ? (
-                  <View className="flex-row px-lg pb-sm">
-                    <Pressable
-                      onPress={() => {
-                        tap();
-                        onAddSet(exercise.exerciseId);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Add a set to ${exercise.name}`}
-                      className="h-hit flex-1 justify-center"
-                    >
-                      <Text className="text-label font-medium text-green-bright">+ Add a set</Text>
-                    </Pressable>
-
-                    {exerciseCount > 1 ? (
+                  {listing ? (
+                    <View className="flex-row px-lg pb-sm">
                       <Pressable
                         onPress={() => {
-                          undo();
-                          if (onRemoveExercise(exercise.exerciseId)) {
-                            setOpenExerciseId(null);
-                            setEditing(null);
-                          }
+                          tap();
+                          onAddSet(exercise.exerciseId);
                         }}
                         accessibilityRole="button"
-                        accessibilityLabel={`Remove ${exercise.name} from this workout`}
-                        className="h-hit justify-center"
+                        accessibilityLabel={`Add a set to ${exercise.name}`}
+                        style={pressedStyle}
+                        className="h-hit flex-1 justify-center"
                       >
-                        <Text className="text-label font-medium text-ink-faint">
-                          Remove exercise
+                        <Text className="text-label font-medium text-green-bright">
+                          + Add a set
                         </Text>
                       </Pressable>
-                    ) : null}
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
 
-          {/* An exercise the session missed, or one removed by mistake. Above the
+                      {exerciseCount > 1 ? (
+                        <Pressable
+                          onPress={() => {
+                            undo();
+                            if (onRemoveExercise(exercise.exerciseId)) {
+                              setOpenExerciseId(null);
+                              setEditing(null);
+                            }
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${exercise.name} from this workout`}
+                          style={pressedStyle}
+                          className="h-hit justify-center"
+                        >
+                          <Text className="text-label font-medium text-ink-faint">
+                            Remove exercise
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+
+            {/* An exercise the session missed, or one removed by mistake. Above the
               edit block because it is about the CONTENT of the workout, which is
               what everything above it is too. */}
-          {onAddExercise ? (
-            <Pressable
-              onPress={() => {
-                tap();
-                onAddExercise();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Add an exercise to this workout"
-              className="h-hit justify-center px-lg"
-            >
-              <Text className="text-label font-medium text-green-bright">+ Add an exercise</Text>
-            </Pressable>
-          ) : null}
+            {onAddExercise ? (
+              <Pressable
+                onPress={() => {
+                  tap();
+                  onAddExercise();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Add an exercise to this workout"
+                style={pressedStyle}
+                className="h-hit justify-center px-lg"
+              >
+                <Text className="text-label font-medium text-green-bright">+ Add an exercise</Text>
+              </Pressable>
+            ) : null}
 
-          {/* WHAT THE WORKOUT IS: its name, when it happened, how long it took.
+            {/* WHAT THE WORKOUT IS: its name, when it happened, how long it took.
 
               Behind one row, because history is read far more often than it is
               corrected. Every control in here is the app's own ± idiom rather than
@@ -834,112 +848,116 @@ function WorkoutRow({
               make to a finished session are small ones — a day out because it ran
               past midnight, an hour because the phone was in a bag, a duration
               that kept counting on the walk home. */}
-          <Pressable
-            onPress={() => {
-              tap();
-              setDraftTitle(workout.title);
-              setEditingWorkout((open) => !open);
-            }}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: editingWorkout }}
-            accessibilityLabel={`Edit the name, date and length of ${workout.title}`}
-            className="h-hit justify-center px-lg"
-          >
-            <Text className="text-label font-medium text-green-bright">
-              {editingWorkout ? 'Done editing' : 'Edit name, date and length'}
-            </Text>
-          </Pressable>
+            <Pressable
+              onPress={() => {
+                tap();
+                setDraftTitle(workout.title);
+                setEditingWorkout((open) => !open);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: editingWorkout }}
+              accessibilityLabel={`Edit the name, date and length of ${workout.title}`}
+              style={pressedStyle}
+              className="h-hit justify-center px-lg"
+            >
+              <Text className="text-label font-medium text-green-bright">
+                {editingWorkout ? 'Done editing' : 'Edit name, date and length'}
+              </Text>
+            </Pressable>
 
-          {editingWorkout ? (
-            <View className="px-lg pb-sm">
-              <Kicker className="mb-sm">Name</Kicker>
-              <FieldWell
-                value={draftTitle}
-                placeholder="Workout name"
-                onChangeText={setDraftTitle}
-                /*
-                 * Committed on BLUR, not on every keystroke. Every write here
-                 * recomputes the record and re-sorts the log, and doing that once
-                 * per typed character would rebuild the list under the keyboard.
-                 */
-                onBlur={() => onEditWorkout({ title: draftTitle })}
-                accessibilityLabel="Workout name"
-              />
+            {editingWorkout ? (
+              <View className="px-lg pb-sm">
+                <Kicker className="mb-sm">Name</Kicker>
+                <FieldWell
+                  value={draftTitle}
+                  placeholder="Workout name"
+                  onChangeText={setDraftTitle}
+                  /*
+                   * Committed on BLUR, not on every keystroke. Every write here
+                   * recomputes the record and re-sorts the log, and doing that once
+                   * per typed character would rebuild the list under the keyboard.
+                   */
+                  onBlur={() => onEditWorkout({ title: draftTitle })}
+                  accessibilityLabel="Workout name"
+                />
 
-              <View className="mt-md overflow-hidden rounded-surface border border-hairline bg-surface">
-                <StepperRow
-                  label="Date"
-                  hint="Every set in this workout moves with it"
-                  value={formatShortDate(workout.startedAt)}
-                  onDecrease={() => {
-                    tap();
-                    onEditWorkout({ shiftMinutes: -MINUTES_PER_DAY });
-                  }}
-                  onIncrease={() => {
-                    tap();
-                    onEditWorkout({ shiftMinutes: MINUTES_PER_DAY });
-                  }}
-                />
-                <Separator />
-                <StepperRow
-                  label="Started"
-                  value={formatTimeOfDay(workout.startedAt)}
-                  onDecrease={() => {
-                    tap();
-                    onEditWorkout({ shiftMinutes: -TIME_STEP_MINUTES });
-                  }}
-                  onIncrease={() => {
-                    tap();
-                    onEditWorkout({ shiftMinutes: TIME_STEP_MINUTES });
-                  }}
-                />
-                <Separator />
-                <StepperRow
-                  label="Took"
-                  value={`${workout.durationMinutes} min`}
-                  onDecrease={() => {
-                    tap();
-                    onEditWorkout({
-                      durationMinutes: workout.durationMinutes - DURATION_LIMITS.step,
-                    });
-                  }}
-                  onIncrease={() => {
-                    tap();
-                    onEditWorkout({
-                      durationMinutes: workout.durationMinutes + DURATION_LIMITS.step,
-                    });
-                  }}
-                />
+                <View className="mt-md overflow-hidden rounded-surface border border-hairline bg-surface">
+                  <StepperRow
+                    label="Date"
+                    hint="Every set in this workout moves with it"
+                    value={formatShortDate(workout.startedAt)}
+                    onDecrease={() => {
+                      tap();
+                      onEditWorkout({ shiftMinutes: -MINUTES_PER_DAY });
+                    }}
+                    onIncrease={() => {
+                      tap();
+                      onEditWorkout({ shiftMinutes: MINUTES_PER_DAY });
+                    }}
+                  />
+                  <Separator />
+                  <StepperRow
+                    label="Started"
+                    value={formatTimeOfDay(workout.startedAt)}
+                    onDecrease={() => {
+                      tap();
+                      onEditWorkout({ shiftMinutes: -TIME_STEP_MINUTES });
+                    }}
+                    onIncrease={() => {
+                      tap();
+                      onEditWorkout({ shiftMinutes: TIME_STEP_MINUTES });
+                    }}
+                  />
+                  <Separator />
+                  <StepperRow
+                    label="Took"
+                    value={`${workout.durationMinutes} min`}
+                    onDecrease={() => {
+                      tap();
+                      onEditWorkout({
+                        durationMinutes: workout.durationMinutes - DURATION_LIMITS.step,
+                      });
+                    }}
+                    onIncrease={() => {
+                      tap();
+                      onEditWorkout({
+                        durationMinutes: workout.durationMinutes + DURATION_LIMITS.step,
+                      });
+                    }}
+                  />
+                </View>
               </View>
-            </View>
-          ) : null}
+            ) : null}
 
-          {/* Renumbering sits above delete because it is the one you actually
+            {/* Renumbering sits above delete because it is the one you actually
               reach for, and both are inside the open row for the same reason:
               you read what the workout was before you touch it. */}
-          <Pressable
-            onPress={onEditNumber}
-            accessibilityRole="button"
-            accessibilityLabel={
-              numbered ? `Change the number of workout ${number}` : "Set this workout's number"
-            }
-            className="h-hit justify-center px-lg"
-          >
-            <Text className="text-label font-medium text-green-bright">
-              {numbered ? `Workout number: ${number}` : 'Set the workout number'}
-            </Text>
-          </Pressable>
+            <Pressable
+              onPress={onEditNumber}
+              accessibilityRole="button"
+              accessibilityLabel={
+                numbered ? `Change the number of workout ${number}` : "Set this workout's number"
+              }
+              style={pressedStyle}
+              className="h-hit justify-center px-lg"
+            >
+              <Text className="text-label font-medium text-green-bright">
+                {numbered ? `Workout number: ${number}` : 'Set the workout number'}
+              </Text>
+            </Pressable>
 
-          {/* No red, and not a swipe: see the file header. */}
-          <Pressable
-            onPress={onDelete}
-            accessibilityRole="button"
-            accessibilityLabel={`Delete the ${workout.title} workout`}
-            className="h-hit justify-center px-lg"
-          >
-            <Text className="text-label font-medium text-ink-faint">Delete this workout</Text>
-          </Pressable>
-        </View>
+            {/* No red, and not a swipe: see the file header. */}
+            <Pressable
+              onPress={onDelete}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete the ${workout.title} workout`}
+              style={pressedStyle}
+              className="h-hit justify-center px-lg"
+            >
+              <Text className="text-label font-medium text-ink-faint">Delete this workout</Text>
+            </Pressable>
+          </View>
+        </Reveal>
       ) : null}
     </View>
   );
@@ -1092,6 +1110,7 @@ function LoggedSetRow({
             hitSlop={6}
             accessibilityRole="button"
             accessibilityLabel={`Correct the weight, ${formatWeight(row.weightKg, unitSystem, row.loadMode)} ${unitLabel(unitSystem)}`}
+            style={pressedStyle}
             className={[
               'min-w-[76px] flex-row items-baseline',
               editing === 'weight' ? 'rounded-surface bg-surface px-xs' : '',
@@ -1111,6 +1130,7 @@ function LoggedSetRow({
           hitSlop={6}
           accessibilityRole="button"
           accessibilityLabel={`Correct the count, ${formatCount(row.count, row.countUnit)} ${countUnitLabel(row.countUnit)}`}
+          style={pressedStyle}
           className={[
             'ml-md min-w-[76px] flex-row items-baseline',
             editing === 'count' ? 'rounded-surface bg-surface px-xs' : '',
@@ -1145,6 +1165,7 @@ function LoggedSetRow({
                 hitSlop={6}
                 accessibilityRole="button"
                 accessibilityLabel={`${delta > 0 ? 'Add' : 'Subtract'} ${Math.abs(delta)}`}
+                style={pressedStyle}
                 className="h-hit min-w-[52px] items-center justify-center rounded-pill border border-hairline bg-surface-alt"
               >
                 <Text className="text-label font-medium tabular-nums text-ink">
@@ -1163,6 +1184,7 @@ function LoggedSetRow({
                 hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel="Remove this set from the workout"
+                style={pressedStyle}
                 className="h-hit justify-center"
               >
                 <Text className="text-label font-medium text-ink-muted">Remove set</Text>
@@ -1176,6 +1198,7 @@ function LoggedSetRow({
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Done correcting"
+              style={pressedStyle}
               className="h-hit justify-center"
             >
               <Text className="text-label font-semibold text-green-bright">Done</Text>

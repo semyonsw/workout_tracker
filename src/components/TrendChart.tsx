@@ -24,12 +24,26 @@
  * `hairline` because it is structure, not data.
  */
 
-import { View } from 'react-native';
+import { useEffect, useMemo, useRef } from 'react';
+import { Animated, Easing, View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 
 import { formatChartDate } from '../lib/units';
 import type { TrendPoint } from '../lib/trends';
 import { palette } from '../theme/tokens';
+
+const AnimatedPolyline = Animated.createAnimatedComponent(Polyline);
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+/** Matches `FocusMode.tsx`'s `EASING`. */
+const EASING = Easing.bezier(0.2, 0.8, 0.2, 1);
+/**
+ * The dash a `strokeDashoffset` animation reveals the polyline through — the
+ * same technique the design's `drawLine` keyframe uses. Not the line's actual
+ * length: it only has to be longer than any path this fixed 342×160 box can
+ * draw, so the offset can run the whole thing to 0 without a real measurement.
+ */
+const DRAW_LENGTH = 1000;
 
 /** Rounded integers: right for reps, kilograms and plain counts. */
 function defaultFormat(value: number): string {
@@ -56,6 +70,43 @@ interface TrendChartProps {
 }
 
 export function TrendChart({ points, formatValue = defaultFormat }: TrendChartProps) {
+  /*
+   * Hooks run before the `points.length < 2` bail-out below, so a chart that
+   * gains its second point mid-session still gets an entrance the first time it
+   * actually draws.
+   */
+  const draw = useRef(new Animated.Value(0)).current;
+  const dotAnims = useMemo(() => points.map(() => new Animated.Value(0)), [points]);
+
+  useEffect(() => {
+    if (points.length < 2) return;
+    /*
+     * JS-driven, not native: `strokeDashoffset` and an SVG `opacity` prop are
+     * not transform/style properties the native animated module can patch, so
+     * asking for `useNativeDriver: true` here throws rather than animates.
+     */
+    draw.setValue(0);
+    Animated.timing(draw, {
+      toValue: 1,
+      duration: 900,
+      easing: EASING,
+      useNativeDriver: false,
+    }).start();
+
+    dotAnims.forEach((value, index) => {
+      value.setValue(0);
+      Animated.timing(value, {
+        toValue: 1,
+        duration: 260,
+        delay: 500 + index * 90,
+        easing: EASING,
+        useNativeDriver: false,
+      }).start();
+    });
+    // Runs once per mount and again only if the point count changes — see
+    // `dotAnims`'s own memo above.
+  }, [dotAnims, draw, points.length]);
+
   if (points.length < 2) return null;
 
   const values = points.map((p) => p.value);
@@ -123,28 +174,35 @@ export function TrendChart({ points, formatValue = defaultFormat }: TrendChartPr
           </SvgText>
         ))}
 
-        <Polyline
+        <AnimatedPolyline
           points={polyline}
           fill="none"
           stroke={palette.greenBright}
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
+          strokeDasharray={DRAW_LENGTH}
+          strokeDashoffset={draw.interpolate({
+            inputRange: [0, 1],
+            outputRange: [DRAW_LENGTH, 0],
+          })}
         />
 
         {/* Hollow dots for history, one solid dot for the latest session — the
-            only point that is still a live fact rather than a record. */}
+            only point that is still a live fact rather than a record. Each pops
+            in after the line reaches it, left to right. */}
         {points.map((point, index) =>
           index === lastIndex ? (
-            <Circle
+            <AnimatedCircle
               key={`${point.at}-${index}`}
               cx={x(index)}
               cy={y(point.value)}
               r={4}
               fill={palette.greenBright}
+              opacity={dotAnims[index]}
             />
           ) : (
-            <Circle
+            <AnimatedCircle
               key={`${point.at}-${index}`}
               cx={x(index)}
               cy={y(point.value)}
@@ -152,6 +210,7 @@ export function TrendChart({ points, formatValue = defaultFormat }: TrendChartPr
               fill={palette.bg}
               stroke={palette.greenBright}
               strokeWidth={2}
+              opacity={dotAnims[index]}
             />
           ),
         )}

@@ -47,6 +47,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { Icon } from '../components/Icon';
+import { pressedStyle } from '../components/motion';
 import { Kicker, ListCard, PrimaryButton, Separator } from '../components/primitives';
 import { formatShortDate } from '../lib/units';
 import { palette } from '../theme/tokens';
@@ -242,6 +243,7 @@ function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress:
             onPress={onPress}
             accessibilityRole="button"
             accessibilityLabel={`${step.name}${step.isCurrent ? ', next up' : ''}. Edit the sequence.`}
+            style={pressedStyle}
             className="flex-row items-center"
           >
             {index > 0 ? (
@@ -289,6 +291,7 @@ function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => 
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Open ${choice.name}. ${detail}`}
+      style={pressedStyle}
       className="h-row-lg flex-row items-center px-lg"
     >
       <View className="flex-1 pr-md">
@@ -327,6 +330,7 @@ function RecentRow({
       ]
         .filter(Boolean)
         .join(' ')}
+      style={pressedStyle}
       className="h-row flex-row items-center px-lg"
     >
       {/* Same left column as the History rows, so the number reads the same in

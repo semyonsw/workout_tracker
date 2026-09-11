@@ -64,6 +64,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { Icon } from '../components/Icon';
+import { pressedStyle } from '../components/motion';
 import { ScreenHeader } from '../components/ScreenHeader';
 import {
   Kicker,
@@ -1356,6 +1357,7 @@ function MeasuredRestRow({
       }}
       accessibilityRole="button"
       accessibilityLabel={`You rest ${formatClock(measuredSeconds)} ${what}. Use that as the setting.`}
+      style={pressedStyle}
       className="min-h-[44px] flex-row items-center px-lg pb-md"
     >
       <Text className="flex-1 pr-md text-label tabular-nums text-ink-muted">
@@ -1429,6 +1431,7 @@ function TestBeepRow() {
       onPress={play}
       accessibilityRole="button"
       accessibilityLabel="Test the countdown beep"
+      style={pressedStyle}
       className="h-row flex-row items-center px-lg"
     >
       <Text className="flex-1 text-body font-medium text-ink">Test the beep</Text>
