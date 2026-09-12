@@ -257,7 +257,8 @@ export function FocusUpNext({
    * before a set is when you decide the set is going to be lighter.
    */
   onPress?: () => void;
-  /** The ± is showing, so the block says `close` rather than `±`. */
+  /** The ± panel under this block is open — the affordance says so, and so does
+   * the accessibility state. */
   isOpen?: boolean;
 }) {
   const { exercise } = target.entry;
@@ -308,6 +309,13 @@ export function FocusUpNext({
         <Text className="text-micro font-semibold uppercase tabular-nums text-ink-faint">
           {describeSetPosition(target)}
         </Text>
+        {/* The affordance, and only when there is one: `±` is the same mark the
+            LIFT state uses for the same panel, so the gesture is learned once
+            rather than twice. `×` while it is open, because the block is then the
+            way back out of it. */}
+        {onPress ? (
+          <Text className="ml-md text-title text-ink-faint">{isOpen ? '×' : '±'}</Text>
+        ) : null}
       </View>
 
       {isNewExercise && previousName ? (
