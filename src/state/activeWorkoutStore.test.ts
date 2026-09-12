@@ -1536,6 +1536,22 @@ describe('completing a set carries its weight down the exercise', () => {
     ).toBe(62.5);
   });
 
+  it('a warm-up ✓ does not become the movement’s starting weight', () => {
+    useLibrary.getState().restoreSeedLibrary();
+    const entry = startWeighted();
+    const store = useActiveWorkout.getState();
+    const before = useLibrary
+      .getState()
+      .exercises.find((e) => e.id === entry.exercise.id)?.defaultWeightKg;
+
+    store.patchSet(entry.localId, entry.sets[0].localId, { weightKg: 40, isWarmup: true });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(
+      useLibrary.getState().exercises.find((e) => e.id === entry.exercise.id)?.defaultWeightKg,
+    ).toBe(before);
+  });
+
   it('leaves an unweighted exercise untouched', () => {
     const session = startRoutine();
     const entry = session.entries.find((e) => !e.exercise.requiresWeight);

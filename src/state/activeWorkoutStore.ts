@@ -469,11 +469,19 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
          * once on the create screen is wrong within a fortnight; the weight a set
          * was actually completed at never is.
          */
+        const justLogged = logged.find((s) => s.localId === setId);
         const carried = carriesWeight(target.exercise) ? carryWeightForward(logged, setId) : logged;
-        const newDefault = defaultWeightUpdate(
-          target.exercise,
-          logged.find((s) => s.localId === setId)?.weightKg ?? null,
-        );
+        /*
+         * A WARM-UP TEACHES THE LIBRARY NOTHING. It is a fraction of the working
+         * weight by construction, so writing 40 kg onto an exercise because the
+         * first rung of its own ramp was ticked would make every future session
+         * start at the ramp. (The carry above is already safe on its own account —
+         * it skips warm-up ROWS — but a warm-up ✓ still names a weight, and this is
+         * where that weight would have escaped.)
+         */
+        const newDefault = justLogged?.isWarmup
+          ? null
+          : defaultWeightUpdate(target.exercise, justLogged?.weightKg ?? null);
         const sets = carried;
         const exercise =
           newDefault != null

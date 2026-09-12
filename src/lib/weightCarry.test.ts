@@ -147,3 +147,17 @@ describe('defaultWeightUpdate', () => {
     expect(defaultWeightUpdate({ ...weighted, defaultWeightKg: undefined }, 25)).toBe(25);
   });
 });
+
+/**
+ * The warm-up case is split across two files on purpose: the ROWS are protected
+ * here (`carryWeightForward` skips them), and the ✓ on a warm-up row is protected
+ * in `completeSet`, which is where the weight it names would otherwise reach the
+ * library. The store suite covers that half.
+ */
+describe('a warm-up never becomes the starting weight', () => {
+  it('is not this function’s job to refuse — it is asked about a number', () => {
+    // Stated so the split is deliberate rather than an omission someone closes
+    // twice: handed 40 kg, this says 40 kg. The caller knows whose 40 it was.
+    expect(defaultWeightUpdate({ ...weighted, defaultWeightKg: 70 }, 40)).toBe(40);
+  });
+});
