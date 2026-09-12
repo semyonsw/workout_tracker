@@ -65,9 +65,12 @@ import {
   reshapeLadderSets,
 } from '../lib/repLadder';
 import { moveToIndex } from '../lib/reorder';
+import { hasRoundLeft, isRoundExercise } from '../lib/rounds';
 import { nextInSupersetRound } from '../lib/superset';
+import { carriesWeight, carryWeightForward, defaultWeightUpdate } from '../lib/weightCarry';
 import { currentSettings } from './settingsStore';
-import type { ID, SessionEffort } from '../types/models';
+import { rememberDefaultWeight } from './weightSync';
+import type { Exercise, ID, SessionEffort } from '../types/models';
 
 export type RestSource = 'set' | 'transition' | 'manual';
 
@@ -106,6 +109,17 @@ interface ActiveWorkoutState {
   rest: RestState;
   /** The plank / hang / round currently being timed. Only ever one. */
   setTimer: SetTimerState | null;
+  /**
+   * The exercise whose ROUND CHAIN is armed, or null.
+   *
+   * Boxing is the one exercise in the app that advances without a thumb: the bell
+   * logs the round, the rest runs, and the next round starts by itself. This is the
+   * arming flag for that, and `lib/rounds.ts` has the whole argument for why it is
+   * a stored fact rather than something derived from the exercise: ✕ on a running
+   * round has to mean the chain stops, and there is nothing in the session's shape
+   * that records "the user said stop".
+   */
+  roundsAuto: ID | null;
 
   /* --- lifecycle --- */
   startSession: (params: BuildDraftParams) => void;
@@ -195,9 +209,33 @@ interface ActiveWorkoutState {
   /** End rest now and get on with it. */
   skipRest: () => void;
 
+  /**
+   * An exercise was edited in the library while this session is running: take the
+   * new row everywhere this session carries a copy of it.
+   *
+   * The session deliberately holds its OWN `Exercise` per entry (see `DraftEntry`),
+   * so that a workout in flight is not repriced by an edit made in another tab. That
+   * is right for an edit the user did not make here — and wrong for the one they
+   * did: `Edit exercise` on the open card is the same thumb, the same movement, and
+   * the same minute, so its rest, its name and its numbers have to land on the card
+   * that is on screen rather than on the next workout.
+   *
+   * Only `entry.exercise` changes. The SETS are untouched: they are what is being
+   * done today, and a new default weight is where the NEXT session starts, not a
+   * rewrite of the rows under the thumb.
+   */
+  syncExercise: (exerciseId: ID, exercise: Exercise) => void;
+
   /* --- set timer (planks, hangs, rounds) --- */
-  /** Get-ready countdown, then the work clock. No-op on a non-timed exercise. */
-  startSetTimer: (entryId: ID, setId: ID) => void;
+  /**
+   * Get-ready countdown, then the work clock. No-op on a non-timed exercise.
+   *
+   * `skipPrepare` spends the lead-in before the clock is even stored, and exists
+   * for one caller: the round chain starting round 2 of 12. The rest that just
+   * ended WAS the get-ready, and counting fifteen more seconds at somebody standing
+   * in front of a bag is the app asking them to wait for it.
+   */
+  startSetTimer: (entryId: ID, setId: ID, options?: { skipPrepare?: boolean }) => void;
   /** ± on the prescribed hold. Count-ups have no target to extend. */
   adjustSetTimer: (deltaSeconds: number) => void;
   /** "I'm already on the bar" — spend the get-ready count now. */
@@ -224,6 +262,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
       activeEntryId: null,
       rest: NO_REST,
       setTimer: null,
+      roundsAuto: null,
 
       /* ---------------------------------------------------------- */
 
@@ -234,15 +273,28 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
           activeEntryId: session.entries[0]?.localId ?? null,
           rest: NO_REST,
           setTimer: null,
+          roundsAuto: null,
         });
       },
 
       discardSession: () =>
-        set({ session: null, activeEntryId: null, rest: NO_REST, setTimer: null }),
+        set({
+          session: null,
+          activeEntryId: null,
+          rest: NO_REST,
+          setTimer: null,
+          roundsAuto: null,
+        }),
 
       finishSession: () => {
         const { session } = get();
-        set({ session: null, activeEntryId: null, rest: NO_REST, setTimer: null });
+        set({
+          session: null,
+          activeEntryId: null,
+          rest: NO_REST,
+          setTimer: null,
+          roundsAuto: null,
+        });
         return session;
       },
 
@@ -292,6 +344,9 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
               : activeEntryId,
           setTimer: setTimer?.entryId === entryId ? null : setTimer,
           rest: rest.originSetId && removedSetIds.has(rest.originSetId) ? NO_REST : rest,
+          // A chain pointing at an exercise that is gone would start a round on the
+          // next entry's rows the moment rest ran out. Same rule as the cursor.
+          roundsAuto: get().roundsAuto === entryId ? null : get().roundsAuto,
         });
       },
 
@@ -387,7 +442,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         if (!target.sets.some((s) => s.localId === setId)) return;
 
         const restTaken = measureRestTaken(rest, Date.now());
-        const sets = target.sets.map((s) =>
+        const logged = target.sets.map((s) =>
           s.localId === setId
             ? {
                 ...s,
@@ -398,13 +453,41 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
               }
             : s,
         );
+
+        /*
+         * THE WEIGHT YOU JUST USED IS THE WEIGHT OF THE REST OF THE EXERCISE.
+         *
+         * Four sets planned at 70 and a first set done at 60 does not mean three
+         * sets at 70 are still coming: it means today is a 60 kg day, and before
+         * this the user had to say so once per remaining row. `lib/weightCarry.ts`
+         * owns which rows are eligible (unlogged, below this one, not a warm-up)
+         * and hands back the same array when nothing moved.
+         *
+         * ...and the LIBRARY learns it too, as the movement's starting weight —
+         * through `state/weightSync.ts`, because a store that reaches into another
+         * store is the cycle `restSync` exists to avoid. A `defaultWeightKg` typed
+         * once on the create screen is wrong within a fortnight; the weight a set
+         * was actually completed at never is.
+         */
+        const carried = carriesWeight(target.exercise) ? carryWeightForward(logged, setId) : logged;
+        const newDefault = defaultWeightUpdate(
+          target.exercise,
+          logged.find((s) => s.localId === setId)?.weightKg ?? null,
+        );
+        const sets = carried;
+        const exercise =
+          newDefault != null
+            ? { ...target.exercise, defaultWeightKg: newDefault }
+            : target.exercise;
+        if (newDefault != null) rememberDefaultWeight(target.exercise.id, newDefault);
+
         const entries = [...session.entries];
         /*
          * The ladder gets the last word on this exercise's remaining rows: a top
          * set that beat its plan — or missed it — reshapes everything under it. No
          * ladder, no change. See `withLadderPlan`.
          */
-        entries[index] = withLadderPlan({ ...target, sets });
+        entries[index] = withLadderPlan({ ...target, exercise, sets });
 
         const exerciseDone = sets.every((s) => s.isCompleted);
 
@@ -457,7 +540,21 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
          * other exercise, and a countdown over its rows is the pill getting in the
          * way of the work. The round's rest comes after its last member.
          */
-        const startsRest = settings.autoStartRest && restSeconds > 0 && !workoutDone && !partner;
+        /*
+         * A BAG SESSION RESTS WHETHER OR NOT AUTO-REST IS ON, and this is the one
+         * exception to that setting.
+         *
+         * `autoStartRest: false` is for people who superset: they want the pill out
+         * of the way because the next thing to do is the other exercise. A round
+         * chain is the opposite claim — the minute between rounds IS part of the
+         * exercise, the next round starts when it ends, and without it the chain
+         * would run twelve rounds back to back with no gap at all. So an armed
+         * chain rests, and every other exercise keeps obeying the setting exactly
+         * as it did.
+         */
+        const chained = get().roundsAuto === entryId && isRoundExercise(target.exercise);
+        const startsRest =
+          (settings.autoStartRest || chained) && restSeconds > 0 && !workoutDone && !partner;
 
         set({
           session: {
@@ -471,6 +568,14 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
             startedAt: session.startedAt ?? new Date().toISOString(),
           },
           activeEntryId: advanceTo ?? get().activeEntryId,
+          /*
+           * The round chain survives exactly as long as there are rounds. Armed by
+           * ▶ (see `startSetTimer`) and never here — a ✓ pressed by hand on a bag
+           * session is somebody logging a round the phone did not time, which is
+           * not a promise that the next one should start on its own.
+           */
+          roundsAuto:
+            get().roundsAuto === entryId && !hasRoundLeft(entries[index]) ? null : get().roundsAuto,
           rest: startsRest
             ? {
                 startedAt: Date.now(),
@@ -671,6 +776,29 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         });
       },
 
+      /**
+       * The library row changed under a running session. See the action's note.
+       *
+       * Matched on `exercise.id` rather than on an entry id, because the same
+       * movement can be in the session twice — a routine with two pull-up slots, or
+       * one appended at the rack — and an edit is about the MOVEMENT.
+       */
+      syncExercise: (exerciseId, exercise) => {
+        const { session } = get();
+        if (!session) return;
+
+        let changed = false;
+        const entries = session.entries.map((entry) => {
+          if (entry.exercise.id !== exerciseId) return entry;
+          changed = true;
+          // The id is the session's, not the caller's: an edit can change
+          // everything about an exercise except which exercise it is.
+          return { ...entry, exercise: { ...exercise, id: entry.exercise.id } };
+        });
+
+        if (changed) set({ session: { ...session, entries } });
+      },
+
       /* ---------------------------------------------------------- */
 
       /** A rest of zero seconds is not a rest. Asking for one clears the pill. */
@@ -815,7 +943,7 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
        * instead", and nothing is lost: an uncommitted timer has written nothing to
        * the set it was pointed at.
        */
-      startSetTimer: (entryId, setId) => {
+      startSetTimer: (entryId, setId, options) => {
         const { session } = get();
         const entry = session?.entries.find((e) => e.localId === entryId);
         const target = entry?.sets.find((s) => s.localId === setId);
@@ -824,7 +952,9 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         const mode = resolveTimerMode(entry.exercise);
         if (mode === 'manual') return;
 
-        const prepareSeconds = entry.exercise.prepareSeconds ?? currentSettings().prepareSeconds;
+        const prepareSeconds = options?.skipPrepare
+          ? 0
+          : (entry.exercise.prepareSeconds ?? currentSettings().prepareSeconds);
         const count = Number.isFinite(target.count) ? Math.round(target.count) : MIN_WORK_SECONDS;
 
         set({
@@ -838,6 +968,13 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
           },
           // You cannot be resting and holding. The set timer takes the pill.
           rest: NO_REST,
+          /*
+           * ARMING THE CHAIN. Starting a round's clock — by ▶ or by the chain
+           * itself — is what says "run this bag session". Every other timed
+           * exercise leaves it alone rather than clearing it, because ▶ on a plank
+           * mid-boxing is one hold inside a session that is still a bag session.
+           */
+          roundsAuto: isRoundExercise(entry.exercise) ? entryId : get().roundsAuto,
         });
       },
 
@@ -853,7 +990,19 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         set({ setTimer: { ...setTimer, ...withPrepareSkipped(setTimer, Date.now()) } });
       },
 
-      cancelSetTimer: () => set({ setTimer: null }),
+      /*
+       * ✕ MEANS ✕, and for a round that has to include the chain: a countdown
+       * abandoned mid-round is the user stopping, and a phone that started round 4
+       * at them ninety seconds later would be a control with no off switch. Pressing
+       * ▶ again arms it back.
+       */
+      cancelSetTimer: () => {
+        const { setTimer, roundsAuto } = get();
+        set({
+          setTimer: null,
+          roundsAuto: setTimer && roundsAuto === setTimer.entryId ? null : roundsAuto,
+        });
+      },
 
       /**
        * Write the clock into the set, then complete it through `completeSet` — so
@@ -903,6 +1052,17 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
         activeEntryId: state.activeEntryId,
         rest: state.rest,
         setTimer: state.setTimer,
+        /*
+         * `roundsAuto` IS DELIBERATELY NOT PERSISTED, and it is the one piece of
+         * timer state that isn't.
+         *
+         * The rest of this store persists because an absolute deadline is still
+         * true after a relaunch. The chain is the opposite kind of fact: it fires
+         * when the rest it is waiting on has run out, and a rest that ran out while
+         * the phone was off has run out by hours. Restoring it would mean opening
+         * the app the next morning and having round 7 start at you. So a relaunch
+         * costs exactly one press of ▶, which re-arms it.
+         */
       }),
       /*
        * v1 had no `pausedRemainingMs`. Rather than patch field by field, hand the

@@ -75,6 +75,11 @@ interface LibraryState {
    * between-sets setting again. See `state/restSync.ts`.
    */
   followGlobalRestOnAllExercises: () => void;
+  /**
+   * This movement now starts at `weightKg` — the weight a set of it was just
+   * completed at. See `state/weightSync.ts`, the only caller.
+   */
+  setExerciseDefaultWeight: (exerciseId: ID, weightKg: number) => void;
   /** Removes the exercise and every routine item pointing at it. */
   deleteExercise: (exerciseId: ID) => void;
   /**
@@ -83,6 +88,21 @@ interface LibraryState {
    * those are picked in the editor from the library.
    */
   createRoutine: (name?: string) => Routine;
+  /**
+   * A COPY of a routine, with its own id, its own item ids, and `(copy)` on the
+   * end of its name — appended to the list and returned so the caller can open it.
+   *
+   * The feature the loop needs. A training sequence is allowed to hold the same
+   * routine twice, and that is right for `push → pull → push`; it is wrong the
+   * moment the two back days are supposed to be DIFFERENT back days, because
+   * editing the routine edits both of them. One routine cannot be two plans, so
+   * the answer is a second routine — and typing six exercises back in by hand to
+   * change one of them is why nobody did it.
+   *
+   * Null when there is nothing to copy, so a caller that navigates on the result
+   * cannot push a screen for a routine that does not exist.
+   */
+  duplicateRoutine: (routineId: ID) => Routine | null;
   /** Replaces name + items on one routine. */
   updateRoutine: (routineId: ID, patch: { name: string; items: RoutineItem[] }) => void;
   deleteRoutine: (routineId: ID) => void;
@@ -100,6 +120,20 @@ interface LibraryState {
   moveSequenceStep: (index: number, direction: -1 | 1) => void;
   /** Point the cursor at a step by hand — "I'm doing pull today, not push". */
   setSequenceCursor: (index: number) => void;
+  /**
+   * Give ONE step of the loop its own copy of the routine, and return that copy.
+   *
+   * The whole point of a twelve-step loop with three back days in it is that the
+   * three back days are not identical — different rows on the same theme. Until
+   * this existed the only way to get there was to duplicate the routine by hand in
+   * the Routines tab, then remove the step, then add the copy, then drag it back
+   * to where it was: four operations to express one intention.
+   *
+   * A no-op, returning null, when the step is already the only one pointing at
+   * that routine — there is nothing to separate it FROM, and a copy would be a
+   * second identical routine in the list for nothing.
+   */
+  varySequenceStep: (index: number) => Routine | null;
   /**
    * A workout from the current step is finished, so the queue moves on. A no-op
    * when the sequence is off, empty, or the finished routine isn't the step the
@@ -145,6 +179,38 @@ function nextUntitledName(routines: readonly Routine[]): string {
   if (!taken.has(base)) return base;
   for (let n = 2; n < 100; n += 1) {
     if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
+  }
+  return base;
+}
+
+/**
+ * "Back" → "Back (copy)" → "Back (copy 2)".
+ *
+ * Counted rather than suffixed blindly, because the whole reason to copy a routine
+ * is to make several variants of it: a loop with three back days would otherwise
+ * read `Back (copy)`, `Back (copy) (copy)`, `Back (copy) (copy) (copy)`, which is
+ * a list you cannot scan. The base is stripped of any existing `(copy …)` first, so
+ * the counter applies to the ORIGINAL name however deep the chain goes.
+ */
+export function copyName(name: string, routines: readonly Routine[]): string {
+  const base = name.replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, '').trim() || name.trim();
+  const taken = new Set(routines.map((r) => r.name));
+  const first = `${base} (copy)`;
+  if (!taken.has(first)) return first;
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = `${base} (copy ${n})`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return first;
+}
+
+/** A `r_…` id nothing in `taken` already claims. */
+function freshStamp(taken: readonly string[]): string {
+  const claimed = new Set(taken);
+  const base = Date.now().toString(36);
+  if (!claimed.has(`r_${base}`)) return base;
+  for (let n = 1; n < 1000; n += 1) {
+    if (!claimed.has(`r_${base}${n.toString(36)}`)) return `${base}${n.toString(36)}`;
   }
   return base;
 }
@@ -287,6 +353,20 @@ export const useLibrary = create<LibraryState>()(
         if (changed) set({ exercises: next });
       },
 
+      setExerciseDefaultWeight: (exerciseId, weightKg) => {
+        if (!Number.isFinite(weightKg) || weightKg <= 0) return;
+        const { exercises } = get();
+        const before = exercises.find((e) => e.id === exerciseId);
+        // Unknown row, unweighted movement, or nothing to change: writing anyway
+        // would mark the library dirty for an edit that isn't one.
+        if (!before || !before.requiresWeight || before.defaultWeightKg === weightKg) return;
+        set({
+          exercises: exercises.map((e) =>
+            e.id === exerciseId ? { ...e, defaultWeightKg: weightKg } : e,
+          ),
+        });
+      },
+
       deleteExercise: (exerciseId) => {
         const { exercises, routines } = get();
         set({
@@ -317,6 +397,40 @@ export const useLibrary = create<LibraryState>()(
         };
         set({ routines: [...routines, routine] });
         return routine;
+      },
+
+      /**
+       * Every item is rebuilt with a fresh id, and that is the load-bearing half:
+       * item ids are what the routine editor keys its rows by and what the finish
+       * sheet's `plannedSetDiff` matches on, so two routines sharing them would be
+       * two lists that behave like one.
+       *
+       * The name is `copyName`'s, which counts rather than guesses — copying a copy
+       * gives `Back (copy 2)` and not `Back (copy) (copy)`.
+       */
+      duplicateRoutine: (routineId) => {
+        const { routines } = get();
+        const source = routines.find((r) => r.id === routineId);
+        if (!source) return null;
+
+        // `Date.now()` alone is not unique: duplicating twice inside one millisecond
+        // is a tap away in a test and reachable from a fast thumb, and two routines
+        // sharing an id is two rows the editor cannot tell apart.
+        const stamp = freshStamp(routines.map((r) => r.id));
+        const copy: Routine = {
+          ...source,
+          id: `r_${stamp}`,
+          name: copyName(source.name, routines),
+          items: source.items.map((item, order) => ({
+            ...item,
+            id: `ri_${stamp}_${order}`,
+            order,
+          })),
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        };
+        set({ routines: [...routines, copy] });
+        return copy;
       },
 
       updateRoutine: (routineId, patch) =>
@@ -437,6 +551,29 @@ export const useLibrary = create<LibraryState>()(
             cursor: clampCursor(index, state.sequence.routineIds.length),
           },
         })),
+
+      /**
+       * The step gets its own routine; every other step keeps the shared one.
+       *
+       * Only THIS position moves — the sequence is a list of positions and a
+       * routine repeated at steps 2 and 7 is two separate steps, so varying step 2
+       * must leave step 7 exactly where it was. That is why this replaces by index
+       * rather than mapping the id.
+       */
+      varySequenceStep: (index) => {
+        const { sequence } = get();
+        const routineId = sequence.routineIds[index];
+        if (routineId == null) return null;
+        // Already unique in the loop: there is nothing to separate it from.
+        if (sequence.routineIds.filter((id) => id === routineId).length < 2) return null;
+
+        const copy = get().duplicateRoutine(routineId);
+        if (!copy) return null;
+
+        const routineIds = sequence.routineIds.map((id, i) => (i === index ? copy.id : id));
+        set({ sequence: { ...get().sequence, routineIds } });
+        return copy;
+      },
 
       advanceSequence: (routineId) => {
         const { sequence } = get();

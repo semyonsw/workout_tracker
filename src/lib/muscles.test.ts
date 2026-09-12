@@ -182,3 +182,72 @@ describe('buildMuscleTree', () => {
     expect(unfiled).toHaveLength(1);
   });
 });
+
+/**
+ * THE SKILL CLUSTER. A front lever is not back work, and filing it under `back`
+ * put it in a section that said nothing about it. These are the two claims the
+ * new cluster has to keep: it is a real destination in the tree, and it does not
+ * quietly capture a routine that merely contains one hold.
+ */
+describe('calisthenics', () => {
+  const skill = (name: string, muscles: MuscleGroup[]): Exercise => ({
+    id: `ex_${name}`,
+    ownerId: 'u1',
+    name,
+    muscleGroups: muscles,
+    requiresWeight: false,
+    countUnit: 'seconds',
+    loadMode: 'none',
+    isUnilateral: false,
+    isArchived: false,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  it('files under its own cluster', () => {
+    expect(MUSCLE_CLUSTER.calisthenics).toBe('skill');
+    expect(clusterOf(skill('front lever', ['calisthenics', 'back']))).toBe('skill');
+  });
+
+  it('is a section of the library tree even when it is empty', () => {
+    const { clusters } = buildMuscleTree([]);
+    const node = clusters.find((c) => c.cluster === 'skill');
+
+    expect(node?.groups.map((g) => g.muscle)).toEqual(['calisthenics']);
+    expect(node?.total).toBe(0);
+  });
+
+  it('holds the exercises filed under it, and only those', () => {
+    const lever = skill('front lever', ['calisthenics', 'back']);
+    // Secondary, so this one is back work that happens to be hard.
+    const rows = skill('inverted rows', ['back', 'calisthenics']);
+    const { clusters } = buildMuscleTree([lever, rows]);
+
+    const node = clusters.find((c) => c.cluster === 'skill');
+    expect(node?.groups[0].exercises.map((e) => e.name)).toEqual(['front lever']);
+    expect(node?.total).toBe(1);
+  });
+
+  it('names the day when the day is skills', () => {
+    const focus = routineFocus([
+      skill('handstand', ['calisthenics', 'shoulders']),
+      skill('planche', ['calisthenics', 'chest']),
+    ]);
+
+    expect(focus?.cluster).toBe('skill');
+    expect(describeRoutineFocus([skill('handstand', ['calisthenics'])])).toBe(
+      'Skill · calisthenics',
+    );
+  });
+
+  it('does not steal a pull day that happens to end with one hold', () => {
+    const back = (name: string): Exercise => ({ ...skill(name, ['back']), countUnit: 'reps' });
+    const focus = routineFocus([
+      back('pull-ups'),
+      back('rows'),
+      back('pulldowns'),
+      skill('front lever', ['calisthenics']),
+    ]);
+
+    expect(focus?.cluster).toBe('pull');
+  });
+});

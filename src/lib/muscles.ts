@@ -6,6 +6,7 @@
  *   legs   → quads · hamstrings · glutes · calves
  *   core   → core
  *   cardio → cardio
+ *   skill  → calisthenics
  *
  * Two rules make this worth having rather than being decoration:
  *
@@ -43,6 +44,21 @@ export const CLUSTER_MUSCLES = {
   legs: ['quads', 'hamstrings', 'glutes', 'calves'],
   core: ['core'],
   cardio: ['cardio'],
+  /*
+   * THE ONE CLUSTER THAT IS NOT A PART OF THE BODY.
+   *
+   * A front lever, a planche, a handstand and a muscle-up are not chest work or
+   * back work — they are one skill each, trained as a skill, and filing them under
+   * a muscle puts them in a section that says nothing about them. `skill` is where
+   * they live, it holds exactly one group, and that is deliberate: the hierarchy's
+   * job here is to give calisthenics a destination in the library tree, not to
+   * invent a second taxonomy inside it.
+   *
+   * Last in display order, because it is the smallest and the most specialised —
+   * the compound families stay at the top where `routineFocus`' tie-break wants
+   * them.
+   */
+  skill: ['calisthenics'],
 } as const satisfies Record<MuscleCluster, readonly MuscleGroup[]>;
 
 /** Display order for the library tree and for the create screen's cluster chips. */

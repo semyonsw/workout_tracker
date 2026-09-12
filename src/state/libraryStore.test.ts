@@ -685,3 +685,161 @@ describe("an exercise's set count", () => {
     expect(item?.targetSets).toBe(4);
   });
 });
+
+/**
+ * COPYING A ROUTINE, and the reason it exists: a loop with three back days in it
+ * needs three back routines, and typing the third one in by hand is why nobody
+ * ever made the second.
+ */
+describe('duplicating a routine', () => {
+  it('appends a copy that holds the same exercises', () => {
+    const source = useLibrary.getState().routines[0];
+    const copy = useLibrary.getState().duplicateRoutine(source.id);
+
+    expect(copy).not.toBeNull();
+    expect(copy?.items.map((i) => i.exerciseId)).toEqual(source.items.map((i) => i.exerciseId));
+    expect(useLibrary.getState().routines.at(-1)?.id).toBe(copy?.id);
+  });
+
+  it('gives the copy its own id and its own ITEM ids', () => {
+    const source = useLibrary.getState().routines[0];
+    const copy = useLibrary.getState().duplicateRoutine(source.id);
+
+    expect(copy?.id).not.toBe(source.id);
+    // The half that matters: shared item ids would make two lists behave as one.
+    for (const item of copy?.items ?? []) {
+      expect(source.items.some((i) => i.id === item.id)).toBe(false);
+    }
+  });
+
+  it('leaves the original completely alone', () => {
+    const source = useLibrary.getState().routines[0];
+    const before = JSON.stringify(source);
+    useLibrary.getState().duplicateRoutine(source.id);
+
+    expect(JSON.stringify(useLibrary.getState().routines.find((r) => r.id === source.id))).toBe(
+      before,
+    );
+  });
+
+  it('counts rather than stacks the suffix: Back (copy), then Back (copy 2)', () => {
+    const source = useLibrary.getState().routines[0];
+    const first = useLibrary.getState().duplicateRoutine(source.id);
+    const second = useLibrary.getState().duplicateRoutine(source.id);
+    // ...and copying the COPY still counts from the original's name.
+    const third = useLibrary.getState().duplicateRoutine(first?.id ?? '');
+
+    expect(first?.name).toBe(`${source.name} (copy)`);
+    expect(second?.name).toBe(`${source.name} (copy 2)`);
+    expect(third?.name).toBe(`${source.name} (copy 3)`);
+  });
+
+  it('is null for a routine that is not there, so a caller cannot navigate to nothing', () => {
+    expect(useLibrary.getState().duplicateRoutine('r_nope')).toBeNull();
+  });
+
+  it('editing the copy does not touch the original', () => {
+    const source = useLibrary.getState().routines[0];
+    const copy = useLibrary.getState().duplicateRoutine(source.id);
+    useLibrary.getState().updateRoutine(copy?.id ?? '', { name: 'Back B', items: [] });
+
+    const after = useLibrary.getState().routines.find((r) => r.id === source.id);
+    expect(after?.items).toHaveLength(source.items.length);
+    expect(after?.name).toBe(source.name);
+  });
+});
+
+/**
+ * THE LOOP'S OWN VARIATION. `push → pull → push` is one routine twice on purpose;
+ * a twelve-step loop with three back days is three plans that happen to share a
+ * name, and this is the one action that tells them apart.
+ */
+describe('varying one step of the sequence', () => {
+  function loopOf(...routineIds: string[]) {
+    const library = useLibrary.getState();
+    for (const id of routineIds) library.addSequenceStep(id);
+  }
+
+  it('splits only the named step off onto its own copy', () => {
+    const back = useLibrary.getState().routines[0].id;
+    const push = useLibrary.getState().routines[1].id;
+    loopOf(back, push, back);
+
+    const copy = useLibrary.getState().varySequenceStep(0);
+
+    expect(copy).not.toBeNull();
+    expect(useLibrary.getState().sequence.routineIds).toEqual([copy?.id, push, back]);
+  });
+
+  it('refuses a step whose routine appears only once — there is nothing to split', () => {
+    const back = useLibrary.getState().routines[0].id;
+    const push = useLibrary.getState().routines[1].id;
+    loopOf(back, push);
+
+    expect(useLibrary.getState().varySequenceStep(1)).toBeNull();
+    expect(useLibrary.getState().sequence.routineIds).toEqual([back, push]);
+    // ...and no orphan routine was left behind in the library.
+    expect(useLibrary.getState().routines.filter((r) => r.name.includes('(copy)'))).toHaveLength(0);
+  });
+
+  it('refuses an index that is not a step', () => {
+    expect(useLibrary.getState().varySequenceStep(3)).toBeNull();
+    expect(useLibrary.getState().varySequenceStep(-1)).toBeNull();
+  });
+
+  it('leaves the cursor where it was', () => {
+    const back = useLibrary.getState().routines[0].id;
+    loopOf(back, back, back);
+    useLibrary.getState().setSequenceCursor(2);
+
+    useLibrary.getState().varySequenceStep(1);
+
+    expect(useLibrary.getState().sequence.cursor).toBe(2);
+  });
+});
+
+describe('a completed set teaching the library its starting weight', () => {
+  it('writes the weight onto the exercise', () => {
+    const exercise = newExercise({ id: 'ex_default_weight', defaultWeightKg: 70 });
+    useLibrary.getState().addExercise(exercise);
+
+    useLibrary.getState().setExerciseDefaultWeight('ex_default_weight', 60);
+
+    expect(
+      useLibrary.getState().exercises.find((e) => e.id === 'ex_default_weight')?.defaultWeightKg,
+    ).toBe(60);
+  });
+
+  it('refuses an unweighted movement, a zero, and a row that is not there', () => {
+    const bodyweight = newExercise({ id: 'ex_bw', requiresWeight: false });
+    useLibrary.getState().addExercise(bodyweight);
+
+    useLibrary.getState().setExerciseDefaultWeight('ex_bw', 60);
+    useLibrary.getState().setExerciseDefaultWeight('ex_nope', 60);
+
+    expect(useLibrary.getState().exercises.find((e) => e.id === 'ex_bw')?.defaultWeightKg).toBe(
+      undefined,
+    );
+    expect(useLibrary.getState().exercises.some((e) => e.id === 'ex_nope')).toBe(false);
+  });
+
+  it('does not rewrite the library when the number is already there', () => {
+    const exercise = newExercise({ id: 'ex_same_weight', defaultWeightKg: 60 });
+    useLibrary.getState().addExercise(exercise);
+    const before = useLibrary.getState().exercises;
+
+    useLibrary.getState().setExerciseDefaultWeight('ex_same_weight', 60);
+
+    expect(useLibrary.getState().exercises).toBe(before);
+  });
+});
+
+describe('two copies taken in the same millisecond', () => {
+  it('still get different ids', () => {
+    const source = useLibrary.getState().routines[0];
+    const first = useLibrary.getState().duplicateRoutine(source.id);
+    const second = useLibrary.getState().duplicateRoutine(source.id);
+
+    expect(first?.id).not.toBe(second?.id);
+  });
+});

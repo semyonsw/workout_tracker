@@ -146,7 +146,20 @@ export const seedExercises: Exercise[] = [
     // A round has a bell. The app rings it, and there is no get-ready count —
     // the round starts when you say go.
     timerMode: 'countdown',
-    prepareSeconds: 0,
+    /*
+     * THE LEAD-IN TO THE FIRST ROUND, and the reason it is not zero any more.
+     *
+     * A round exercise runs itself (`lib/rounds.ts`): the bell logs the round, the
+     * rest starts, and the next round starts when the rest runs out — nobody in
+     * gloves is pressing anything. The one moment that CANNOT be automatic is the
+     * very first round, because the phone has no way to know when you have finished
+     * wrapping your hands. So ▶ buys fifteen seconds to get to the bag, and every
+     * round after it begins with no count at all.
+     *
+     * Editable per exercise on the exercise editor's `Get ready` row, and in
+     * Settings for everything that does not set its own.
+     */
+    prepareSeconds: 15,
     isUnilateral: false,
   },
   {
@@ -215,6 +228,89 @@ export const seedExercises: Exercise[] = [
     countUnit: 'reps',
     loadMode: 'none',
     isUnilateral: false,
+  },
+
+  /* --- calisthenics: a skill is not a muscle -------------------------- */
+  /*
+   * Every one of these is `countUnit: 'seconds'` + `timerMode: 'countup'`, and both
+   * halves are the same decision. A hold is measured in seconds because the
+   * question is how long you owned the position; the clock runs UP because nobody
+   * can prescribe the moment their form breaks — and because a count-up has no
+   * bell, so the set is logged when the USER says it is, with DONE. That is exactly
+   * the opposite of a boxing round, which ends on a bell and needs no thumb, and
+   * the two live side by side in the library to prove the axes are independent.
+   */
+  {
+    ...base,
+    id: 'ex_handstand',
+    name: 'Handstand hold',
+    aliases: ['handstand', 'wall handstand'],
+    muscleGroups: ['calisthenics', 'shoulders', 'core'],
+    requiresWeight: false,
+    countUnit: 'seconds',
+    loadMode: 'none',
+    timerMode: 'countup',
+    prepareSeconds: 5,
+    isUnilateral: false,
+    defaultCount: 30,
+    defaultSets: 3,
+  },
+  {
+    ...base,
+    id: 'ex_front_lever',
+    name: 'Front lever hold',
+    aliases: ['front lever', 'lever'],
+    muscleGroups: ['calisthenics', 'back', 'core'],
+    requiresWeight: false,
+    countUnit: 'seconds',
+    loadMode: 'none',
+    timerMode: 'countup',
+    prepareSeconds: 5,
+    isUnilateral: false,
+    defaultCount: 10,
+    defaultSets: 4,
+  },
+  {
+    ...base,
+    id: 'ex_planche',
+    name: 'Planche hold',
+    aliases: ['planche', 'plunge'],
+    muscleGroups: ['calisthenics', 'shoulders', 'chest'],
+    requiresWeight: false,
+    countUnit: 'seconds',
+    loadMode: 'none',
+    timerMode: 'countup',
+    prepareSeconds: 5,
+    isUnilateral: false,
+    defaultCount: 10,
+    defaultSets: 4,
+  },
+  {
+    ...base,
+    id: 'ex_l_sit',
+    name: 'L-sit',
+    muscleGroups: ['calisthenics', 'core'],
+    requiresWeight: false,
+    countUnit: 'seconds',
+    loadMode: 'none',
+    timerMode: 'countup',
+    prepareSeconds: 5,
+    isUnilateral: false,
+    defaultCount: 20,
+    defaultSets: 3,
+  },
+  {
+    ...base,
+    id: 'ex_muscle_up',
+    name: 'Muscle-up',
+    muscleGroups: ['calisthenics', 'back', 'triceps'],
+    requiresWeight: false,
+    // The one rep-counted skill: a muscle-up is a repetition, not a hold.
+    countUnit: 'reps',
+    loadMode: 'none',
+    isUnilateral: false,
+    defaultCount: 3,
+    defaultSets: 4,
   },
 
   /* --- more back and arm work, so the pull cluster has a shape -------- */
@@ -415,5 +511,33 @@ export const seedRoutineBoxing: Routine = {
   ],
 };
 
-export const seedRoutines: Routine[] = [seedRoutine, seedRoutinePush, seedRoutineBoxing];
+/**
+ * The skill day. Holds first, while the shoulders are fresh, then the one
+ * rep-counted skill.
+ *
+ * `targetRepsMax` is SECONDS for time-counted work, so these numbers are the hold
+ * each set starts prefilled with — and on a count-up they are a prefill and not a
+ * prescription: the clock runs until DONE and logs what it read.
+ */
+export const seedRoutineCalisthenics: Routine = {
+  id: 'r_calisthenics',
+  ownerId: 'u1',
+  name: 'Calisthenics skills',
+  createdAt: '2026-06-01T00:00:00.000Z',
+  updatedAt: '2026-08-06T00:00:00.000Z',
+  items: [
+    { id: 'rc1', exerciseId: 'ex_handstand', order: 0, targetSets: 3, targetRepsMax: 30 },
+    { id: 'rc2', exerciseId: 'ex_front_lever', order: 1, targetSets: 4, targetRepsMax: 10 },
+    { id: 'rc3', exerciseId: 'ex_planche', order: 2, targetSets: 4, targetRepsMax: 10 },
+    { id: 'rc4', exerciseId: 'ex_l_sit', order: 3, targetSets: 3, targetRepsMax: 20 },
+    { id: 'rc5', exerciseId: 'ex_muscle_up', order: 4, targetSets: 4, targetRepsMax: 3 },
+  ],
+};
+
+export const seedRoutines: Routine[] = [
+  seedRoutine,
+  seedRoutinePush,
+  seedRoutineBoxing,
+  seedRoutineCalisthenics,
+];
 

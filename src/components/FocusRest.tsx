@@ -41,14 +41,17 @@
  * same thing twice, quietly, in two places.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, Text, View } from 'react-native';
 
+import type { DraftSet } from '../lib/draft';
 import type { FocusPlan } from '../lib/focusPlan';
+import { tap } from '../lib/feedback';
 import { formatClock } from '../lib/units';
 import type { RestTimerApi } from '../hooks/useRestTimer';
 import { palette, space } from '../theme/tokens';
 import { FocusClockBlock, FocusUpNext } from './FocusClock';
+import { FocusNudge } from './FocusNudge';
 import { Icon } from './Icon';
 import { FINAL_SECONDS, pillTone, type PillTone } from './TimerPill';
 import { restLabel } from './RestTimerPill';
@@ -58,11 +61,36 @@ export function FocusRest({
   rest,
   plan,
   unitSystem,
+  onPatch,
 }: {
   rest: RestTimerApi;
   plan: FocusPlan;
   unitSystem: UnitSystem;
+  /**
+   * Change the set the countdown is counting towards.
+   *
+   * ── WHY REST IS AN EDITING SCREEN NOW ──────────────────────────────────
+   *
+   * It used to be the one state of focus mode with no controls over the WORK in
+   * it: the clock, and a block stating what was coming. That reads as a design
+   * decision and it was an omission, because the minute between two sets is
+   * exactly when the decision about the next one gets made — the last set was
+   * heavy, the next one is coming down 10 kg, and the user is holding the phone
+   * with nothing else to do. Before this they had to leave focus mode, find the
+   * row, open its editor, and come back, all against a clock.
+   *
+   * So the up-next block is a button, and it opens the same ± `Lift` opens. Absent
+   * = the block is a statement again, which is what a caller with no session to
+   * patch should get rather than a control that does nothing.
+   */
+  onPatch?: (patch: Partial<DraftSet>) => void;
 }) {
+  /*
+   * Screen-local, and reset by the block disappearing — a panel is open because
+   * the user opened it a moment ago, and that is not a fact worth surviving the
+   * rest it was opened during.
+   */
+  const [nudgeOpen, setNudgeOpen] = useState(false);
   const { remaining, isPaused, source, totalSeconds, stepSeconds, add, pause, resume, skip } = rest;
 
   const finalTen = !isPaused && remaining <= FINAL_SECONDS;
@@ -157,12 +185,34 @@ export function FocusRest({
       <View className="flex-1" />
 
       {plan.current ? (
-        <FocusUpNext
-          target={plan.current}
-          unitSystem={unitSystem}
-          isNewExercise={plan.isNewExercise}
-          previousName={plan.lastLogged?.entry.exercise.name ?? null}
-        />
+        <View className="mb-xl">
+          <FocusUpNext
+            target={plan.current}
+            unitSystem={unitSystem}
+            isNewExercise={plan.isNewExercise}
+            previousName={plan.lastLogged?.entry.exercise.name ?? null}
+            onPress={
+              onPatch
+                ? () => {
+                    tap();
+                    setNudgeOpen((open) => !open);
+                  }
+                : undefined
+            }
+            isOpen={nudgeOpen}
+          />
+          {/* Under the block rather than over the clock: the thing being changed
+              stays visible while the chips move it, exactly as `QuickAdjust` sits
+              under the row it edits. */}
+          {onPatch && nudgeOpen ? (
+            <FocusNudge
+              set={plan.current.set}
+              exercise={plan.current.entry.exercise}
+              unitSystem={unitSystem}
+              onChange={onPatch}
+            />
+          ) : null}
+        </View>
       ) : (
         /*
          * A COUNTDOWN WITH NOTHING AFTER IT.

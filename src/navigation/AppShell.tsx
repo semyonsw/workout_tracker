@@ -148,6 +148,7 @@ export function AppShell() {
   const createRoutine = useLibrary((s) => s.createRoutine);
   const updateRoutine = useLibrary((s) => s.updateRoutine);
   const deleteRoutine = useLibrary((s) => s.deleteRoutine);
+  const duplicateRoutine = useLibrary((s) => s.duplicateRoutine);
   const appendToRoutine = useLibrary((s) => s.appendToRoutine);
   const sequence = useLibrary((s) => s.sequence);
   const setSequenceActive = useLibrary((s) => s.setSequenceActive);
@@ -155,6 +156,7 @@ export function AppShell() {
   const removeSequenceStep = useLibrary((s) => s.removeSequenceStep);
   const moveSequenceStep = useLibrary((s) => s.moveSequenceStep);
   const setSequenceCursor = useLibrary((s) => s.setSequenceCursor);
+  const varySequenceStep = useLibrary((s) => s.varySequenceStep);
   const advanceSequence = useLibrary((s) => s.advanceSequence);
 
   const unitSystem = useSettings((s) => s.unitSystem);
@@ -237,6 +239,17 @@ export function AppShell() {
 
   const top = stack[stack.length - 1] ?? null;
   const push = useCallback((route: Route) => setStack((s) => [...s, route]), []);
+  /**
+   * Swap the top of the stack for another route.
+   *
+   * One caller: duplicating a routine, which replaces the editor with an editor on
+   * the copy. `push` would be wrong there — backing out of the copy would land on
+   * the original's editor, which is a screen the user has already left.
+   */
+  const replaceTop = useCallback(
+    (route: Route) => setStack((s) => (s.length === 0 ? [route] : [...s.slice(0, -1), route])),
+    [],
+  );
   const pop = useCallback(() => setStack((s) => s.slice(0, -1)), []);
   /**
    * Back to the logging screen, however many screens deep the detour went.
@@ -649,6 +662,14 @@ export function AppShell() {
            */
           routineItems={session?.routineId ? routinesById[session.routineId]?.items : undefined}
           onAddExercise={() => push({ name: 'addExercise', routineId: null, target: 'session' })}
+          /*
+           * `Edit exercise` on the open card. The same editor the Library tab
+           * pushes, and the same route — so there is one screen that knows what an
+           * exercise is, and it does not grow a second, session-flavoured copy. The
+           * write back into the live session happens where the editor is handled
+           * (`editExercise`, below), not here.
+           */
+          onEditExercise={(exerciseId) => push({ name: 'editExercise', exerciseId })}
           onFinish={(finished, updatePlan) => {
             /*
              * The one write to permanent history. Everything downstream —
@@ -772,6 +793,18 @@ export function AppShell() {
         }}
         /* Removing an exercise writes through immediately — see the editor. */
         onCommit={(draft) => updateRoutine(routine.id, draft)}
+        /*
+         * The draft is written back BEFORE the copy is taken, so the copy is of
+         * what is on screen and not of what was on disk. Then the editor is
+         * REPLACED by one pointed at the copy — pushed rather than swapped would
+         * leave the original underneath, and backing out of the copy would land on
+         * the routine the user has just finished with.
+         */
+        onDuplicate={(draft) => {
+          updateRoutine(routine.id, draft);
+          const copy = duplicateRoutine(routine.id);
+          if (copy) replaceTop({ name: 'routineEditor', routineId: copy.id });
+        }}
         onDelete={() => {
           deleteRoutine(routine.id);
           pop();
@@ -871,7 +904,20 @@ export function AppShell() {
         onSubmit={(draft) => {
           // In place, keeping the id: every set ever logged points at it, so the
           // history follows the rename instead of being orphaned by it.
-          updateExercise(exercise.id, applyDraftToExercise(draft, exercise));
+          const next = applyDraftToExercise(draft, exercise);
+          updateExercise(exercise.id, next);
+          /*
+           * ...AND INTO THE WORKOUT IN FLIGHT, if this movement is in one.
+           *
+           * The session carries its own copy of each exercise on purpose (see
+           * `DraftEntry`), which is what stops an edit made in another tab from
+           * repricing a workout under way. The edit made FROM that workout is the
+           * one case where that protection is the bug: the user changed this
+           * exercise's rest between two sets of it, and a rest that starts applying
+           * next Tuesday is a control that did nothing. A no-op when no session
+           * holds the movement.
+           */
+          useActiveWorkout.getState().syncExercise(exercise.id, next);
           pop();
         }}
       />
@@ -914,6 +960,17 @@ export function AppShell() {
         onRemoveStep={removeSequenceStep}
         onMoveStep={moveSequenceStep}
         onSetCursor={setSequenceCursor}
+        /*
+         * Both of these land on the routine EDITOR, because "change what this step
+         * contains" is editing a routine and there is one screen for that. Neither
+         * passes `isNew`: a copy with six exercises in it is not an empty routine
+         * somebody opened by accident, so backing out of it must not delete it.
+         */
+        onEditStep={(routineId) => push({ name: 'routineEditor', routineId })}
+        onVaryStep={(index) => {
+          const copy = varySequenceStep(index);
+          if (copy) push({ name: 'routineEditor', routineId: copy.id });
+        }}
       />
     );
   }

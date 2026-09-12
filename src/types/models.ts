@@ -93,7 +93,23 @@ export type MuscleGroup =
   | 'hamstrings'
   | 'glutes'
   | 'calves'
-  | 'cardio';
+  | 'cardio'
+  /**
+   * A SKILL, not a muscle: a front lever, a planche, a handstand, a muscle-up.
+   *
+   * It is filed in the muscle union because that union is what the library is a
+   * tree of, and the alternative — a second, parallel taxonomy for "exercises
+   * that are not about one muscle" — is a second library screen, a second filter
+   * and a second thing that can disagree with the first.
+   *
+   * Calisthenics holds genuinely have no primary muscle. A front lever is lats
+   * and abs and everything between them, and listing it as `back` files it beside
+   * rows it says nothing about: the honest answer to "which muscle is this" is
+   * "the skill is the point". So it gets its own group under its own cluster
+   * (`skill`), which is what makes `+ Add exercise to calisthenics` a real
+   * destination rather than a section that never fills.
+   */
+  | 'calisthenics';
 
 /**
  * The movement family a muscle group belongs to — the second level of the
@@ -106,7 +122,7 @@ export type MuscleGroup =
  * Every `MuscleGroup` belongs to exactly ONE cluster. The mapping — and the
  * compile-time proof that it is total — lives in `src/lib/muscles.ts`.
  */
-export type MuscleCluster = 'push' | 'pull' | 'legs' | 'core' | 'cardio';
+export type MuscleCluster = 'push' | 'pull' | 'legs' | 'core' | 'cardio' | 'skill';
 
 /** What the number in the second input actually counts. */
 export type CountUnit = 'reps' | 'seconds' | 'meters' | 'rounds';

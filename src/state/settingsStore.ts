@@ -388,6 +388,7 @@ const CLUSTER_KEYS = [
   'legs',
   'core',
   'cardio',
+  'skill',
 ] as const satisfies readonly MuscleCluster[];
 
 /** A folder URI that could plausibly have been granted, or undefined. */

@@ -49,7 +49,9 @@ export type IconName =
   | 'trending-down'
   | 'x'
   | 'play'
-  | 'pause';
+  | 'pause'
+  | 'edit'
+  | 'copy';
 
 interface IconProps {
   name: IconName;
@@ -71,6 +73,8 @@ const STROKE: Record<IconName, number> = {
   x: 2,
   play: 2.5,
   pause: 2.5,
+  edit: 2,
+  copy: 2,
 };
 
 const PATHS: Record<IconName, string[]> = {
@@ -90,6 +94,12 @@ const PATHS: Record<IconName, string[]> = {
   // Two bars on the same 6.5→17.5 vertical as the triangle, so ▶ and ⏸ swapping
   // in the same slot doesn't shift the optical centre.
   pause: ['M9.5 6.5v11M14.5 6.5v11'],
+  // A pencil: the nib on the same diagonal the checkmark's long stroke runs on,
+  // so `Edit` and `✓` in one card read as the same hand.
+  edit: ['M4 20h4L19.5 8.5a2.1 2.1 0 10-3-3L5 17v3z', 'M14 7l3 3'],
+  // Two offset sheets, the front one complete. Same 2 dp stroke as the chevrons:
+  // it is a navigation-weight glyph, not one of the two that mean "I did it".
+  copy: ['M9 9h10v12H9z', 'M5 15H3V3h12v2'],
 };
 
 export function Icon({ name, size, color }: IconProps) {

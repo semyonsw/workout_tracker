@@ -12,6 +12,7 @@ import {
   useActiveWorkout,
   useSessionProgress,
 } from './activeWorkoutStore';
+import { useLibrary } from './libraryStore';
 import { useSettings } from './settingsStore';
 import { buildDraftEntry, draftToSetHistory, type DraftEntry } from '../lib/draft';
 import { DEFAULT_OVERLOAD_POLICY } from '../lib/progressiveOverload';
@@ -1481,5 +1482,238 @@ describe('the ladder reshaping a session in flight', () => {
     const entry = startLadder({ ladder: { max: Number.NaN, earned: 0 } });
     const store = useActiveWorkout.getState();
     expect(() => store.completeSet(entry.localId, entry.sets[0].localId)).not.toThrow();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The weight carry                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * "Four sets of 70, and I did 60" used to mean three more corrections. The rule
+ * is `lib/weightCarry.ts`; what is tested here is that `completeSet` applies it,
+ * and that it reaches the library row as the movement's starting weight.
+ */
+describe('completing a set carries its weight down the exercise', () => {
+  function startWeighted() {
+    const session = startRoutine();
+    const entry = session.entries.find((e) => e.exercise.requiresWeight);
+    if (!entry) throw new Error('the pull routine has no weighted exercise');
+    return entry;
+  }
+
+  const weightsOf = (entryId: ID) =>
+    useActiveWorkout
+      .getState()
+      .session?.entries.find((e) => e.localId === entryId)
+      ?.sets.map((s) => s.weightKg);
+
+  it('rewrites every unlogged set below the one just logged', () => {
+    const entry = startWeighted();
+    const store = useActiveWorkout.getState();
+    store.patchSet(entry.localId, entry.sets[0].localId, { weightKg: 60 });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+
+    const after = weightsOf(entry.localId) ?? [];
+    expect(after[0]).toBe(60);
+    expect(after.slice(1).every((w) => w === 60)).toBe(true);
+  });
+
+  it('teaches the library where this movement now starts', () => {
+    useLibrary.getState().restoreSeedLibrary();
+    const entry = startWeighted();
+    const store = useActiveWorkout.getState();
+    store.patchSet(entry.localId, entry.sets[0].localId, { weightKg: 62.5 });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(
+      useLibrary.getState().exercises.find((e) => e.id === entry.exercise.id)?.defaultWeightKg,
+    ).toBe(62.5);
+    // ...and the session's own copy agrees, so the next build of it starts there.
+    expect(
+      useActiveWorkout.getState().session?.entries.find((e) => e.localId === entry.localId)
+        ?.exercise.defaultWeightKg,
+    ).toBe(62.5);
+  });
+
+  it('leaves an unweighted exercise untouched', () => {
+    const session = startRoutine();
+    const entry = session.entries.find((e) => !e.exercise.requiresWeight);
+    if (!entry) throw new Error('the pull routine has no bodyweight exercise');
+    const before = weightsOf(entry.localId);
+
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+
+    expect(weightsOf(entry.localId)).toEqual(before);
+  });
+
+  it('does not disturb a set that was already logged heavier', () => {
+    const entry = startWeighted();
+    const store = useActiveWorkout.getState();
+    store.patchSet(entry.localId, entry.sets[0].localId, { weightKg: 80 });
+    store.completeSet(entry.localId, entry.sets[0].localId);
+    store.patchSet(entry.localId, entry.sets[1].localId, { weightKg: 60 });
+    store.completeSet(entry.localId, entry.sets[1].localId);
+
+    const after = weightsOf(entry.localId) ?? [];
+    expect(after[0]).toBe(80);
+    expect(after[1]).toBe(60);
+    expect(after[2]).toBe(60);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Editing an exercise mid-session                                     */
+/* ------------------------------------------------------------------ */
+
+describe('syncExercise', () => {
+  it('lands the library edit on the card that is open', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+
+    useActiveWorkout.getState().syncExercise(entry.exercise.id, {
+      ...entry.exercise,
+      name: 'Renamed mid-set',
+      defaultRestSeconds: 45,
+    });
+
+    const after = useActiveWorkout
+      .getState()
+      .session?.entries.find((e) => e.localId === entry.localId);
+    expect(after?.exercise.name).toBe('Renamed mid-set');
+    expect(after?.exercise.defaultRestSeconds).toBe(45);
+  });
+
+  it('leaves the logged sets exactly as they are', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+    useActiveWorkout.getState().completeSet(entry.localId, entry.sets[0].localId);
+    const before = useActiveWorkout
+      .getState()
+      .session?.entries.find((e) => e.localId === entry.localId)?.sets;
+
+    useActiveWorkout.getState().syncExercise(entry.exercise.id, {
+      ...entry.exercise,
+      defaultWeightKg: 999,
+    });
+
+    expect(
+      useActiveWorkout.getState().session?.entries.find((e) => e.localId === entry.localId)?.sets,
+    ).toEqual(before);
+  });
+
+  it('is a no-op for a movement this session does not contain', () => {
+    const session = startRoutine();
+    const before = useActiveWorkout.getState().session;
+    useActiveWorkout.getState().syncExercise('ex_not_here', session.entries[0].exercise);
+
+    expect(useActiveWorkout.getState().session).toBe(before);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The round chain                                                     */
+/* ------------------------------------------------------------------ */
+
+/** The boxing routine is the third shipped one; its first item is the bag. */
+function startBoxing() {
+  const session = startRoutine(2);
+  const bag = session.entries.find((e) => e.exercise.countUnit === 'rounds');
+  if (!bag) throw new Error('the boxing routine has no bag in it');
+  return bag;
+}
+
+describe('arming the round chain', () => {
+  it('starting a round’s clock arms it', () => {
+    const bag = startBoxing();
+    useActiveWorkout.getState().startSetTimer(bag.localId, bag.sets[0].localId);
+
+    expect(useActiveWorkout.getState().roundsAuto).toBe(bag.localId);
+  });
+
+  it('starting a plank’s clock does not', () => {
+    const session = startRoutine();
+    const plank = session.entries.find((e) => e.exercise.id === 'ex_plank');
+    if (!plank) throw new Error('the pull routine has no plank');
+    useActiveWorkout.getState().startSetTimer(plank.localId, plank.sets[0].localId);
+
+    expect(useActiveWorkout.getState().roundsAuto).toBeNull();
+  });
+
+  it('✕ on the clock disarms it', () => {
+    const bag = startBoxing();
+    const store = useActiveWorkout.getState();
+    store.startSetTimer(bag.localId, bag.sets[0].localId);
+    store.cancelSetTimer();
+
+    expect(useActiveWorkout.getState().roundsAuto).toBeNull();
+  });
+
+  it('skipPrepare spends the lead-in before the clock is even stored', () => {
+    const bag = startBoxing();
+    const store = useActiveWorkout.getState();
+
+    store.startSetTimer(bag.localId, bag.sets[0].localId);
+    expect(useActiveWorkout.getState().setTimer?.prepareSeconds).toBe(
+      bag.exercise.prepareSeconds ?? 0,
+    );
+
+    store.startSetTimer(bag.localId, bag.sets[1].localId, { skipPrepare: true });
+    expect(useActiveWorkout.getState().setTimer?.prepareSeconds).toBe(0);
+  });
+
+  it('stays armed while rounds remain, and disarms on the last one', () => {
+    const bag = startBoxing();
+    const store = useActiveWorkout.getState();
+    store.startSetTimer(bag.localId, bag.sets[0].localId);
+
+    for (const set of bag.sets.slice(0, -1)) {
+      store.completeSet(bag.localId, set.localId);
+      expect(useActiveWorkout.getState().roundsAuto).toBe(bag.localId);
+    }
+    store.completeSet(bag.localId, bag.sets.at(-1)?.localId ?? '');
+
+    expect(useActiveWorkout.getState().roundsAuto).toBeNull();
+  });
+
+  it('rests between rounds even with auto-rest switched off', () => {
+    useSettings.getState().setFlag('autoStartRest', false);
+    const bag = startBoxing();
+    const store = useActiveWorkout.getState();
+    store.startSetTimer(bag.localId, bag.sets[0].localId);
+    store.completeSet(bag.localId, bag.sets[0].localId);
+
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
+    useSettings.getState().setFlag('autoStartRest', true);
+  });
+
+  it('and an unarmed round still obeys the setting', () => {
+    useSettings.getState().setFlag('autoStartRest', false);
+    const bag = startBoxing();
+    useActiveWorkout.getState().completeSet(bag.localId, bag.sets[0].localId);
+
+    expect(isResting(useActiveWorkout.getState().rest)).toBe(false);
+    useSettings.getState().setFlag('autoStartRest', true);
+  });
+
+  it('removing the exercise takes the chain with it', () => {
+    const bag = startBoxing();
+    const store = useActiveWorkout.getState();
+    store.startSetTimer(bag.localId, bag.sets[0].localId);
+    store.removeEntry(bag.localId);
+
+    expect(useActiveWorkout.getState().roundsAuto).toBeNull();
+  });
+
+  it('is cleared by finishing and by discarding the session', () => {
+    const bag = startBoxing();
+    useActiveWorkout.getState().startSetTimer(bag.localId, bag.sets[0].localId);
+    useActiveWorkout.getState().finishSession();
+    expect(useActiveWorkout.getState().roundsAuto).toBeNull();
+
+    const again = startBoxing();
+    useActiveWorkout.getState().startSetTimer(again.localId, again.sets[0].localId);
+    useActiveWorkout.getState().discardSession();
+    expect(useActiveWorkout.getState().roundsAuto).toBeNull();
   });
 });

@@ -350,7 +350,16 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
       onUndo={handleUndo}
     />
   ) : rest.isActive ? (
-    <FocusRest rest={rest} plan={plan} unitSystem={unitSystem} />
+    <FocusRest
+      rest={rest}
+      plan={plan}
+      unitSystem={unitSystem}
+      /* The set the countdown is counting towards, editable while it runs — see
+         `FocusRest`. Bound to `plan.current` rather than to a stored target,
+         because the session is editable while rest runs and the row this patches
+         has to be the row the block is showing. */
+      onPatch={current ? (patch) => patchSet(current.entryId, current.setId, patch) : undefined}
+    />
   ) : !current ? (
     <SessionComplete
       loggedCount={progress.done}

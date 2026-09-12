@@ -194,6 +194,21 @@ interface ExerciseCardProps {
    * screen decides whether to ask first — see the file header.
    */
   onRemoveExercise?: () => void;
+  /**
+   * Open the exercise editor on THIS movement, mid-workout.
+   *
+   * The rest between its sets, the weight and count it starts at, how many sets it
+   * plans, its ladder, its clock — every one of those is a fact you discover while
+   * doing the exercise, and every one of them lived behind three screens: leave the
+   * session, find the Library tab, open the tree, find the row. Nobody does that
+   * between sets, so the numbers stayed wrong.
+   *
+   * The edit lands on this card immediately — `activeWorkoutStore.syncExercise`,
+   * called by the shell — because an edit made on the open card that only took
+   * effect next Tuesday would be the same "I changed it and nothing happened" that
+   * `lib/rest.ts` is about.
+   */
+  onEditExercise?: () => void;
 }
 
 function ExerciseCardComponent({
@@ -224,6 +239,7 @@ function ExerciseCardComponent({
   restSeconds = 0,
   onStartRest,
   onRemoveExercise,
+  onEditExercise,
 }: ExerciseCardProps) {
   /** Which set row has the editor open, and on which field. Card-local state. */
   const [focus, setFocus] = useState<{ setId: ID; field: SetField } | null>(null);
@@ -625,6 +641,30 @@ function ExerciseCardComponent({
             >
               <Icon name="play" size={14} color={palette.greenBright} />
               <Text className="ml-sm text-label font-medium text-green-bright">Focus</Text>
+            </Pressable>
+          </>
+        ) : null}
+
+        {/* EDIT THIS EXERCISE, from inside the workout. Between `Focus` and
+            `Remove exercise`: it is an affirmative action like the rows above it,
+            and it is the one you reach for a moment before you would otherwise
+            reach for the destructive one — "this rest is wrong" and "I'm not doing
+            this" are neighbouring thoughts at the rack. Ink-muted rather than
+            green: it changes the plan, it does not advance it. */}
+        {onEditExercise ? (
+          <>
+            <View className="h-hairline bg-hairline" />
+            <Pressable
+              onPress={() => {
+                tap();
+                onEditExercise();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${entry.exercise.name}: rest, defaults and targets`}
+              className="h-row flex-row items-center justify-center"
+            >
+              <Icon name="edit" size={13} color={palette.inkFaint} />
+              <Text className="ml-sm text-label text-ink-muted">Edit exercise</Text>
             </Pressable>
           </>
         ) : null}

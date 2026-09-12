@@ -97,7 +97,7 @@ describe('clusterBalance', () => {
     ]);
 
     const byCluster = Object.fromEntries(result.clusters.map((c) => [c.cluster, c.sets]));
-    expect(byCluster).toEqual({ push: 1, pull: 2, legs: 1, core: 0, cardio: 0 });
+    expect(byCluster).toEqual({ push: 1, pull: 2, legs: 1, core: 0, cardio: 0, skill: 0 });
     expect(result.maxSets).toBe(2);
     expect(result.totalSets).toBe(4);
   });
@@ -113,6 +113,7 @@ describe('clusterBalance', () => {
       'legs',
       'core',
       'cardio',
+      'skill',
     ]);
     expect(result.clusters.find((c) => c.cluster === 'legs')?.sets).toBe(0);
   });
@@ -197,7 +198,7 @@ describe('clusterBalance', () => {
     expect(result.totalSets).toBe(0);
     expect(result.maxSets).toBe(0);
     expect(result.unfiled).toBe(0);
-    expect(result.clusters).toHaveLength(5);
+    expect(result.clusters).toHaveLength(6);
     expect(result.clusters.every((c) => c.sets === 0)).toBe(true);
   });
 

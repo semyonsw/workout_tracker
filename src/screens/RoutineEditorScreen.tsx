@@ -204,6 +204,20 @@ interface RoutineEditorScreenProps {
    */
   onPatchExercise: (exerciseId: ID, fn: (exercise: Exercise) => Exercise) => void;
   onDelete: () => void;
+  /**
+   * COPY this routine, and open the copy.
+   *
+   * The routine editor is where it belongs rather than the list, because copying is
+   * never the end of the intention: you copy `Back` in order to make a second back
+   * day with two exercises swapped, and the next thing you need is this screen,
+   * pointed at the copy. The current draft is committed on the way — copying a
+   * routine and getting a copy of what it looked like before your last three edits
+   * is the kind of thing you only notice a week later.
+   *
+   * Absent = no row, which is what a brand-new empty routine should get: there is
+   * nothing in it to copy.
+   */
+  onDuplicate?: (draft: RoutineDraft) => void;
 }
 
 /** The two things this screen edits. */
@@ -224,6 +238,7 @@ export function RoutineEditorScreen({
   onCommit,
   onPatchExercise,
   onDelete,
+  onDuplicate,
 }: RoutineEditorScreenProps) {
   /** Working name and order. Committed only on Save — this screen is a draft. */
   const [name, setName] = useState(routine.name);
@@ -453,6 +468,14 @@ export function RoutineEditorScreen({
 
           {lifted ? null : (
             <View className="mx-lg mt-xl">
+              {/* Above `Delete`, and separated from it by its own row: the two are
+                  opposite in every way except that they both live at the bottom of
+                  the screen, and a mis-tap between them is not symmetrical. */}
+              {onDuplicate && items.length > 0 ? (
+                <View className="mb-lg">
+                  <TextButton label="Duplicate this routine" onPress={() => onDuplicate(draft())} />
+                </View>
+              ) : null}
               <TextButton label="Delete routine" onPress={onDelete} />
             </View>
           )}

@@ -149,6 +149,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
 import type { DraftEntry, DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
+import { useAutoRounds } from '../hooks/useAutoRounds';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
 import { resolveRest } from '../lib/rest';
 import { describeLadderOutcomes, ladderOutcomes } from '../lib/repLadder';
@@ -217,6 +218,16 @@ interface ActiveWorkoutScreenProps {
    * is what a caller with nowhere to navigate should get rather than a dead row.
    */
   onAddExercise?: () => void;
+  /**
+   * Open the exercise editor on one of this session's movements.
+   *
+   * Handed the LIBRARY id rather than the entry id, because that is what the editor
+   * edits: the session's copy is updated on the way back by the shell
+   * (`syncExercise`), so the card the user was looking at shows the new rest before
+   * the next set. Absent = no `Edit exercise` row, the same rule `onAddExercise`
+   * follows.
+   */
+  onEditExercise?: (exerciseId: ID) => void;
 }
 
 export function ActiveWorkoutScreen({
@@ -225,6 +236,7 @@ export function ActiveWorkoutScreen({
   onFinish,
   onExit,
   onAddExercise,
+  onEditExercise,
 }: ActiveWorkoutScreenProps) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
@@ -300,6 +312,17 @@ export function ActiveWorkoutScreen({
   const commitSetTimer = useActiveWorkout((s) => s.commitSetTimer);
   const startRestNow = useActiveWorkout((s) => s.startRestNow);
   const setSessionEffort = useActiveWorkout((s) => s.setSessionEffort);
+
+  /*
+   * THE ROUND CHAIN, mounted once and here.
+   *
+   * A boxing session advances without a thumb — bell, rest, next round — and the
+   * only thing standing between a spent rest deadline and the next round's clock
+   * is something that looks at the time. This screen is the one component alive for
+   * the whole session (focus mode is a sheet over it, not a route), which makes it
+   * the one place a single instance can live. See `hooks/useAutoRounds.ts`.
+   */
+  useAutoRounds();
 
   /*
    * The live between-sets setting. Each card resolves its OWN rest from it
@@ -787,6 +810,11 @@ export function ActiveWorkoutScreen({
                     restSeconds={resolveRest(entry.exercise, restSeconds).seconds}
                     onStartRest={entry.localId === activeEntryId ? startRestNow : undefined}
                     onRemoveExercise={() => handleRemoveEntry(entry)}
+                    /* Only on the open card, like `Rest` and `Focus`: it is a
+                       control you press about the exercise you are doing. */
+                    onEditExercise={
+                      onEditExercise ? () => onEditExercise(entry.exercise.id) : undefined
+                    }
                     onToggleExpanded={() => handleToggleCard(entry.localId)}
                     // One exercise cannot be reordered, and the gesture would only
                     // ever end where it started.

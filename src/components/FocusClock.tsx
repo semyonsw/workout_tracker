@@ -45,7 +45,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { describeSetPosition, type FocusTarget } from '../lib/focusPlan';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
@@ -240,24 +240,30 @@ export function FocusUpNext({
   unitSystem,
   isNewExercise,
   previousName,
+  onPress,
+  isOpen = false,
 }: {
   target: FocusTarget;
   unitSystem: UnitSystem;
   isNewExercise: boolean;
   /** The exercise the last logged set was in, when it was a different one. */
   previousName?: string | null;
+  /**
+   * Make the block a control: open the ± on the set it is describing.
+   *
+   * Absent leaves it exactly what it was — a statement of what is coming. Present
+   * is what turns REST from a screen you can only watch into a screen you can
+   * plan on, which is the one thing a countdown is actually good for: the minute
+   * before a set is when you decide the set is going to be lighter.
+   */
+  onPress?: () => void;
+  /** The ± is showing, so the block says `close` rather than `±`. */
+  isOpen?: boolean;
 }) {
   const { exercise } = target.entry;
 
-  return (
-    <View
-      style={{
-        backgroundColor: isNewExercise ? palette.surfaceAlt : palette.surface,
-        borderWidth: 1,
-        borderColor: palette.hairline,
-      }}
-      className="mx-lg mb-xl rounded-surface px-lg pb-lg pt-lg"
-    >
+  const body = (
+    <>
       <Text
         numberOfLines={1}
         className={[
@@ -309,6 +315,37 @@ export function FocusUpNext({
           walk to a new machine · you were on {previousName}
         </Text>
       ) : null}
+    </>
+  );
+
+  const style = {
+    backgroundColor: isNewExercise ? palette.surfaceAlt : palette.surface,
+    borderWidth: 1,
+    borderColor: palette.hairline,
+  } as const;
+  const className = 'mx-lg rounded-surface px-lg pb-lg pt-lg';
+
+  /*
+   * A Pressable only when there is something to press. The children are built ONCE
+   * above and handed to whichever container is needed, rather than through a
+   * component declared in here: a component defined during render is a new type
+   * every render, and this block re-renders four times a second while the rest it
+   * sits under ticks. Same reasoning as `SetRow`'s `rowChildren`.
+   */
+  return onPress ? (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: isOpen }}
+      accessibilityLabel={`Up next: ${exercise.name}. Adjust the weight or the count.`}
+      style={style}
+      className={`${className} mb-sm`}
+    >
+      {body}
+    </Pressable>
+  ) : (
+    <View style={style} className={`${className} mb-xl`}>
+      {body}
     </View>
   );
 }
