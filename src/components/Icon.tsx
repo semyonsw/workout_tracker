@@ -50,8 +50,7 @@ export type IconName =
   | 'x'
   | 'play'
   | 'pause'
-  | 'edit'
-  | 'copy';
+  | 'edit';
 
 interface IconProps {
   name: IconName;
@@ -74,7 +73,6 @@ const STROKE: Record<IconName, number> = {
   play: 2.5,
   pause: 2.5,
   edit: 2,
-  copy: 2,
 };
 
 const PATHS: Record<IconName, string[]> = {
@@ -97,9 +95,6 @@ const PATHS: Record<IconName, string[]> = {
   // A pencil: the nib on the same diagonal the checkmark's long stroke runs on,
   // so `Edit` and `✓` in one card read as the same hand.
   edit: ['M4 20h4L19.5 8.5a2.1 2.1 0 10-3-3L5 17v3z', 'M14 7l3 3'],
-  // Two offset sheets, the front one complete. Same 2 dp stroke as the chevrons:
-  // it is a navigation-weight glyph, not one of the two that mean "I did it".
-  copy: ['M9 9h10v12H9z', 'M5 15H3V3h12v2'],
 };
 
 export function Icon({ name, size, color }: IconProps) {
