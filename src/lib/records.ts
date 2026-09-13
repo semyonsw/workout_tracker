@@ -48,7 +48,7 @@
  */
 
 import { effectiveLoadKg } from './units';
-import type { CountUnit, Exercise, ID, SetHistory } from '../types/models';
+import type { CountUnit, Exercise, SetHistory } from '../types/models';
 
 /** One record: the number, and enough of the set to recognise it. */
 export interface RecordSet {
@@ -212,22 +212,4 @@ export function describeBests(
   }
 
   return parts.length > 0 ? parts.join(' · ') : null;
-}
-
-/**
- * Every exercise's bests in one pass, keyed by id.
- *
- * The same shape and the same reason as `evaluateOverloadBatch`: a screen that needs
- * this for eighteen exercises should not filter the whole history eighteen times.
- */
-export function exerciseBestsBatch(
-  historyByExerciseId: Record<ID, SetHistory[]>,
-  exercisesById: Record<ID, Exercise>,
-  bodyweightAtDate?: BodyweightLookup,
-): Record<ID, ExerciseBests> {
-  const out: Record<ID, ExerciseBests> = {};
-  for (const [id, exercise] of Object.entries(exercisesById)) {
-    out[id] = exerciseBests(historyByExerciseId[id] ?? [], exercise, bodyweightAtDate);
-  }
-  return out;
 }

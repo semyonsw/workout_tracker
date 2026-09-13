@@ -88,11 +88,6 @@ function moduleOrNull(): HealthConnectModule | null {
   return cached;
 }
 
-/** Is there anything to talk to? Cheap, and safe to call from a render. */
-export function healthConnectPossible(): boolean {
-  return moduleOrNull() != null;
-}
-
 export type HealthConnectState = 'unavailable' | 'needs-permission' | 'ready';
 
 /**

@@ -147,12 +147,6 @@ export function activeGymPlates(gyms: readonly Gym[], activeGymId: unknown): num
   return gym ? gym.platesKg : [...DEFAULT_PLATES_KG];
 }
 
-/** The active gym itself, for a row that names where you are. */
-export function activeGym(gyms: readonly Gym[], activeGymId: unknown): Gym | null {
-  const id = resolveActiveGymId(gyms, activeGymId);
-  return gyms.find((g) => g.id === id) ?? null;
-}
-
 /**
  * Add a gym, seeded from the one that is active.
  *

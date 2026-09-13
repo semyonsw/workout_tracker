@@ -35,8 +35,6 @@
 
 import type { CompletedWorkout } from './completedWorkout';
 
-export type RestSourceKind = 'set' | 'transition';
-
 /**
  * The longest gap this file is willing to call a rest.
  *

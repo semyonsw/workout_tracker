@@ -229,28 +229,6 @@ interface WorkoutHistoryState {
    * A restore is "make this phone look like that backup".
    */
   importWorkouts: (raw: unknown, numbering?: unknown) => number;
-  /**
-   * MERGE a log in, rather than replacing this one. Returns how many workouts were
-   * actually ADDED — not how many the file held, and not the total afterwards.
-   *
-   * Alongside `importWorkouts`, never instead of it. Replace is right for a
-   * restore: "make this phone look like that backup", and the argument on
-   * `importWorkouts` about a merged LIBRARY resurrecting every exercise you have
-   * deleted still stands — which is why only workouts merge, and the library and
-   * settings stay replace-only.
-   *
-   * A merged LOG is a different case, and it is safe for a reason already written
-   * down: rule 3 of this store says finishing twice is one workout, because the id
-   * is the session's own. So a union keyed on id cannot produce two rows for one
-   * workout, which is the failure mode that makes merging a library unauditable. A
-   * replaced phone and a second device become serviceable, and nothing else changes.
-   *
-   * ON A COLLISION THE LOCAL COPY WINS. The row on this phone is the one whose
-   * corrections, if any, were made here — and "the file is authoritative" is what
-   * `importWorkouts` is for. Merging is additive by definition: it never rewrites a
-   * row that is already here.
-   */
-  mergeWorkouts: (raw: unknown) => number;
 }
 
 /**
@@ -561,26 +539,6 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
     // claimed: a pin onto a workout the guard dropped is a pin onto nothing.
     set({ workouts, numbering: persistNumbering(sanitizeNumbering(numbering, workouts)) });
     return workouts.length;
-  },
-
-  mergeWorkouts: (raw) => {
-    // Same validator, same reason: a file off an SD card is exactly as
-    // trustworthy as a column off disk, and there is one guard per shape.
-    const incoming = sanitizeWorkouts(raw, []);
-    if (incoming.length === 0) return 0;
-
-    const local = get().workouts;
-    const known = new Set(local.map((w) => w.id));
-    const added = incoming.filter((w) => !known.has(w.id));
-    if (added.length === 0) return 0;
-
-    writeWorkouts(added);
-    set({
-      workouts: [...local, ...added].sort(
-        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
-      ),
-    });
-    return added.length;
   },
 }));
 

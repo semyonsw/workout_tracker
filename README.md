@@ -78,28 +78,32 @@ npm run lint             # also what CI runs, on every push
 | How did that go | one tap on the Finish sheet — easy, right, brutal — and it appears on the history row. One number for the session, never one per set |
 | Numbers it will not fake | volume needs a bodyweight to weigh a push-up or an assisted pull-up. Without one the clause is dropped rather than printed short, and no bodyweight is ever guessed |
 | Edit any workout in history | open it and everything about it is editable: correct one logged set on the same ± chips, add a set back, add or remove a whole exercise, rename it, move it to the right day and time, say how long it actually took. Moving a workout drags every set's date with it, because that date is what the suggestions and the charts read. Every number around the edit is recomputed from the rows rather than patched, and removing the last exercise is refused — that is `Delete this workout`, which asks first |
-| Settings | every duration the app counts, plus sound, vibration, screen-on and notification switches. Your bodyweight, which is what makes push-ups and assisted work countable. Which plates each gym has. Weekly set targets, if you want them. And what you actually rest, measured, with one tap to adopt it |
-| Export / Import | everything you own — exercises, routines, the sequence, every workout with its set rows, the daily tasks, the money and your settings — as one readable JSON file, and back again through the phone's file browser. The pinned workout number travels with it, because it is the one fact that cannot be recomputed. `Add workouts from a file` merges a second phone's log instead of replacing yours; a CSV of every set row is there too, for a spreadsheet. One section on its own is the other half of this — see [Three logs, one app](#three-logs-one-app) |
+| Settings | **a screen per section** — workout, daily tasks, expenses — behind three rows, plus the general block that holds the one export, the one import and the one reset. The workout one is every duration the app counts, plus sound, vibration, screen-on and notification switches. Your bodyweight, which is what makes push-ups and assisted work countable. Which plates each gym has. Weekly set targets, if you want them. And what you actually rest, measured, with one tap to adopt it |
+| Export / Import | everything you own — exercises, routines, the sequence, every workout with its set rows, the daily tasks, the expenses and your settings — as one readable JSON file, and back again through the phone's file browser. The pinned workout number travels with it, because it is the one fact that cannot be recomputed. **One export, one import, one reset**, all in the general settings section: there used to be eight rows here (a merge, a CSV either way, and a pair per section) and together they made the one that matters just another thing to be careful about |
 | Backups happen on their own | pick a folder once and the whole log is written into it every week, four copies deep, without being asked. Settings states the age of the last one — `Today`, `12 days ago`, `Never` — because a backup you have to remember is a backup you do not have |
-| Bring in old training | `Import old workouts from a CSV`: a spreadsheet of sets from before this app existed becomes workouts, and the exercises it mentions and you do not have get created rather than left dangling. Adds; never replaces |
 | Health Connect | off by default. Switch it on and a finished workout is written as one exercise session — start, end, name — so a watch or a health app knows you trained. Nothing is ever read back, and the sets never leave |
 
 ## Three logs, one app
 
-The tab bar is `Today · Tasks · Money · History · More`. Training is the reason
-the app exists; the other two are logs of the same shape — a thing you did, on a
-day — and they are roots because each is a reason to open the app on its own.
+The tab bar is `Workout · Tasks · Expenses · Settings`, and **a horizontal swipe
+moves one section along**. Training is the reason the app exists; the other two
+are logs of the same shape — a thing you did, on a day — and they are roots
+because each is a reason to open the app on its own.
+
+`History` is not a section, it is the PAST of one: every section carries a **⟲ in
+its top-right corner** that opens its own history, the same glyph in the same
+place for all three. That replaced a tab that only the training log had, and two
+screens' worth of charts you had to scroll past your actual day to reach.
 
 | | |
 | --- | --- |
 | Daily tasks | one circle per task per day, and it cycles **unanswered → done → missed on purpose**. The third state is what makes the other two mean anything: without a way to say *I chose not to*, the only honest thing a habit list can report is failure. An excused day keeps the streak and leaves the denominator |
 | Reorder them | long press a row and slide. The day list shows only the tasks that asked for something, so a Mon/Wed/Fri row is genuinely absent on a Tuesday — dragging the third row to the top means the third row you can SEE, and every hidden task keeps its own slot |
-| The month, and the trend | `Month` is a square per day, filled by how much of that day got done — tap one to open it and answer it. `Trend` is percent-done over a range you pick: week, month, 3 months, year, all time. A day that asked for nothing is left out rather than plotted as a zero |
-| They answer themselves | finishing a workout ticks the training task. Recording an amount ticks the expense one — **on the day the amount is for**, so writing up yesterday's taxi at breakfast ticks yesterday. Neither ever overrules a day you already marked missed on purpose |
+| The month, and the trend | behind the **⟲** in the corner. `Month` is a square per day, filled by how much of that day got done — tap one to open it and answer it. `Trend` is percent-done over a range you pick: week, month, 3 months, year, all time. A day that asked for nothing is left out rather than plotted as a zero |
+| They answer themselves | finishing a workout ticks the training task. Recording an amount ticks the expense one — **on the day the amount is for**, so writing up yesterday's taxi at breakfast ticks yesterday. Neither ever overrules a day you already marked missed on purpose, and the whole behaviour is one switch in the daily-tasks settings |
 | Money | an all-time balance that does not move when the window does, expenses and incomes as a selector rather than a summary, and a grid of categories. **Tap a category and the editor opens on it** in the direction you are reading — a taxi is Transport, a number, Save. **Long press** for `Edit category`, or for the direction a tap cannot reach |
 | An amount belongs to a day, or to a whole month | rent is not spent on the 3rd. A whole-month amount counts towards the month, the year and the balance, and towards no single day — every screen that shows one says so |
-| Money over time | a line per day up to three months, per month past that, with the range on chips: what went out, the running balance beside it, and which five categories are the reason. The balance line opens at what you already had rather than at zero |
-| Export one section | training, the daily tasks or the money, alone, as its own JSON file — `Export or import…` at the bottom of the Tasks and Money tabs, and in Settings for the training log. Restoring the money cannot touch a set; restoring the tasks cannot touch an amount. A file from the wrong section is refused by name rather than restored as nothing |
+| Money over time | behind the **⟲** in the corner: a line per day up to three months, per month past that, with the range on chips: what went out, the running balance beside it, and which five categories are the reason. The balance line opens at what you already had rather than at zero |
 
 ## The rep ladder
 
@@ -155,7 +159,7 @@ cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 ```
 App.tsx                     providers, the error boundary, notifications, audio,
                             and the one-time history migration
-src/navigation/AppShell     five tabs and a stack; no tab bar during a session
+src/navigation/AppShell     four sections and a stack; no tab bar during a session
 src/screens/                one file per screen, all plain props-and-callbacks
 src/components/             SetRow, ExerciseCard, TimerPill, primitives,
                             ErrorBoundary, ConfirmSheet…
@@ -165,7 +169,7 @@ src/lib/                    the decisions: overload, deload, set timer, count-in
                             balance, rest history, plates, warm-up, records,
                             reorder, completed workout, gyms, bodyweight log,
                             calendar, auto-backup, history, trends, shape, units,
-                            backup, csv, csv import, up next, focus plan, set
+                            backup, section nav, up next, focus plan, set
                             nudge, summary clamp — all
                             pure, all tested. Plus beeper/notify/feedback/health
                             connect, the wrappers around native side effects that

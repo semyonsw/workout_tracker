@@ -25,11 +25,19 @@ node_modules/
 # on CI or opening a browser. One file, replaced in place each release rather than
 # accumulating: the Releases page is still where old versions live.
 #
-# Earlier APKs (0.10.0, 0.12.0, 1.0.0) are still in git history. Removing them from
-# history is a rewrite, which is the repo owner's call and not a side effect of a
-# release change.
+# ONE APK AT A TIME. Each release force-adds its own file (`git add -f`, see
+# CLAUDE.md) and deletes the one before it, so the working tree holds exactly the
+# version you would install today and nothing else.
+#
+# There is no `!workout-tracker-<version>.apk` exception here any more. There used
+# to be one naming 1.0.1, which had not existed for six releases — every APK since
+# was force-added, so the line pinned nothing and only read as though the ignore
+# rule below had a hole in it.
+#
+# Earlier APKs are still in git history and deleting them here does not reclaim
+# that space: removing them from history is a rewrite, which is the repo owner's
+# call and not a side effect of a release change.
 *.apk
-!workout-tracker-1.0.1.apk
 *.aab
 dist/
 web-build/

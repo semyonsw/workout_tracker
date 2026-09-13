@@ -24,14 +24,6 @@ export const SECTIONS = ['Workout', 'Tasks', 'Expenses', 'Settings'] as const;
 
 export type SectionTab = (typeof SECTIONS)[number];
 
-/** What each section calls its own history, in the label under the icon. */
-export const SECTION_HISTORY_LABELS: Record<SectionTab, string> = {
-  Workout: 'Training history',
-  Tasks: 'Task history',
-  Expenses: 'Expense history',
-  Settings: '',
-};
-
 /**
  * One section along, or the same one at the end of the row.
  *
