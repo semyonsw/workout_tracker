@@ -68,11 +68,32 @@ applies them:
   `android/gradle.properties` says `android.minSdkVersion=26` after a prebuild;
   Health Connect will not compile below it.
 
-`android/app/debug.keystore` IS THE ONLY COPY. `/android/` is gitignored, so that
-file exists nowhere else — not in the repo, not in CI. It is the key the phone's
-install is signed with (`FA:C6:17:45…`), and losing it means the only way to update
-the app is an uninstall that deletes the training log. Back it up before anything
-that regenerates `android/`, and check its checksum afterwards.
+`android/app/debug.keystore` is the key the phone's install is signed with
+(SHA-256 `FA:C6:17:45…`, `CN=Android Debug`) — and it is NOT a unique file. This
+used to say it was the only copy and that losing it cost an uninstall; that is
+wrong, and it is worth knowing exactly how wrong, because believing it means
+believing a release cannot be cut from a fresh clone.
+
+It is the stock React Native template debug keystore, the same bytes shipped to
+every RN project on earth (SHA-1 `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`).
+`npx expo prebuild -p android` writes it out again, identical, every time. So a
+clone with no `android/` at all can prebuild, build, and produce an APK that
+updates the phone normally. Proof, on any machine, in two commands:
+
+```bash
+keytool -list -v -keystore android/app/debug.keystore -storepass android \
+  -alias androiddebugkey | grep SHA256                    # FA:C6:17:45…
+apksigner verify --print-certs workout-tracker-1.6.0.apk  # the same digest
+```
+
+What this does NOT mean is that the signing key stops mattering. Android
+identifies an app by package name + key, so an APK signed with anything else
+still cannot update the install, and the uninstall that would let it through
+still deletes the training log. It means the failure mode is a build configured
+to sign with the WRONG key — `plugins/withReleaseSigning.js` reaching for
+`WT_STORE_FILE`, or a real release keystore appearing later — not a lost file.
+So check the fingerprint on the built APK, every release, with the `apksigner`
+line below. That check is the one that can actually fail.
 
 ## Verify the artifact, never the source
 
