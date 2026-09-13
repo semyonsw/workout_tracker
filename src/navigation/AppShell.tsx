@@ -1,9 +1,28 @@
 /**
- * AppShell — five tabs and a stack, in about a hundred lines of state.
+ * AppShell — four sections and a stack, in about a hundred lines of state.
  *
- *   tab:  Today | History | Routines | Library | Settings   ← the roots
+ *   tab:  Workout | Tasks | Expenses | Settings   ← the roots
  *   stack: session · routineEditor · addExercise · createExercise · editExercise
- *          · exerciseHistory · sequence
+ *          · exerciseHistory · sequence · workoutHistory · tasksHistory
+ *          · moneyHistory · workoutSettings · taskSettings · moneySettings
+ *
+ * ── A SECTION IS A LOG, AND ITS PAST IS NOT A SECTION ──────────────────────
+ *
+ * `History` used to be a root, which gave the training log a tab for its past
+ * while the tasks' and the money's were buried at the bottom of their own
+ * screens. Each section now carries a ⟲ in its corner and pushes its OWN history,
+ * so the same glyph in the same place answers "how has this been going" for all
+ * three. `More` is gone with it: it was a lobby, and Settings — the one screen
+ * anybody actually went there for — is a root that leads with a row per section.
+ *
+ * ── AND THE ORDER OF THE FOUR IS A GESTURE ─────────────────────────────────
+ *
+ * A horizontal swipe steps along the tab bar (`components/SwipePager.tsx`), so
+ * the bar's left-to-right order is navigation rather than layout. Both read
+ * `lib/sectionNav.ts` so there is one array and the swipe cannot land somewhere
+ * the bar does not highlight. Swiping only works at a ROOT: a pushed screen owns
+ * the whole width, and a flick out of a routine editor would be a way to lose an
+ * edit sideways.
  *
  * Why not a router library: the app has five roots and six pushable screens, none
  * of them deep-linked, none of them needing URL state. `expo-router` would add a
@@ -30,6 +49,7 @@ import { ConfirmSheet } from '../components/ConfirmSheet';
 import { PanelEnter } from '../components/motion';
 import { PrimaryButton } from '../components/primitives';
 import { Segmented } from '../components/primitives';
+import { SwipePager } from '../components/SwipePager';
 import { TabBar, type TabName } from '../components/TabBar';
 import { ActiveWorkoutScreen } from '../screens/ActiveWorkoutScreen';
 import { CreateExerciseScreen } from '../screens/CreateExerciseScreen';
@@ -47,14 +67,17 @@ import {
 import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SequenceScreen } from '../screens/SequenceScreen';
-import { SettingsScreen } from '../screens/SettingsScreen';
+import { SettingsHomeScreen } from '../screens/SettingsHomeScreen';
+import { WorkoutSettingsScreen } from '../screens/WorkoutSettingsScreen';
+import { TaskSettingsScreen } from '../screens/TaskSettingsScreen';
+import { MoneySettingsScreen } from '../screens/MoneySettingsScreen';
 import { AmountEditorScreen } from '../screens/AmountEditorScreen';
 import { CategoryDetailScreen } from '../screens/CategoryDetailScreen';
 import { MoneyScreen } from '../screens/MoneyScreen';
-import { MoreScreen } from '../screens/MoreScreen';
-import { SectionDataScreen } from '../screens/SectionDataScreen';
+import { MoneyHistoryScreen } from '../screens/MoneyHistoryScreen';
 import { TaskDetailScreen } from '../screens/TaskDetailScreen';
 import { TasksScreen } from '../screens/TasksScreen';
+import { TasksHistoryScreen } from '../screens/TasksHistoryScreen';
 import {
   historyByExerciseId,
   recentlyUsedExerciseIds,
@@ -84,7 +107,7 @@ import { useMoney } from '../state/moneyStore';
 import { useTasks } from '../state/tasksStore';
 import { dayKey } from '../lib/days';
 import type { Direction, Interval } from '../lib/money';
-import type { SectionName } from '../lib/sectionBackup';
+import { stepSection } from '../lib/sectionNav';
 import { seedUser } from '../data/seed';
 import type { CompletedWorkout } from '../lib/completedWorkout';
 import type { Exercise, ID, MuscleGroup, SetHistory, UnitSystem } from '../types/models';
@@ -125,34 +148,49 @@ type Route =
   | { name: 'editExercise'; exerciseId: ID }
   | { name: 'exerciseHistory'; exerciseId: ID }
   | { name: 'sequence' }
-  /* The three training screens that gave up their tab roots to the tasks and the
-     money, and now live one tap inside `More`. See `components/TabBar.tsx`. */
+  /* The two screens the training log is SET UP from, pushed from the foot of the
+     workout section rather than owning roots of their own. */
   | { name: 'routines' }
   | { name: 'library' }
-  | { name: 'settings' }
+  /* Each section's own past, pushed by the ⟲ in its corner. Three routes and not
+     one with a parameter: they render different screens over different stores,
+     and the only thing they share is where the tap came from. */
+  | { name: 'workoutHistory' }
+  | { name: 'tasksHistory' }
+  | { name: 'moneyHistory' }
+  /* One settings screen per section, pushed from the section list. */
+  | { name: 'workoutSettings' }
+  | { name: 'taskSettings' }
+  | { name: 'moneySettings' }
   | { name: 'taskDetail'; taskId: ID }
   /* The window travels with the tap, so the category opens on the one the tile
      was read through rather than resetting to this month. */
   | { name: 'moneyCategory'; categoryId: ID; interval: Interval; anchor: string }
-  | { name: 'moneyAmount'; amountId: ID | null; categoryId: ID | null; direction?: Direction }
-  /* Export or import ONE section. Pushed from the section's own screen, and from
-     Settings for the training log. See `screens/SectionDataScreen.tsx`. */
-  | { name: 'sectionData'; section: SectionName };
+  | { name: 'moneyAmount'; amountId: ID | null; categoryId: ID | null; direction?: Direction };
 
 export function AppShell() {
-  const [tab, setTab] = useState<TabName>('Today');
+  const [tab, setTab] = useState<TabName>('Workout');
   /**
-   * A workout somebody tapped somewhere else, waiting for the History tab to open
+   * A workout somebody tapped somewhere else, waiting for the training history to open
    * it and scroll to it.
    *
    * Both `RECENT` on Home and the session rows on the exercise-history screen hand
    * over a workout id, and both used to have it dropped on the floor —
-   * `onOpenSession` was `() => setTab('History')`, so you landed at the top of
-   * History and hunted for the row you had just tapped. History clears this once it
-   * has acted, so the row does not spring open again the next time the tab is
-   * visited.
+   * `onOpenSession` was `() => setTab('History')`, so you landed at the top of the
+   * log and hunted for the row you had just tapped. The history screen clears this
+   * once it has acted, so the row does not spring open again the next time it is
+   * opened.
    */
   const [focusWorkoutId, setFocusWorkoutId] = useState<ID | null>(null);
+  /**
+   * Which day the tasks section is showing.
+   *
+   * Held here and not in `TasksScreen` because the month grid — the one control
+   * that makes walking back three weeks one tap instead of twenty-one — is a
+   * PUSHED screen now, and a day picked in it has to outlive the screen that
+   * picked it. Everything else about the tasks belongs to the store.
+   */
+  const [taskDay, setTaskDay] = useState(() => dayKey(new Date()));
   const [stack, setStack] = useState<Route[]>([]);
   const [query, setQuery] = useState('');
   /*
@@ -199,7 +237,7 @@ export function AppShell() {
   const workouts = useWorkoutHistory((s) => s.workouts);
   /*
    * "The log could not be read", which is NOT "the log is empty" — see
-   * `workoutHistoryStore.loadFailed`. Only the History tab's empty state reads it.
+   * `workoutHistoryStore.loadFailed`. Only the training history's empty state reads it.
    */
   const loadFailed = useWorkoutHistory((s) => s.loadFailed);
   const saveSession = useWorkoutHistory((s) => s.saveSession);
@@ -296,17 +334,23 @@ export function AppShell() {
   const popToRoot = useCallback(() => setStack([]), []);
 
   /**
-   * Open one finished workout, wherever the tap came from: switch to the History
-   * tab and hand it the id to expand and scroll to.
+   * Open one finished workout, wherever the tap came from: go to the workout
+   * section, push its history, and hand it the id to expand and scroll to.
    *
-   * The id is state rather than an argument threaded into the tab, because the tab
-   * root is rendered from `tab` and mounts after this runs. `clearFocusWorkout` is
-   * how History says it has acted, so the row opens once rather than every time
-   * somebody comes back to the tab.
+   * The id is state rather than an argument threaded into the screen, because the
+   * history screen is rendered from the stack and mounts after this runs.
+   * `clearFocusWorkout` is how it says it has acted, so the row opens once rather
+   * than every time somebody comes back.
+   *
+   * `setStack` to exactly `[workoutHistory]` and not `push`: every caller of this
+   * is on a screen the user is LEAVING — a row on the exercise-history screen, the
+   * `RECENT` list on the workout section — and pushing history on top of them would
+   * make `‹` walk back through a screen nobody asked to see again.
    */
   const openWorkout = useCallback((sessionId: ID) => {
     setFocusWorkoutId(sessionId);
-    setTab('History');
+    setTab('Workout');
+    setStack([{ name: 'workoutHistory' }]);
   }, []);
   const clearFocusWorkout = useCallback(() => setFocusWorkoutId(null), []);
 
@@ -705,7 +749,7 @@ export function AppShell() {
           onFinish={(finished, updatePlan) => {
             /*
              * The one write to permanent history. Everything downstream —
-             * the History tab, the prefills, the overload verdicts — reads what
+             * the training history, the prefills, the overload verdicts — reads what
              * this stores; nothing else in the app writes a logged set.
              *
              * A session with nothing logged stores nothing (`saveSession` returns
@@ -886,7 +930,7 @@ export function AppShell() {
           if (target === 'history') {
             /*
              * Into a workout that already happened, with one set. Back to the
-             * History tab rather than to the picker, and the workout is already
+             * training history rather than to the picker, and the workout is already
              * open there — `openWorkout` set `focusWorkoutId` on the way in, so
              * the row the user was editing is the row they land on.
              */
@@ -1021,7 +1065,7 @@ export function AppShell() {
   }
 
   /* ------------------------------------------------------------------ */
-  /* Pushed out of `More`, and the two logs' own detail screens          */
+  /* Pushed from a section root, and the two logs' own detail screens    */
   /* ------------------------------------------------------------------ */
 
   if (top?.name === 'routines') {
@@ -1061,13 +1105,16 @@ export function AppShell() {
     );
   }
 
-  if (top?.name === 'settings') {
-    return (
-      <SettingsScreen
-        onBack={pop}
-        onOpenSection={(section) => push({ name: 'sectionData', section })}
-      />
-    );
+  if (top?.name === 'workoutSettings') {
+    return <WorkoutSettingsScreen onBack={pop} />;
+  }
+
+  if (top?.name === 'taskSettings') {
+    return <TaskSettingsScreen onBack={pop} />;
+  }
+
+  if (top?.name === 'moneySettings') {
+    return <MoneySettingsScreen onBack={pop} />;
   }
 
   if (top?.name === 'taskDetail') {
@@ -1104,8 +1151,59 @@ export function AppShell() {
     );
   }
 
-  if (top?.name === 'sectionData') {
-    return <SectionDataScreen section={top.section} onBack={pop} />;
+  /* ------------------------------------------------------------------ */
+  /* The past of each section, behind its own ⟲                          */
+  /* ------------------------------------------------------------------ */
+
+  if (top?.name === 'workoutHistory') {
+    return (
+      <WorkoutHistory
+        workouts={workouts}
+        loadFailed={loadFailed}
+        numbers={numbers}
+        historyByExerciseId={historyById}
+        exercisesById={exercisesById}
+        focusWorkoutId={focusWorkoutId}
+        onFocusHandled={clearFocusWorkout}
+        unitSystem={unitSystem}
+        onBack={pop}
+        onDelete={deleteWorkout}
+        onSetNumber={setWorkoutNumber}
+        onEditSet={updateWorkoutSet}
+        onDeleteSet={deleteWorkoutSet}
+        onEditWorkout={editWorkout}
+        onAddSet={addWorkoutSet}
+        onRemoveExercise={deleteWorkoutExercise}
+        /*
+         * The one edit on that screen that needs navigation: the picker is another
+         * pushed route, so the screen cannot open it itself. `focusWorkoutId` is
+         * set on the way out so the workout is open again on the way back.
+         */
+        onAddExercise={(workoutId) => {
+          setFocusWorkoutId(workoutId);
+          push({ name: 'addExercise', routineId: null, target: 'history', workoutId });
+        }}
+      />
+    );
+  }
+
+  if (top?.name === 'tasksHistory') {
+    return (
+      <TasksHistoryScreen
+        selected={taskDay}
+        onBack={pop}
+        /* A square tapped is a day to ANSWER, so it lands on the screen where the
+           circles are rather than leaving the grid open over it. */
+        onPickDay={(day) => {
+          setTaskDay(day);
+          pop();
+        }}
+      />
+    );
+  }
+
+  if (top?.name === 'moneyHistory') {
+    return <MoneyHistoryScreen onBack={pop} />;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1116,84 +1214,71 @@ export function AppShell() {
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
 
-      {/* Keyed on the tab, so switching roots remounts this and the arrival
-          replays — the same panel never re-enters just because something inside
-          it re-rendered. See `components/motion.ts`. */}
-      <PanelEnter key={tab} style={{ flex: 1 }}>
-        {tab === 'Today' ? (
-          <HomeScreen
-            inProgress={inProgress}
-            onResume={() => push({ name: 'session' })}
-            sequence={sequenceView}
-            choices={choices}
-            recent={recent}
-            numbers={numbers}
-            onOpen={handleOpenWorkout}
-            onOpenSequence={() => push({ name: 'sequence' })}
-            // A past session opens where past sessions live. The History row is
-            // the detail view — it expands in place — so there is nothing to push.
-            onOpenSession={openWorkout}
-          />
-        ) : null}
+      {/* A flick sideways is one section along. It claims a touch only for a
+          clearly horizontal gesture, so every scroll, every row and the
+          long-press-then-slide reorder inside these screens are untouched — see
+          `components/SwipePager.tsx`. */}
+      <SwipePager onSwipe={(delta) => setTab((current) => stepSection(current, delta))}>
+        {/* Keyed on the tab, so switching roots remounts this and the arrival
+            replays — the same panel never re-enters just because something inside
+            it re-rendered. The flick gets the same entrance the tap does. See
+            `components/motion.tsx`. */}
+        <PanelEnter key={tab} style={{ flex: 1 }}>
+          {tab === 'Workout' ? (
+            <HomeScreen
+              inProgress={inProgress}
+              onResume={() => push({ name: 'session' })}
+              sequence={sequenceView}
+              choices={choices}
+              recent={recent}
+              numbers={numbers}
+              onOpen={handleOpenWorkout}
+              onOpenSequence={() => push({ name: 'sequence' })}
+              // A past session opens where past sessions live. The history row is
+              // the detail view — it expands in place — so there is nothing to push
+              // beyond the history screen itself.
+              onOpenSession={openWorkout}
+              onOpenHistory={() => push({ name: 'workoutHistory' })}
+              onOpenRoutines={() => push({ name: 'routines' })}
+              onOpenLibrary={() => push({ name: 'library' })}
+              routineCount={routines.length}
+              exerciseCount={exercises.length}
+            />
+          ) : null}
 
-        {tab === 'History' ? (
-          <HistoryTab
-            workouts={workouts}
-            loadFailed={loadFailed}
-            numbers={numbers}
-            historyByExerciseId={historyById}
-            exercisesById={exercisesById}
-            focusWorkoutId={focusWorkoutId}
-            onFocusHandled={clearFocusWorkout}
-            unitSystem={unitSystem}
-            onDelete={deleteWorkout}
-            onSetNumber={setWorkoutNumber}
-            onEditSet={updateWorkoutSet}
-            onDeleteSet={deleteWorkoutSet}
-            onEditWorkout={editWorkout}
-            onAddSet={addWorkoutSet}
-            onRemoveExercise={deleteWorkoutExercise}
-            /*
-             * The one edit on that screen that needs navigation: the picker is a
-             * pushed route, so the tab cannot open it itself. `focusWorkoutId` is
-             * set on the way out so the workout is open again on the way back.
-             */
-            onAddExercise={(workoutId) => {
-              setFocusWorkoutId(workoutId);
-              push({ name: 'addExercise', routineId: null, target: 'history', workoutId });
-            }}
-          />
-        ) : null}
+          {tab === 'Tasks' ? (
+            <TasksScreen
+              onOpenTask={(taskId) => push({ name: 'taskDetail', taskId })}
+              onOpenHistory={() => push({ name: 'tasksHistory' })}
+              /* The day lives HERE rather than in the screen: the month grid is a
+                 pushed route, and a day picked in it has to survive the screen
+                 that picked it being unmounted. */
+              day={taskDay}
+              onChangeDay={setTaskDay}
+            />
+          ) : null}
 
-        {tab === 'Tasks' ? (
-          <TasksScreen
-            onOpenTask={(taskId) => push({ name: 'taskDetail', taskId })}
-            onOpenData={() => push({ name: 'sectionData', section: 'tasks' })}
-          />
-        ) : null}
+          {tab === 'Expenses' ? (
+            <MoneyScreen
+              onOpenCategory={(categoryId, interval, anchor) =>
+                push({ name: 'moneyCategory', categoryId, interval, anchor })
+              }
+              onAddAmount={(categoryId, direction) =>
+                push({ name: 'moneyAmount', amountId: null, categoryId, direction })
+              }
+              onOpenHistory={() => push({ name: 'moneyHistory' })}
+            />
+          ) : null}
 
-        {tab === 'Money' ? (
-          <MoneyScreen
-            onOpenCategory={(categoryId, interval, anchor) =>
-              push({ name: 'moneyCategory', categoryId, interval, anchor })
-            }
-            onAddAmount={(categoryId, direction) =>
-              push({ name: 'moneyAmount', amountId: null, categoryId, direction })
-            }
-            onOpenData={() => push({ name: 'sectionData', section: 'money' })}
-          />
-        ) : null}
-
-        {tab === 'More' ? (
-          <MoreScreen
-            routineCount={routines.length}
-            exerciseCount={exercises.length}
-            onOpenRoutines={() => push({ name: 'routines' })}
-            onOpenLibrary={() => push({ name: 'library' })}
-            onOpenSettings={() => push({ name: 'settings' })}
-          />
-        ) : null}
-      </PanelEnter>
+          {tab === 'Settings' ? (
+            <SettingsHomeScreen
+              onOpenWorkoutSettings={() => push({ name: 'workoutSettings' })}
+              onOpenTaskSettings={() => push({ name: 'taskSettings' })}
+              onOpenMoneySettings={() => push({ name: 'moneySettings' })}
+            />
+          ) : null}
+        </PanelEnter>
+      </SwipePager>
 
       <TabBar active={tab} onSelect={setTab} />
     </View>
@@ -1203,18 +1288,19 @@ export function AppShell() {
 /* ------------------------------------------------------------------ */
 
 /**
- * The `History` tab: the log, or the graphs of it.
+ * The training log's past: the sessions, the lines, or the days.
  *
- * One tab rather than a sixth root, because both answer the same question — what
- * have I actually trained — and the tab bar's five labels are already the width of
- * the screen. The switch is a `Segmented` under the shared header, which is where
- * the two screens' own `toolbar` slot puts it, so the control stays in exactly the
- * same place as the view changes under it.
+ * PUSHED by the ⟲ on the workout section rather than owning a root, because it is
+ * the past of one section and not a fourth section — the daily tasks and the
+ * money each have exactly the same thing behind exactly the same glyph. The three
+ * views are one question at three zoom levels, so they stay one screen with a
+ * `Segmented` under the shared header, which is where all three screens' own
+ * `toolbar` slot puts it: the control does not move as the view changes under it.
  *
- * Which view is showing is held HERE rather than in either screen: it has to
- * survive switching between them, and neither screen should know the other exists.
+ * Which view is showing is held HERE rather than in any of the three: it has to
+ * survive switching between them, and none of them should know the others exist.
  */
-function HistoryTab({
+function WorkoutHistory({
   workouts,
   loadFailed,
   numbers,
@@ -1231,6 +1317,7 @@ function HistoryTab({
   onAddSet,
   onRemoveExercise,
   onAddExercise,
+  onBack,
 }: {
   workouts: CompletedWorkout[];
   loadFailed: boolean;
@@ -1248,6 +1335,7 @@ function HistoryTab({
   onAddSet: HistoryScreenProps['onAddSet'];
   onRemoveExercise: HistoryScreenProps['onRemoveExercise'];
   onAddExercise: HistoryScreenProps['onAddExercise'];
+  onBack: () => void;
 }) {
   const [view, setView] = useState<'log' | 'graphs' | 'calendar'>('log');
 
@@ -1281,16 +1369,18 @@ function HistoryTab({
         historyByExerciseId={history}
         exercisesById={exercisesById}
         toolbar={toolbar}
+        onBack={onBack}
       />
     );
   }
 
   if (view === 'calendar') {
-    return <CalendarScreen workouts={workouts} toolbar={toolbar} />;
+    return <CalendarScreen workouts={workouts} toolbar={toolbar} onBack={onBack} />;
   }
 
   return (
     <HistoryScreen
+      onBack={onBack}
       workouts={workouts}
       /* So an unreadable log says so, instead of reading as an empty one. */
       loadFailed={loadFailed}

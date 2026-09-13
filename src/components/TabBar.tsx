@@ -1,5 +1,5 @@
 /**
- * TabBar — Today / Tasks / Money / History / More.
+ * TabBar — Workout / Tasks / Expenses / Settings.
  *
  * This bar exists ONLY outside a session. During a workout the session owns the
  * whole screen: there is nothing else to do while you are mid-set, and a tab bar
@@ -10,25 +10,32 @@
  * was drawn and compared; it cost the label two pixels and the app five glyphs,
  * and bought nothing a word was not already saying.
  *
- * ── FIVE IS STILL THE CEILING ─────────────────────────────────────────────
+ * ── FOUR SECTIONS, AND THE TWO THAT LEFT ──────────────────────────────────
  *
- * It used to be Today · History · Routines · Library · Settings. Two more logs
- * arrived — the daily tasks and the money — and both are a reason to open the
- * app on their own, which is the test a root has to pass. So three training
- * screens that are NOT reasons to open the app gave up their roots: Routines,
- * the Library and Settings are all things you go to in order to change something
- * you set up once, and they now live one tap inside `More`.
+ * It was Today · Tasks · Money · History · More. `History` was never a section:
+ * it is the PAST of one, and putting it on the bar meant the training log had a
+ * root of its own while the tasks' and the money's were buried at the bottom of
+ * their screens. It is a ⟲ in each section's own corner now — see
+ * `components/SectionTopBar.tsx` — which is the same tap from all three.
  *
- * The labels stay at 13px. `History` is the longest of the five and still does
- * not truncate at 360 dp; a sixth root would not fit, so anything else that
- * needs a home goes inside one of these.
+ * `More` was a lobby: one screen whose whole job was to hold the door for three
+ * others. Settings is a root because it is the one of the three you actually
+ * open, and it leads with a row per section. Routines and the exercise library
+ * belong to the training log and now sit at the foot of the Workout section,
+ * beside the routines they are about.
+ *
+ * The order is `lib/sectionNav.ts`, because a swipe moves along it — this bar
+ * renders that array rather than declaring a second one. The labels stay at
+ * 13px; `Expenses` is the longest of the four and does not truncate at 360 dp.
  */
 
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export const TABS = ['Today', 'Tasks', 'Money', 'History', 'More'] as const;
-export type TabName = (typeof TABS)[number];
+import { SECTIONS, type SectionTab } from '../lib/sectionNav';
+
+export const TABS = SECTIONS;
+export type TabName = SectionTab;
 
 interface TabBarProps {
   active: TabName;

@@ -43,12 +43,12 @@
  */
 
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { Icon } from '../components/Icon';
+import { SectionTopBar } from '../components/SectionTopBar';
 import { pressedStyle } from '../components/motion';
-import { Kicker, ListCard, PrimaryButton, Separator } from '../components/primitives';
+import { Kicker, ListCard, NavRow, PrimaryButton, Separator } from '../components/primitives';
 import { formatShortDate, formatVolumeKg } from '../lib/units';
 import { palette } from '../theme/tokens';
 import type { ID, RecentSessionSummary } from '../types/models';
@@ -110,6 +110,20 @@ interface HomeScreenProps {
   /** Tapping the sequence strip goes to the screen that edits it. */
   onOpenSequence: () => void;
   onOpenSession: (sessionId: string) => void;
+  /** The ⟲ in the corner: the log, the graphs and the calendar. */
+  onOpenHistory: () => void;
+  /**
+   * The two screens the training log is set up from.
+   *
+   * They had a tab of their own, then a lobby screen called `More`, and both were
+   * the same mistake in different sizes: a routine and an exercise are the CONTENT
+   * of this section, so the place to reach them is the section, at the bottom,
+   * under the routines they are about. See `components/TabBar.tsx`.
+   */
+  onOpenRoutines: () => void;
+  onOpenLibrary: () => void;
+  routineCount: number;
+  exerciseCount: number;
 }
 
 export function HomeScreen({
@@ -122,8 +136,12 @@ export function HomeScreen({
   onResume,
   onOpenSequence,
   onOpenSession,
+  onOpenHistory,
+  onOpenRoutines,
+  onOpenLibrary,
+  routineCount,
+  exerciseCount,
 }: HomeScreenProps) {
-  const insets = useSafeAreaInsets();
   const next = sequence?.next ?? null;
   /*
    * An empty routine has nothing to open — a ▶ that lands on an editor is a
@@ -138,9 +156,15 @@ export function HomeScreen({
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
 
+      <SectionTopBar
+        title="Workout"
+        onOpenHistory={onOpenHistory}
+        historyLabel="Training history"
+      />
+
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingTop: insets.top + 24, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: 16, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
         {inProgress ? (
@@ -217,6 +241,17 @@ export function HomeScreen({
             </ListCard>
           </>
         ) : null}
+
+        {/* THE TWO COUNTS ARE THE POINT OF THE ROWS. `Routines · 6` says whether
+            there is anything to open without opening anything, which is the
+            question you have when you are looking at the bottom of this screen at
+            all. */}
+        <Kicker className="mx-lg mb-md mt-xxl">Set up</Kicker>
+        <ListCard className="mx-lg">
+          <NavRow label="Routines" value={String(routineCount)} onPress={onOpenRoutines} />
+          <Separator />
+          <NavRow label="Exercise library" value={String(exerciseCount)} onPress={onOpenLibrary} />
+        </ListCard>
       </ScrollView>
     </View>
   );
@@ -379,7 +414,8 @@ function Empty() {
     <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
       <Kicker>Nothing to open</Kicker>
       <Text className="mt-sm text-body text-ink-muted">
-        Put some exercises in a routine — More, then Routines — and it shows up here, ready to open.
+        Put some exercises in a routine — `Routines`, at the foot of this screen — and it shows up
+        here, ready to open.
       </Text>
     </View>
   );

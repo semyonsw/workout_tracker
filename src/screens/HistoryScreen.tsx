@@ -272,6 +272,8 @@ export interface HistoryScreenProps {
   onSetNumber: (id: ID, number: number) => void;
   /** The `Log | Graphs` switch, rendered under the header by whoever owns it. */
   toolbar?: ReactNode;
+  /** `‹` — this screen is pushed by the ⟲ on the workout section now. */
+  onBack?: () => void;
 }
 
 export function HistoryScreen({
@@ -291,6 +293,7 @@ export function HistoryScreen({
   numbers,
   onSetNumber,
   toolbar,
+  onBack,
 }: HistoryScreenProps) {
   /** The open workout, the one being deleted, the one being renumbered. */
   const [openId, setOpenId] = useState<ID | null>(null);
@@ -383,7 +386,8 @@ export function HistoryScreen({
     <View className="flex-1 bg-bg">
       <View className="flex-1" style={dimmed ? { opacity: 0.28 } : undefined}>
         <ScreenHeader
-          kicker="History"
+          kicker="Training history"
+          onBack={onBack}
           subtitle={
             totals.workouts > 0
               ? `${totals.workouts} ${totals.workouts === 1 ? 'workout' : 'workouts'} · ${totals.sets} sets${

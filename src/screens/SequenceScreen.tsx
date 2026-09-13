@@ -209,7 +209,8 @@ export function SequenceScreen({
           </>
         ) : (
           <Text className="mx-lg mt-xl text-body text-ink-muted">
-            There are no routines to put in a sequence yet. Make one in More, then Routines, first.
+            There are no routines to put in a sequence yet. Make one in Routines, at the foot of the
+            workout screen, first.
           </Text>
         )}
 

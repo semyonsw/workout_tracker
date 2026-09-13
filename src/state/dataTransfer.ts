@@ -22,40 +22,22 @@
  * on the phone is a prefix of a valid restore rather than a log referring to
  * exercises that were never written.
  *
- * ── TWO WAYS IN, AND THEY ARE NOT THE SAME OPERATION ───────────────────────
+ * ── ONE WAY OUT AND ONE WAY IN ─────────────────────────────────────────────
  *
- * `applyBackup` REPLACES: exercises, routines, the sequence, the log and the
- * settings all become what the file says. That is what a restore is.
+ * `applyBackup` REPLACES: exercises, routines, the sequence, both other logs and
+ * the settings all become what the file says. That is what a restore is, and it
+ * is now the only restore there is.
  *
- * `mergeBackupWorkouts` ADDS: the WORKOUTS in the file that this phone does not
- * already have, and nothing else. It exists because a replaced phone and a second
- * device were unserviceable — the only way to get a workout off one and onto the
- * other was to replace everything, which loses whatever the destination had.
- *
- * Only workouts merge. A merged LIBRARY resurrects every exercise the user has
- * deleted, silently and with no way to tell which is which, and merged SETTINGS
- * are not a thing anybody can describe — two numbers cannot be unioned. That
- * asymmetry is not a limitation to fix later; it is the reason merging the log is
- * safe: a workout carries the session's own id, so rule 3 of `workoutHistoryStore`
- * ("finishing twice is one workout") makes a union by id exact.
- *
- * ── AND ONE SECTION AT A TIME ──────────────────────────────────────────────
- *
- * `exportSectionText` / `applySection` are the same two directions with a smaller
- * blast radius: the training log, the daily tasks or the money, alone. The app is
- * three logs that fail and get rebuilt independently, and "put my expenses back,
- * leave my training alone" is not something a whole-phone restore can express.
- * The envelope those travel in is `lib/sectionBackup.ts`.
+ * There used to be four more: a merge that added only the workouts this phone did
+ * not have, a CSV reader for training that predated the app, and a per-section
+ * export and import for each of the three logs. Eight rows, seven of which were
+ * answering a question nobody was asking twice — and eight rows of export and
+ * import are worse than two, because the one that matters (the whole phone, out
+ * to a file you can read) stops being obvious among them. One file holds
+ * everything; putting it back puts everything back.
  */
 
 import { serializeBackup, type BackupCounts, type BackupPayload } from '../lib/backup';
-import type { CsvImportPlan } from '../lib/csvImport';
-import {
-  countSection,
-  serializeSection,
-  type SectionCounts,
-  type SectionName,
-} from '../lib/sectionBackup';
 import { useLibrary } from './libraryStore';
 import { sanitizeMoney, useMoney } from './moneyStore';
 import { sanitizeSettings, useSettings } from './settingsStore';
@@ -86,89 +68,6 @@ export function currentSnapshot(): BackupPayload {
 /* ------------------------------------------------------------------ */
 /* One section at a time                                               */
 /* ------------------------------------------------------------------ */
-
-/**
- * One section's value, straight out of the store that owns it.
- *
- * The TRAINING section is the whole backup minus the settings — every duration
- * and switch in the app is a preference about how the phone behaves, not part of
- * the training log, and a file called `training` that silently reset somebody's
- * rest timer would be the one surprise this feature cannot afford.
- */
-export function sectionSnapshot(section: SectionName): unknown {
-  if (section === 'tasks') return sanitizeTasks(useTasks.getState());
-  if (section === 'money') return sanitizeMoney(useMoney.getState());
-
-  const library = useLibrary.getState();
-  const history = useWorkoutHistory.getState();
-  return {
-    exercises: library.exercises,
-    routines: library.routines,
-    sequence: library.sequence,
-    workouts: history.workouts,
-    numbering: history.numbering,
-  };
-}
-
-/**
- * One section's file text, ready to write.
- *
- * Refuses a TRAINING export for exactly the reason `exportBackupText` does: an
- * unreadable log would be written out as `"workouts": []`, and that file will
- * later be restored over a database that was fine. The other two sections live in
- * AsyncStorage and have no equivalent failure — a store that could not be read is
- * a store that is still seeded, which the user can see on the screen they are
- * standing on.
- */
-export function exportSectionText(section: SectionName, now?: Date): string {
-  if (section === 'training' && useWorkoutHistory.getState().loadFailed) {
-    throw new UnreadableLogError();
-  }
-  return serializeSection(section, sectionSnapshot(section), now);
-}
-
-/**
- * Replace ONE section from a parsed file, and report what landed.
- *
- * REPLACES, like `applyBackup` and unlike `mergeBackupWorkouts` — that asymmetry
- * is argued in this file's header and none of it changes per section. What does
- * change is the blast radius, which is the whole point: restoring the money
- * cannot touch a single set.
- *
- * The counts come back from the STORES, after their own validators have run, so
- * a file claiming forty amounts of which eleven are malformed reports twenty-nine.
- */
-export function applySection(section: SectionName, data: unknown): SectionCounts {
-  if (section === 'tasks') {
-    useTasks.getState().importTasks(data);
-    return countSection('tasks', sanitizeTasks(useTasks.getState()));
-  }
-
-  if (section === 'money') {
-    useMoney.getState().importMoney(data);
-    return countSection('money', sanitizeMoney(useMoney.getState()));
-  }
-
-  const source = (data ?? {}) as Record<string, unknown>;
-  // Library first, then the log — `libraryStore` rule 1: the log must never refer
-  // to an exercise that does not exist, not even for one statement.
-  useLibrary.getState().importLibrary({
-    exercises: Array.isArray(source.exercises) ? source.exercises : [],
-    routines: Array.isArray(source.routines) ? source.routines : [],
-    sequence: source.sequence,
-  });
-  useWorkoutHistory
-    .getState()
-    .importWorkouts(Array.isArray(source.workouts) ? source.workouts : [], source.numbering);
-
-  const library = useLibrary.getState();
-  const history = useWorkoutHistory.getState();
-  return countSection('training', {
-    exercises: library.exercises,
-    routines: library.routines,
-    workouts: history.workouts,
-  });
-}
 
 /**
  * Thrown by `exportBackupText` rather than writing a backup that is missing the
@@ -213,66 +112,6 @@ export function exportBackupText(now?: Date): string {
 /** What a restore actually put on the phone — validated rows, not claimed ones. */
 export interface AppliedCounts extends BackupCounts {
   settingsApplied: boolean;
-}
-
-/** What a merge actually added. Both numbers are additions — a merge never removes. */
-export interface MergedCounts {
-  /** Workouts that were not already on this phone. */
-  workoutsAdded: number;
-  /** Set rows inside those workouts — the number that makes the count feel real. */
-  setsAdded: number;
-}
-
-/**
- * Add the file's workouts to this phone's log, leaving everything else alone.
- *
- * Reports what LANDED, not what the file claimed: rows that fail the store's guard
- * are dropped on the way in, and a merge that says "42 added" when eleven were
- * malformed is how somebody learns not to trust the feature.
- *
- * The set count is read back from the store rather than counted in the file, for
- * the same reason.
- */
-export function mergeBackupWorkouts(payload: Pick<BackupPayload, 'workouts'>): MergedCounts {
-  const history = useWorkoutHistory.getState();
-  const before = new Set(history.workouts.map((w) => w.id));
-  const workoutsAdded = history.mergeWorkouts(payload.workouts);
-
-  let setsAdded = 0;
-  for (const workout of useWorkoutHistory.getState().workouts) {
-    if (!before.has(workout.id)) setsAdded += workout.sets.length;
-  }
-
-  return { workoutsAdded, setsAdded };
-}
-
-/**
- * Apply a planned CSV import: the exercises it needs, then the workouts.
- *
- * IN THAT ORDER, and it is the whole reason this lives here rather than in the
- * screen. `libraryStore` rule 1 is that the log must never refer to an exercise that
- * does not exist; writing the workouts first would leave every imported row pointing
- * at nothing for as long as it took the next statement to run, and a crash in
- * between would leave it that way permanently.
- *
- * Exercises are added only where the id is genuinely new, so re-running the same
- * file — which produces the same ids by design (see `planCsvImport`) — adds nothing
- * twice.
- */
-export function applyCsvImport(plan: CsvImportPlan): MergedCounts & { exercisesAdded: number } {
-  const library = useLibrary.getState();
-  const known = new Set(library.exercises.map((e) => e.id));
-
-  let exercisesAdded = 0;
-  for (const exercise of plan.newExercises) {
-    if (known.has(exercise.id)) continue;
-    library.addExercise(exercise);
-    known.add(exercise.id);
-    exercisesAdded += 1;
-  }
-
-  const merged = mergeBackupWorkouts({ workouts: plan.workouts });
-  return { ...merged, exercisesAdded };
 }
 
 /**

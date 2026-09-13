@@ -397,3 +397,88 @@ describe('make every exercise a rep ladder', () => {
     expect(currentSettings().ladderAllExercises).toBe(false);
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The two sections that are not the training log.
+ *
+ * Every setting in this store used to belong to a workout, which is why they all
+ * sat on one screen. The daily tasks and the expenses have their own now, and the
+ * rules worth pinning are the two that can be got wrong silently: a flag that
+ * defaults ON must survive a device upgrading from a build that had no such key,
+ * and the currency LABEL must never come back empty — a bare number on one screen
+ * and a labelled one on another are two totals nobody can compare.
+ */
+describe('the daily tasks settings', () => {
+  it('ticks automatically by default, including on a blob that predates the key', () => {
+    expect(DEFAULT_SETTINGS.autoTickTasks).toBe(true);
+    expect(sanitizeSettings({}).autoTickTasks).toBe(true);
+    expect(sanitizeSettings(undefined).autoTickTasks).toBe(true);
+  });
+
+  it('is off only for a literal false', () => {
+    expect(sanitizeSettings({ autoTickTasks: false }).autoTickTasks).toBe(false);
+    expect(
+      sanitizeSettings({ autoTickTasks: 0 } as unknown as Partial<Settings>).autoTickTasks,
+    ).toBe(true);
+  });
+
+  it('round-trips through the store', () => {
+    useSettings.getState().setFlag('autoTickTasks', false);
+    expect(currentSettings().autoTickTasks).toBe(false);
+    useSettings.getState().setFlag('autoTickTasks', true);
+    expect(currentSettings().autoTickTasks).toBe(true);
+  });
+
+  it('falls back to a range this build knows', () => {
+    expect(sanitizeSettings({ tasksTrendRange: 'year' }).tasksTrendRange).toBe('year');
+    expect(
+      sanitizeSettings({ tasksTrendRange: 'fortnight' } as unknown as Partial<Settings>)
+        .tasksTrendRange,
+    ).toBe('month');
+  });
+});
+
+describe('the expenses settings', () => {
+  it('trims, uppercases and caps the currency label', () => {
+    useSettings.getState().setCurrencyCode('  usd ');
+    expect(currentSettings().currencyCode).toBe('USD');
+
+    useSettings.getState().setCurrencyCode('points');
+    expect(currentSettings().currencyCode).toBe('POIN');
+  });
+
+  it('never lands empty — a bare number is not a total anybody can compare', () => {
+    useSettings.getState().setCurrencyCode('   ');
+    expect(currentSettings().currencyCode).toBe('AMD');
+    expect(sanitizeSettings({ currencyCode: '' }).currencyCode).toBe('AMD');
+    expect(
+      sanitizeSettings({ currencyCode: 42 } as unknown as Partial<Settings>).currencyCode,
+    ).toBe('AMD');
+  });
+
+  it('keeps the window and the direction to values the screen can render', () => {
+    expect(sanitizeSettings({ moneyDefaultInterval: 'week' }).moneyDefaultInterval).toBe('week');
+    expect(
+      sanitizeSettings({ moneyDefaultInterval: 'decade' } as unknown as Partial<Settings>)
+        .moneyDefaultInterval,
+    ).toBe('month');
+    expect(sanitizeSettings({ moneyDefaultDirection: 'income' }).moneyDefaultDirection).toBe(
+      'income',
+    );
+    expect(
+      sanitizeSettings({ moneyDefaultDirection: 'both' } as unknown as Partial<Settings>)
+        .moneyDefaultDirection,
+    ).toBe('expense');
+  });
+
+  it('round-trips through the store', () => {
+    useSettings.getState().setMoneyDefaultInterval('day');
+    useSettings.getState().setMoneyDefaultDirection('income');
+    useSettings.getState().setMoneyTrendRange('quarter');
+    expect(currentSettings().moneyDefaultInterval).toBe('day');
+    expect(currentSettings().moneyDefaultDirection).toBe('income');
+    expect(currentSettings().moneyTrendRange).toBe('quarter');
+  });
+});

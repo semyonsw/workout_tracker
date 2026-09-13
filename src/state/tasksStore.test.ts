@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { entryOf } from '../lib/tasks';
+import { useSettings } from './settingsStore';
 import { sanitizeTasks, seedTasks, useTasks } from './tasksStore';
 
 /**
@@ -15,6 +16,7 @@ import { sanitizeTasks, seedTasks, useTasks } from './tasksStore';
 
 afterEach(() => {
   useTasks.getState().importTasks({ tasks: seedTasks('2026-01-01'), log: {} });
+  useSettings.getState().setFlag('autoTickTasks', true);
 });
 
 describe('sanitizing', () => {
@@ -137,5 +139,31 @@ describe('archiving', () => {
     const task = useTasks.getState().tasks.find((row) => row.id === id);
     expect(task?.archivedAt).toBeTypeOf('string');
     expect(entryOf(useTasks.getState().log, id, '2026-09-12').mark).toBe('done');
+  });
+});
+
+describe('the automatic tick can be switched off', () => {
+  it('answers nothing at all while the setting is off', () => {
+    const gym = useTasks.getState().tasks.find((task) => task.auto === 'workout');
+    if (!gym) throw new Error('the seed no longer ships an auto-ticked training task');
+
+    useSettings.getState().setFlag('autoTickTasks', false);
+    useTasks.getState().tickAuto('workout', '2026-09-13');
+    expect(entryOf(useTasks.getState().log, gym.id, '2026-09-13').mark).toBeNull();
+
+    // ...and it is the SETTING and not the task: switched back on, the same call
+    // answers the same row.
+    useSettings.getState().setFlag('autoTickTasks', true);
+    useTasks.getState().tickAuto('workout', '2026-09-13');
+    expect(entryOf(useTasks.getState().log, gym.id, '2026-09-13').mark).toBe('done');
+  });
+
+  it('leaves marks already given exactly where they are', () => {
+    const gym = useTasks.getState().tasks.find((task) => task.auto === 'workout');
+    if (!gym) throw new Error('the seed no longer ships an auto-ticked training task');
+
+    useTasks.getState().tickAuto('workout', '2026-09-13');
+    useSettings.getState().setFlag('autoTickTasks', false);
+    expect(entryOf(useTasks.getState().log, gym.id, '2026-09-13').mark).toBe('done');
   });
 });

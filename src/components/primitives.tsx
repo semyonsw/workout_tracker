@@ -5,6 +5,8 @@
  *   ListCard    a `surface` card that clips its children's hairlines
  *   Separator   a 1px rule, inset past whatever column it must clear
  *   SettingRow  56 high: label left, value right
+ *   NavRow      the same row with a chevron — it goes somewhere
+ *   SwitchRow   label, optional hint, and the app's one switch
  *   FieldWell   a 56-high text field with a green caret
  *   NumericWell a 96-high labelled number
  *   Segmented   a 44-high pill of equal segments
@@ -20,6 +22,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
+import { tap } from '../lib/feedback';
 import { palette } from '../theme/tokens';
 import { Icon } from './Icon';
 import { pressedStyle } from './motion';
@@ -141,6 +144,71 @@ export function SettingRow({
     >
       {body}
     </Pressable>
+  );
+}
+
+/**
+ * A row that goes somewhere.
+ *
+ * `SettingRow` states a value; this one is a DOOR, and the chevron is the whole
+ * difference. It is the only row shape in the app that carries one, which is why
+ * it is spelled out rather than added as a flag to the row above — a chevron that
+ * can be switched off is a chevron that ends up on rows that go nowhere.
+ */
+export function NavRow({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  /** A count, so the row answers its own question without being opened. */
+  value?: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={value ? `${label}, ${value}` : label}
+      style={pressedStyle}
+      className="h-row flex-row items-center px-lg"
+    >
+      <Text className="flex-1 text-body font-medium text-ink">{label}</Text>
+      {value ? (
+        <Text className="mr-md text-body font-medium tabular-nums text-ink-muted">{value}</Text>
+      ) : null}
+      <Icon name="chevron-right" size={16} color={palette.inkFaint} />
+    </Pressable>
+  );
+}
+
+/** Label, optional hint, and the app's one switch. */
+export function SwitchRow({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <View className="min-h-[56px] flex-row items-center px-lg py-md">
+      <View className="flex-1 pr-md">
+        <Text className="text-body font-medium text-ink">{label}</Text>
+        {hint ? <Text className="mt-[2px] text-label text-ink-faint">{hint}</Text> : null}
+      </View>
+      <Toggle
+        value={value}
+        onChange={(next) => {
+          tap();
+          onChange(next);
+        }}
+        accessibilityLabel={label}
+      />
+    </View>
   );
 }
 

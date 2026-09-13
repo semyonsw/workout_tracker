@@ -1,8 +1,8 @@
 /**
- * TasksScreen — the day, the month, and the trend.
+ * TasksScreen — the day, and nothing but the day.
  *
  *   ┌──────────────────────────────────────────────┐
- *   │        ╭ Day ╮╭ Month ╮╭ Trend ╮             │
+ *   │ DAILY TASKS                              ⟲   │
  *   │        ‹   13 September 2026   ›             │
  *   │                  TODAY                       │
  *   │ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔             │
@@ -27,7 +27,7 @@
  *
  * The circle is 28px inside a 64-high row, so the TAP TARGET is the row's full
  * height and the glyph is just where it is drawn. Tapping the rest of the row
- * opens the month; only the left column toggles.
+ * opens that one task's own screen; only the left column toggles.
  *
  * ── LONG PRESS LIFTS A ROW, AND THE LIST IS THE DAY'S LIST ────────────────
  *
@@ -39,13 +39,17 @@
  * `reorderWithinVisible` in `lib/tasks.ts`, and the whole reason the store takes
  * the visible ids rather than a bare index.
  *
- * ── THREE VIEWS, ONE TAB ──────────────────────────────────────────────────
+ * ── THE MONTH AND THE TREND LEFT ──────────────────────────────────────────
  *
- * `Day` answers what do I do now. `Month` answers which day do I want to open —
- * a grid of every day, filled by how much of it got done, and tapping one lands
- * the Day view on it. `Trend` answers is this getting better, over a range you
- * pick. They are one tab because they are one question at three zoom levels, and
- * because the tab bar's five labels are already the width of the screen.
+ * It was `Day | Month | Trend` across the top, which meant two thirds of a
+ * control the user passes through every time to reach the one thing they open the
+ * app for. The other two are behind the ⟲ in the corner now
+ * (`TasksHistoryScreen`), the same glyph in the same place as the training log's
+ * and the expenses'. `Day` stopped being a view and became this screen.
+ *
+ * The day itself is a PROP. The month grid is a pushed screen, and a day picked
+ * in it has to outlive the screen that picked it — so `AppShell` holds it. See
+ * `navigation/AppShell.tsx`.
  *
  * ── THE PAGER GOES BACKWARDS, AND ONLY BACKWARDS ──────────────────────────
  *
@@ -56,68 +60,46 @@
  */
 
 import { useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { Icon } from '../components/Icon';
-import { TrendChart } from '../components/TrendChart';
+import { ReorderRow } from '../components/ReorderRow';
+import { SectionTopBar } from '../components/SectionTopBar';
 import { pressedStyle } from '../components/motion';
-import {
-  AddRow,
-  Kicker,
-  ListCard,
-  SelectChip,
-  Segmented,
-  Separator,
-} from '../components/primitives';
+import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
 import { TaskEditorSheet } from '../components/TaskEditorSheet';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
 import {
-  WEEKDAY_INITIALS,
   WEEKDAY_LABELS,
   dayKey,
   formatLongDay,
-  formatShortDay,
   parseDay,
   shiftDay,
   weekdayIndex,
 } from '../lib/days';
-import { tap } from '../lib/feedback';
 import {
-  type DayCell,
   type Task,
-  type TaskLog,
   type TaskMark,
   dayProgress,
   describeTaskRow,
   entryOf,
-  summarizeTaskTrend,
-  taskTrendSeries,
-  tasksMonth,
   tasksOn,
 } from '../lib/tasks';
-import { TREND_RANGES, TREND_RANGE_LABELS, type TrendRange } from '../lib/trends';
 import { useTasks } from '../state/tasksStore';
 import { palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
-type View3 = 'day' | 'month' | 'trend';
-
-const VIEWS = [
-  { value: 'day' as const, label: 'Day' },
-  { value: 'month' as const, label: 'Month' },
-  { value: 'trend' as const, label: 'Trend' },
-];
-
 interface TasksScreenProps {
   onOpenTask: (taskId: ID) => void;
-  /** Export or import the task log on its own. See `SectionDataScreen`. */
-  onOpenData: () => void;
+  /** The ⟲ in the corner: the month grid and the habit line. */
+  onOpenHistory: () => void;
+  /** The day the grid last sent back, so opening a square lands here. */
+  day: string;
+  onChangeDay: (day: string) => void;
 }
 
-export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
-  const insets = useSafeAreaInsets();
+export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: TasksScreenProps) {
   const tasks = useTasks((s) => s.tasks);
   const log = useTasks((s) => s.log);
   const cycleMark = useTasks((s) => s.cycleMark);
@@ -125,8 +107,6 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
   const reorderTasks = useTasks((s) => s.reorderTasks);
 
   const today = dayKey(new Date());
-  const [view, setView] = useState<View3>('day');
-  const [day, setDay] = useState(today);
   const [adding, setAdding] = useState(false);
 
   const rows = useMemo(() => tasksOn(tasks, day), [tasks, day]);
@@ -136,7 +116,7 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
   /* The drag: the same hook and the same geometry as every other reorder here. */
   const rowLayouts = useRef<Record<ID, CardLayout>>({});
   const rowIds = useMemo(() => rows.map((row) => row.id), [rows]);
-  const { lifted, dragY, targetIndex, panHandlers, lift, drop } = useDragReorder(
+  const { lifted, dragY, targetIndex, panHandlers, lift, drop, shiftFor } = useDragReorder(
     rowIds,
     rowLayouts,
     (id, toIndex) => reorderTasks(rowIds, id, toIndex),
@@ -147,30 +127,22 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
 
+      {/* The ⟲ goes while a row is in the air: leaving the screen mid-drag would
+          unmount the row under the finger, and there is one thing to do. */}
+      <SectionTopBar
+        title="Daily tasks"
+        onOpenHistory={lifted ? undefined : onOpenHistory}
+        historyLabel="Task history"
+      />
+
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingTop: insets.top + 24, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
         // The list must not scroll under a row that is in the air.
         scrollEnabled={lifted == null}
       >
-        {/* The view switch hides while a row is lifted: one thing at a time, and
-            switching views mid-drag would unmount the row under the finger. */}
-        {lifted ? null : (
-          <View className="mx-lg mb-lg">
-            <Segmented
-              options={VIEWS}
-              value={view}
-              onChange={(next) => {
-                tap();
-                setView(next);
-              }}
-              accessibilityLabel="The day, the month, or the trend"
-            />
-          </View>
-        )}
-
-        {view === 'day' ? (
+        <>
           <>
             {lifted && liftedTask ? (
               <View className="mx-lg items-center">
@@ -192,7 +164,7 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
               <>
                 <View className="mx-lg flex-row items-center justify-center">
                   <Pressable
-                    onPress={() => setDay(shiftDay(day, -1))}
+                    onPress={() => onChangeDay(shiftDay(day, -1))}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel="The day before"
@@ -207,7 +179,7 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
                   </Text>
 
                   <Pressable
-                    onPress={() => setDay(shiftDay(day, 1))}
+                    onPress={() => onChangeDay(shiftDay(day, 1))}
                     disabled={isToday}
                     hitSlop={12}
                     accessibilityRole="button"
@@ -255,16 +227,14 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
                 {rows.map((task, index) => {
                   const isLifted = task.id === lifted;
                   return (
-                    <Animated.View
+                    <ReorderRow
                       key={task.id}
-                      // While a row is in the air NOTHING in the list is tappable: a
-                      // finger sliding a row across a circle must not answer a task.
-                      pointerEvents={lifted ? 'none' : 'auto'}
-                      style={
-                        isLifted
-                          ? { transform: [{ translateY: dragY }], zIndex: 2, elevation: 2 }
-                          : undefined
-                      }
+                      lifted={isLifted}
+                      dragging={lifted != null}
+                      dragY={dragY}
+                      // The row slides out of the way while the finger is still
+                      // over the gap, so the drop is something you can see coming.
+                      shift={shiftFor(task.id)}
                       onLayout={(e) => {
                         const { y, height } = e.nativeEvent.layout;
                         rowLayouts.current[task.id] = { y, height };
@@ -282,7 +252,7 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
                         // ever end where it started.
                         onLongPress={rows.length > 1 ? () => lift(task.id) : undefined}
                       />
-                    </Animated.View>
+                    </ReorderRow>
                   );
                 })}
                 {lifted ? null : (
@@ -302,44 +272,11 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
 
             {lifted ? null : (
               <Text className="mx-lg mt-md text-label text-ink-faint">
-                Long press a row, then slide to reorder it.
+                Long press a row, then slide. The others open a gap where it will land.
               </Text>
             )}
           </>
-        ) : null}
-
-        {view === 'month' ? (
-          <MonthView
-            tasks={tasks}
-            log={log}
-            today={today}
-            selected={day}
-            onPick={(picked) => {
-              tap();
-              setDay(picked);
-              setView('day');
-            }}
-          />
-        ) : null}
-
-        {view === 'trend' ? <TrendView tasks={tasks} log={log} today={today} /> : null}
-
-        {lifted ? null : (
-          <View className="mx-lg mt-xxl">
-            <Pressable
-              onPress={onOpenData}
-              accessibilityRole="button"
-              accessibilityLabel="Export or import the daily tasks"
-              style={pressedStyle}
-              className="h-row flex-row items-center rounded-surface border border-hairline bg-surface px-lg"
-            >
-              <Text className="flex-1 text-body font-medium text-ink">
-                Export or import daily tasks
-              </Text>
-              <Icon name="chevron-right" size={16} color={palette.inkFaint} />
-            </Pressable>
-          </View>
-        )}
+        </>
       </ScrollView>
 
       {adding ? (
@@ -361,287 +298,6 @@ export function TasksScreen({ onOpenTask, onOpenData }: TasksScreenProps) {
 function weekdayName(day: string): string {
   const date = parseDay(day);
   return date ? WEEKDAY_LABELS[weekdayIndex(date)] : '';
-}
-
-/**
- * THE WHOLE MONTH, every task at once.
- *
- * One square per day, filled by the share of that day that got done — five steps
- * of green rather than a number, because the point of a grid is a shape and a
- * grid of fractions is a spreadsheet. Tapping a square is how you get to that
- * day, which is the one thing the `‹ ›` pager makes slow: walking back three
- * weeks is twenty-one taps.
- */
-function MonthView({
-  tasks,
-  log,
-  today,
-  selected,
-  onPick,
-}: {
-  tasks: readonly Task[];
-  log: TaskLog;
-  today: string;
-  selected: string;
-  onPick: (day: string) => void;
-}) {
-  const start = parseDay(today) ?? new Date();
-  const [cursor, setCursor] = useState(() => {
-    const at = parseDay(selected) ?? start;
-    return { year: at.getFullYear(), month: at.getMonth() };
-  });
-
-  const month = useMemo(
-    () => tasksMonth(tasks, log, cursor.year, cursor.month, today),
-    [tasks, log, cursor, today],
-  );
-  const atLatest = cursor.year === start.getFullYear() && cursor.month === start.getMonth();
-
-  const step = (delta: number) => {
-    const next = new Date(cursor.year, cursor.month + delta, 1);
-    setCursor({ year: next.getFullYear(), month: next.getMonth() });
-  };
-
-  return (
-    <>
-      <View className="mx-lg flex-row items-center justify-center">
-        <Pressable
-          onPress={() => step(-1)}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="The month before"
-          style={pressedStyle}
-          className="h-hit w-[32px] items-center justify-center"
-        >
-          <Icon name="chevron-left" size={18} color={palette.inkMuted} />
-        </Pressable>
-        <Text className="mx-lg text-title font-semibold tabular-nums text-ink">{month.label}</Text>
-        <Pressable
-          onPress={() => step(1)}
-          disabled={atLatest}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="The month after"
-          style={pressedStyle}
-          className="h-hit w-[32px] items-center justify-center"
-        >
-          {atLatest ? null : <Icon name="chevron-right" size={18} color={palette.inkMuted} />}
-        </Pressable>
-      </View>
-
-      <Text className="mx-lg mt-xs text-center text-label tabular-nums text-ink-muted">
-        {month.asked === 0
-          ? 'Nothing recorded this month'
-          : `${month.done} of ${month.asked} done · ${month.days} ${month.days === 1 ? 'day' : 'days'}`}
-      </Text>
-
-      <View className="mx-lg mt-lg flex-row">
-        {WEEKDAY_INITIALS.map((initial, index) => (
-          <Text
-            key={`${initial}${index}`}
-            className="flex-1 text-center text-micro font-semibold text-ink-faint"
-          >
-            {initial}
-          </Text>
-        ))}
-      </View>
-
-      <View className="mx-lg mt-sm">
-        {month.weeks.map((week, index) => (
-          <View key={index} className="flex-row">
-            {week.map((cell, position) => (
-              <MonthCell
-                key={cell.date ?? `pad${position}`}
-                cell={cell}
-                selected={cell.date !== null && cell.date === selected}
-                onPress={cell.date ? () => onPick(cell.date as string) : undefined}
-              />
-            ))}
-            {/* The last week is short rather than padded — a trailing blank would
-                draw squares for days that have not happened. */}
-            {week.length < 7
-              ? Array.from({ length: 7 - week.length }, (_, i) => (
-                  <View key={`tail${i}`} className="flex-1" />
-                ))
-              : null}
-          </View>
-        ))}
-      </View>
-
-      <Text className="mx-lg mt-md text-label text-ink-faint">
-        The fuller the square, the more of that day was done. Tap one to open it and answer its
-        tasks.
-      </Text>
-    </>
-  );
-}
-
-/**
- * Five steps of fill, because a continuous opacity is a value nobody can read
- * back off a screen — and four states plus empty is what the eye can actually
- * count in a grid.
- */
-function fillFor(fraction: number): { className: string; opacity?: number } {
-  if (fraction >= 1) return { className: 'bg-green' };
-  if (fraction >= 0.75) return { className: 'bg-green', opacity: 0.72 };
-  if (fraction >= 0.5) return { className: 'bg-green', opacity: 0.5 };
-  if (fraction > 0) return { className: 'bg-green', opacity: 0.3 };
-  return { className: 'border border-ink-faint/40' };
-}
-
-function MonthCell({
-  cell,
-  selected,
-  onPress,
-}: {
-  cell: DayCell;
-  selected: boolean;
-  onPress?: () => void;
-}) {
-  if (cell.day === null) return <View className="flex-1 p-[3px]" />;
-
-  const fill = cell.isBlank ? { className: '' } : fillFor(cell.fraction);
-
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      accessibilityRole="button"
-      accessibilityLabel={
-        cell.isBlank ? `${cell.day}, nothing asked` : `${cell.day}, ${cell.done} of ${cell.asked}`
-      }
-      accessibilityState={{ selected }}
-      style={pressedStyle}
-      className="flex-1 p-[3px]"
-    >
-      <View
-        className={['aspect-square items-center justify-center rounded-[6px]', fill.className].join(
-          ' ',
-        )}
-        style={{
-          opacity: fill.opacity,
-          // The app's one glow, spent here on the single square that is today.
-          ...(cell.isToday
-            ? {
-                borderWidth: 1,
-                borderColor: palette.greenBright,
-                shadowColor: palette.greenBright,
-                shadowOpacity: 0.45,
-                shadowRadius: 8,
-                elevation: 6,
-              }
-            : selected
-              ? { borderWidth: 1, borderColor: palette.inkMuted }
-              : {}),
-        }}
-      >
-        <Text
-          className={[
-            'text-label tabular-nums',
-            !cell.isBlank && cell.fraction >= 0.5 ? 'font-medium text-ink' : 'text-ink-faint',
-          ].join(' ')}
-        >
-          {cell.day}
-        </Text>
-      </View>
-    </Pressable>
-  );
-}
-
-/**
- * THE HABIT LINE — percent of each day's tasks done, over a range you pick.
- *
- * Percent rather than a count, because the denominator moves: a Monday asks for
- * nine things and a Sunday for six, and a line of raw counts would draw a weekly
- * sawtooth that is about the schedule rather than about the person.
- * `taskTrendSeries` owns that and every other rule the chart obeys.
- */
-function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog; today: string }) {
-  const [range, setRange] = useState<TrendRange>('month');
-  const points = useMemo(
-    () => taskTrendSeries(tasks, log, range, today),
-    [tasks, log, range, today],
-  );
-  const summary = useMemo(() => summarizeTaskTrend(points), [points]);
-
-  return (
-    <>
-      <View className="mx-lg flex-row flex-wrap">
-        {TREND_RANGES.map((option) => (
-          <SelectChip
-            key={option}
-            label={TREND_RANGE_LABELS[option]}
-            selected={option === range}
-            onPress={() => {
-              tap();
-              setRange(option);
-            }}
-          />
-        ))}
-      </View>
-
-      <View className="mx-lg mt-md flex-row gap-md">
-        <Well label="Done" value={`${summary.percent}%`} unit={`of ${summary.asked}`} green />
-        <Well label="Full days" value={String(summary.perfectDays)} unit={`of ${summary.days}`} />
-      </View>
-
-      {points.length >= 2 ? (
-        <>
-          <Kicker className="mx-lg mt-xl">Percent done, day by day</Kicker>
-          <View className="mx-lg mt-md">
-            <TrendChart points={points} formatValue={(value) => `${Math.round(value)}%`} />
-          </View>
-          <Text className="mx-lg mt-sm text-label tabular-nums text-ink-faint">
-            {formatShortDay(points[0].day)} to {formatShortDay(points[points.length - 1].day)} ·{' '}
-            {summary.done} of {summary.asked} answered done
-          </Text>
-        </>
-      ) : (
-        <View className="mx-lg mt-xl rounded-surface border border-hairline bg-surface p-lg">
-          <Kicker>Not enough yet</Kicker>
-          <Text className="mt-sm text-body text-ink-muted">
-            A line needs two days to have a direction. Answer today and tomorrow and it draws
-            itself.
-          </Text>
-        </View>
-      )}
-
-      <Text className="mx-lg mt-md text-label text-ink-faint">
-        Days that asked for nothing are left out rather than plotted as zero — a day off is not a
-        day you failed. A task you marked missed on purpose leaves the denominator.
-      </Text>
-    </>
-  );
-}
-
-/** A 96-high well. The same fact-shaped box the task detail screen uses. */
-function Well({
-  label,
-  value,
-  unit,
-  green = false,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  green?: boolean;
-}) {
-  return (
-    <View className="h-well flex-1 justify-between rounded-surface bg-surface-alt p-lg">
-      <Kicker>{label}</Kicker>
-      <View className="flex-row items-baseline">
-        <Text
-          className={[
-            'text-title-lg font-semibold tabular-nums',
-            green ? 'text-green-bright' : 'text-ink',
-          ].join(' ')}
-        >
-          {value}
-        </Text>
-        <Text className="ml-xs text-label text-ink-muted">{unit}</Text>
-      </View>
-    </View>
-  );
 }
 
 function TaskRow({

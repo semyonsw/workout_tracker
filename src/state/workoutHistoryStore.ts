@@ -257,7 +257,7 @@ interface WorkoutHistoryState {
  * The log, read out of SQLite before the first render.
  *
  * SYNCHRONOUS, which is the visible win of the move: under AsyncStorage the store
- * started empty and filled in a frame later, so the History tab flickered from
+ * started empty and filled in a frame later, so the training history flickered from
  * "Nothing finished yet" to a full list on every launch. `expo-sqlite`'s sync API
  * means the array is already there the first time a screen reads it.
  *

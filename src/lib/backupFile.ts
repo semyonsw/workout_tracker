@@ -32,16 +32,16 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 
-const JSON_MIME = 'application/json';
 /**
- * The CSV export's type.
+ * The one type this app writes.
  *
- * Named separately rather than parameterised at every call, because the MIME type
- * is what SAF derives the extension from: a `.csv` written as `application/json`
- * arrives as `name.json` holding commas, and every tool that opens it is wrong
- * about what it is.
+ * `saveTextFile` still takes it as a parameter rather than closing over it, because
+ * the MIME type is what SAF derives the EXTENSION from — a file written under the
+ * wrong one arrives with the wrong suffix holding the right bytes, and every tool
+ * that opens it is then wrong about what it is. That is worth a parameter even with
+ * one caller.
  */
-const CSV_MIME = 'text/csv';
+const JSON_MIME = 'application/json';
 
 /** Can this platform show a folder picker at all? SAF is Android-only. */
 export function canPickFolder(): boolean {
@@ -186,17 +186,6 @@ export type SaveOutcome =
  */
 export async function saveJsonFile(baseName: string, contents: string): Promise<SaveOutcome> {
   return saveTextFile(baseName, contents, JSON_MIME, 'json');
-}
-
-/**
- * The same folder picker, for the CSV export.
- *
- * A thin wrapper rather than a second implementation: the picker, the fallback, the
- * cancelled-is-not-an-error rule and the "say where it went" contract are identical,
- * and the only thing that differs is the MIME type SAF derives the extension from.
- */
-export async function saveCsvFile(baseName: string, contents: string): Promise<SaveOutcome> {
-  return saveTextFile(baseName, contents, CSV_MIME, 'csv');
 }
 
 async function saveTextFile(

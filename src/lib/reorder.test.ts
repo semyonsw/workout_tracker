@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { dropIndex, liftIndex, moveToIndex, type CardLayout } from './reorder';
+import {
+  dropIndex,
+  liftIndex,
+  liftedSlotHeight,
+  moveToIndex,
+  rowShift,
+  type CardLayout,
+} from './reorder';
 
 /**
  * The trickiest arithmetic in the app, finally somewhere it can be asked
@@ -205,5 +212,92 @@ describe('liftIndex', () => {
     // −1 is an insert position no splice can honour.
     expect(liftIndex(['a', 'b'], 'z')).toBe(0);
     expect(liftIndex([], 'a')).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * THE GAP. Which rows move out of the way, and how far.
+ *
+ * The drag used to move exactly one thing — the card under the finger — and the
+ * list rearranged itself on release, so the only way to learn which two exercises
+ * you were dropping between was to drop and look. These two functions are what
+ * opens the gap while the finger is still over it; the spring that carries a row
+ * there is `components/ReorderRow.tsx` and has nothing to decide.
+ *
+ * The direction is ±1 and the distance is the lifted row's own slot, because every
+ * row the lifted one passes moves by exactly the space it vacated — whatever that
+ * row's own height is. That is the same reason `dropIndex` compares midpoints.
+ */
+describe('rowShift', () => {
+  const ids = ['a', 'b', 'c', 'd'];
+
+  it('is zero for every row while the card is over its own place', () => {
+    // `b` lifted from index 1, pointing at index 1: nothing has to move.
+    for (const id of ids) expect(rowShift({ ids, liftedId: 'b', targetIndex: 1, id })).toBe(0);
+  });
+
+  it('moves the rows it passes UP when the card is dragged down', () => {
+    // `b` (index 1) heading for index 3 — past `c` and `d`.
+    expect(rowShift({ ids, liftedId: 'b', targetIndex: 3, id: 'c' })).toBe(-1);
+    expect(rowShift({ ids, liftedId: 'b', targetIndex: 3, id: 'd' })).toBe(-1);
+    // `a` is above the lift and above the target: it never moves.
+    expect(rowShift({ ids, liftedId: 'b', targetIndex: 3, id: 'a' })).toBe(0);
+  });
+
+  it('moves the rows it passes DOWN when the card is dragged up', () => {
+    // `d` (index 3) heading for the top.
+    expect(rowShift({ ids, liftedId: 'd', targetIndex: 0, id: 'a' })).toBe(1);
+    expect(rowShift({ ids, liftedId: 'd', targetIndex: 0, id: 'b' })).toBe(1);
+    expect(rowShift({ ids, liftedId: 'd', targetIndex: 0, id: 'c' })).toBe(1);
+  });
+
+  it('moves only the rows between the lift and the target', () => {
+    // `a` (index 0) heading for index 2: `b` and `c` step up, `d` is untouched.
+    expect(rowShift({ ids, liftedId: 'a', targetIndex: 2, id: 'b' })).toBe(-1);
+    expect(rowShift({ ids, liftedId: 'a', targetIndex: 2, id: 'c' })).toBe(-1);
+    expect(rowShift({ ids, liftedId: 'a', targetIndex: 2, id: 'd' })).toBe(0);
+  });
+
+  it('never moves the lifted row itself — that one follows the finger', () => {
+    expect(rowShift({ ids, liftedId: 'b', targetIndex: 3, id: 'b' })).toBe(0);
+  });
+
+  it('is zero for rows and lifts that are not in the list', () => {
+    expect(rowShift({ ids, liftedId: 'z', targetIndex: 0, id: 'a' })).toBe(0);
+    expect(rowShift({ ids, liftedId: 'a', targetIndex: 3, id: 'z' })).toBe(0);
+  });
+});
+
+describe('liftedSlotHeight', () => {
+  it('is the distance to the next row, so the gap matches the space vacated', () => {
+    // 80-tall rows with a 4px gap between them: the slot is 84, not 80.
+    const ids = ['a', 'b', 'c'];
+    const layouts: Record<string, CardLayout> = {
+      a: { y: 0, height: 80 },
+      b: { y: 84, height: 80 },
+      c: { y: 168, height: 80 },
+    };
+    expect(liftedSlotHeight(ids, 'a', layouts)).toBe(84);
+    expect(liftedSlotHeight(ids, 'b', layouts)).toBe(84);
+  });
+
+  it('measures upwards for the last row, which has nothing below it', () => {
+    const ids = ['a', 'b'];
+    const layouts: Record<string, CardLayout> = {
+      a: { y: 0, height: 80 },
+      b: { y: 84, height: 200 },
+    };
+    // Its own slot, read from where it starts relative to the row above.
+    expect(liftedSlotHeight(ids, 'b', layouts)).toBe(84);
+  });
+
+  it("falls back to the row's own height when it has no measured neighbour", () => {
+    expect(liftedSlotHeight(['a'], 'a', { a: { y: 0, height: 80 } })).toBe(80);
+  });
+
+  it('is zero for an unmeasured row, so nothing moves on a guess', () => {
+    expect(liftedSlotHeight(['a', 'b'], 'a', { b: { y: 84, height: 80 } })).toBe(0);
   });
 });

@@ -65,6 +65,8 @@ interface ProgressScreenProps {
   exercisesById: Record<ID, Exercise>;
   /** The `Log | Graphs` switch, rendered under the header by whoever owns it. */
   toolbar?: ReactNode;
+  /** `‹` — this screen is pushed by the ⟲ on the workout section now. */
+  onBack?: () => void;
 }
 
 export function ProgressScreen({
@@ -72,6 +74,7 @@ export function ProgressScreen({
   historyByExerciseId,
   exercisesById,
   toolbar,
+  onBack,
 }: ProgressScreenProps) {
   const [scope, setScope] = useState<Scope>(null);
   /*
@@ -171,7 +174,8 @@ export function ProgressScreen({
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
-        kicker="History"
+        kicker="Training history"
+        onBack={onBack}
         subtitle={exercise ? exercise.name : 'Every workout you have logged'}
         bordered={false}
       >

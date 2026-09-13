@@ -50,7 +50,8 @@ export type IconName =
   | 'x'
   | 'play'
   | 'pause'
-  | 'edit';
+  | 'edit'
+  | 'history';
 
 interface IconProps {
   name: IconName;
@@ -73,6 +74,7 @@ const STROKE: Record<IconName, number> = {
   play: 2.5,
   pause: 2.5,
   edit: 2,
+  history: 2,
 };
 
 const PATHS: Record<IconName, string[]> = {
@@ -95,6 +97,15 @@ const PATHS: Record<IconName, string[]> = {
   // A pencil: the nib on the same diagonal the checkmark's long stroke runs on,
   // so `Edit` and `✓` in one card read as the same hand.
   edit: ['M4 20h4L19.5 8.5a2.1 2.1 0 10-3-3L5 17v3z', 'M14 7l3 3'],
+  // A clock that has been wound BACK: the dial's gap and the tick beside it are
+  // the rewind arrow, which is what separates "history" from "a timer is running".
+  // The hands sit at the same 12-and-4 the rest timer draws, so the two glyphs
+  // read as the same clock.
+  history: [
+    'M3.5 12a8.5 8.5 0 108.5-8.5A8.5 8.5 0 006 6.2',
+    'M3.2 3.4v3.4h3.4',
+    'M12 7.6V12l3.2 1.9',
+  ],
 };
 
 export function Icon({ name, size, color }: IconProps) {

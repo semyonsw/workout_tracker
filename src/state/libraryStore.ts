@@ -126,7 +126,7 @@ interface LibraryState {
    * The whole point of a twelve-step loop with three back days in it is that the
    * three back days are not identical — different rows on the same theme. Until
    * this existed the only way to get there was to duplicate the routine by hand in
-   * the Routines tab, then remove the step, then add the copy, then drag it back
+   * the Routines screen, then remove the step, then add the copy, then drag it back
    * to where it was: four operations to express one intention.
    *
    * A no-op, returning null, when the step is already the only one pointing at

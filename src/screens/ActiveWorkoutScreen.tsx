@@ -135,7 +135,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
@@ -144,6 +144,7 @@ import { ExerciseCard } from '../components/ExerciseCard';
 import { FinishSheet } from '../components/FinishSheet';
 import { FocusMode } from '../components/FocusMode';
 import { Icon } from '../components/Icon';
+import { ReorderRow } from '../components/ReorderRow';
 import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
@@ -457,7 +458,7 @@ export function ActiveWorkoutScreen({
     [session?.entries],
   );
   const reorder = useDragReorder(entryIds, cardLayouts, moveEntry);
-  const { lifted, dragY, panHandlers, lift, drop } = reorder;
+  const { lifted, dragY, panHandlers, lift, drop, shiftFor } = reorder;
   const liftedName = lifted
     ? (session?.entries.find((e) => e.localId === lifted)?.exercise.name ?? '')
     : '';
@@ -766,16 +767,16 @@ export function ActiveWorkoutScreen({
             {session.entries.map((entry, index) => {
               const isLifted = entry.localId === lifted;
               return (
-                <Animated.View
+                <ReorderRow
                   key={entry.localId}
-                  // While a card is in the air NOTHING in the list is tappable: a
-                  // finger sliding a card across a ✓ must not log a set.
-                  pointerEvents={lifted ? 'none' : 'auto'}
-                  style={
-                    isLifted
-                      ? { transform: [{ translateY: dragY }], zIndex: 2, elevation: 2 }
-                      : undefined
-                  }
+                  lifted={isLifted}
+                  dragging={lifted != null}
+                  dragY={dragY}
+                  // The cards either side open the gap while the finger is still
+                  // over it, so which two exercises you are landing between is
+                  // something you can see rather than something you find out on
+                  // release.
+                  shift={shiftFor(entry.localId)}
                   onLayout={(e) => {
                     const { y, height } = e.nativeEvent.layout;
                     cardLayouts.current[entry.localId] = { y, height };
@@ -848,7 +849,7 @@ export function ActiveWorkoutScreen({
                     onAcceptOverload={() => acceptOverload(entry.localId)}
                     onDismissOverload={() => dismissOverload(entry.localId)}
                   />
-                </Animated.View>
+                </ReorderRow>
               );
             })}
 

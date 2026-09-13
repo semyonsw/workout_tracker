@@ -18,10 +18,10 @@
  *
  * ONE FILE, ALL THREE LOGS. Training, the daily tasks and the money — because
  * "back up everything" has to mean everything, and a backup that silently omitted
- * two of the three logs would be discovered on the day it was needed. A section
- * that travels ALONE travels in `lib/sectionBackup.ts` instead; that is a
- * different operation with a different confirmation, not a different format for
- * the same job.
+ * two of the three logs would be discovered on the day it was needed. It is also
+ * the ONLY file the app writes: the per-section exports that used to sit beside it
+ * are gone, because three more formats were three more ways for the version rule
+ * to drift and one more question to answer before a backup could be taken.
  *
  * WHY THIS EXISTS. Everything the user owns lives in a handful of AsyncStorage keys on one
  * phone. An uninstall, a wiped device, a new phone, or a debug build installed over
@@ -53,8 +53,6 @@
  *     shape in this app, and a file off a user's SD card is not the place to add a
  *     second one that can disagree with it.
  */
-
-import { countSection } from './sectionBackup';
 
 /** The `format` field. A file without it is not ours; a file with it might be. */
 export const BACKUP_FORMAT = 'workout-tracker-backup';
@@ -139,6 +137,19 @@ export type ParseResult =
 /* Write                                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * How many rows one of the optional logs holds.
+ *
+ * TOTAL over `unknown`, because the same function counts a file somebody found on
+ * an SD card and the stores on this phone — and a count that only works on
+ * well-formed input is a count that throws at the one moment it is needed.
+ */
+function countList(section: unknown, key: string): number {
+  if (typeof section !== 'object' || section === null) return 0;
+  const rows = (section as Record<string, unknown>)[key];
+  return Array.isArray(rows) ? rows.length : 0;
+}
+
 /** Count what a payload actually holds, rather than what it claims to. */
 export function countPayload(payload: BackupPayload): BackupCounts {
   let sets = 0;
@@ -152,10 +163,14 @@ export function countPayload(payload: BackupPayload): BackupCounts {
     workouts: payload.workouts.length,
     sets,
   };
-  // Counted through `countSection`, so the number a whole backup states about the
-  // tasks is the same number a tasks-only file states about itself.
-  if (payload.tasks != null) counts.tasks = countSection('tasks', payload.tasks).tasks;
-  if (payload.money != null) counts.amounts = countSection('money', payload.money).amounts;
+  /*
+   * The two logs that arrived later are OPTIONAL in the envelope, and absent is not
+   * empty — a version-1 file carries neither, and a count of `0 tasks` on such a
+   * file would be a sentence about somebody's habits that the file does not make.
+   * So each is counted only when it is there, and `describeCounts` omits the key.
+   */
+  if (payload.tasks != null) counts.tasks = countList(payload.tasks, 'tasks');
+  if (payload.money != null) counts.amounts = countList(payload.money, 'amounts');
   return counts;
 }
 

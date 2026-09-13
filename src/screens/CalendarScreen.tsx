@@ -25,7 +25,7 @@
  * chronological list that opened at the top would open on the oldest month in the
  * log, which for a three-year history is a screen full of 2023.
  *
- * The third view on the History tab, and the one that answers a question the other
+ * The third view of the training history, and the one that answers a question the other
  * two cannot: not "what did I lift" and not "is it going up", but "how often am I
  * actually going". Sixteen rows of dates is not a shape; a grid with holes in it is.
  *
@@ -67,9 +67,11 @@ interface CalendarScreenProps {
   workouts: CompletedWorkout[];
   /** The `Log | Graphs | Calendar` switch, owned by the tab. */
   toolbar?: ReactNode;
+  /** `‹` — this screen is pushed by the ⟲ on the workout section now. */
+  onBack?: () => void;
 }
 
-export function CalendarScreen({ workouts, toolbar }: CalendarScreenProps) {
+export function CalendarScreen({ workouts, toolbar, onBack }: CalendarScreenProps) {
   /*
    * One pass over the log, then one grid per month. Memoized on the log itself:
    * the index is a few thousand rows and the grids are pure arithmetic over it, so
@@ -109,7 +111,8 @@ export function CalendarScreen({ workouts, toolbar }: CalendarScreenProps) {
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
-        kicker="History"
+        kicker="Training history"
+        onBack={onBack}
         subtitle={
           workouts.length === 0
             ? 'Nothing finished yet'

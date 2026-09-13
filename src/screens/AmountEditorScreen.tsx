@@ -3,7 +3,7 @@
  *
  *   ┌──────────────────────────────────────────────┐
  *   │ ‹  NEW EXPENSE                      [ Save ] │
- *   │ AMOUNT · AMD                                 │
+ *   │ AMOUNT · AMD          ← whatever you count in │
  *   │ ┌──────────────────────────────────────────┐ │
  *   │ │ 2,400▎                                   │ │
  *   │ └──────────────────────────────────────────┘ │
@@ -49,6 +49,7 @@ import { Kicker, PrimaryButton, Segmented, TextButton } from '../components/prim
 import { dayKey, formatLongDay, formatMonth, parseDay, shiftDay } from '../lib/days';
 import { type Amount, type AmountWhen, type Direction, formatValue } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
+import { useSettings } from '../state/settingsStore';
 import { palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
@@ -86,6 +87,7 @@ export function AmountEditorScreen({
   onBack,
 }: AmountEditorScreenProps) {
   const categories = useMoney((s) => s.categories);
+  const currency = useSettings((s) => s.currencyCode);
   const addAmount = useMoney((s) => s.addAmount);
   const updateAmount = useMoney((s) => s.updateAmount);
   const deleteAmount = useMoney((s) => s.deleteAmount);
@@ -159,7 +161,7 @@ export function AmountEditorScreen({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Kicker className="mx-lg mb-sm mt-lg">Amount · AMD</Kicker>
+        <Kicker className="mx-lg mb-sm mt-lg">Amount · {currency}</Kicker>
         <View className="mx-lg h-row flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg">
           <TextInput
             value={digits === '' ? '' : formatValue(value)}
@@ -170,7 +172,7 @@ export function AmountEditorScreen({
             selectionColor={palette.greenBright}
             keyboardType="number-pad"
             autoFocus={amount === null}
-            accessibilityLabel="Amount in AMD"
+            accessibilityLabel={`Amount in ${currency}`}
             className="flex-1 text-title-xl font-semibold tabular-nums text-ink"
           />
         </View>

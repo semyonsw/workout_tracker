@@ -95,9 +95,18 @@ export function formatValue(value: number): string {
   return sign + rounded.toLocaleString('en-US');
 }
 
-/** "9,020 AMD". */
-export function formatAmd(value: number): string {
-  return `${formatValue(value)} AMD`;
+/**
+ * "9,020 AMD" — the number and whatever the user counts in.
+ *
+ * The code is a PARAMETER and not a constant because the label is a setting now
+ * (`settingsStore.currencyCode`), and it is a label rather than a currency: no
+ * amount carries a code, nothing is converted, and changing it repaints every
+ * figure in the app without touching one of them. A lib that reached into the
+ * settings store to find out would make every money test a store test, so the
+ * screens pass it down.
+ */
+export function formatMoney(value: number, code: string): string {
+  return `${formatValue(value)} ${code}`;
 }
 
 /** The month's name on its own, without the year. */

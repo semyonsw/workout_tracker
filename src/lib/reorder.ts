@@ -129,3 +129,87 @@ export function moveToIndex<T>(
 export function liftIndex(ids: readonly string[], entryId: string): number {
   return Math.max(0, ids.indexOf(entryId));
 }
+
+/* ------------------------------------------------------------------ */
+/* Making room                                                         */
+/* ------------------------------------------------------------------ */
+
+export interface RowShiftParams {
+  /** Every card, in list order — the order still on screen. */
+  ids: readonly string[];
+  /** The card in the air. */
+  liftedId: string;
+  /** Where it would land, as `dropIndex` reports it. */
+  targetIndex: number;
+  /** The card being asked about. */
+  id: string;
+}
+
+/**
+ * Which way a card has to move so the lifted one can land where it is pointing.
+ *
+ * ── WHY THE LIST HAS TO ANSWER THIS AT ALL ─────────────────────────────────
+ *
+ * The drag used to move exactly one thing: the card under the finger. Everything
+ * else held still until the finger came up, at which point the list rearranged
+ * itself — so the only way to find out which two exercises you were dropping
+ * between was to drop and look. That is a guess, and undoing a guess is another
+ * long press. The gap has to open WHILE the finger is over it.
+ *
+ * Returns −1 (move up a slot), 0 (stay) or +1 (move down a slot). A DIRECTION and
+ * not a distance, because the distance is the lifted card's own slot height —
+ * every card the lifted one passes moves by exactly the space it vacated, whatever
+ * that card's own height is. `liftedSlotHeight` measures it; this decides who.
+ *
+ * The arithmetic, once, so it is not re-derived at each call site: a card's slot
+ * today is its index shifted by one if it sits after the lifted card, and its slot
+ * after the drop is the same thing measured against `targetIndex`. The difference
+ * is the shift, and it is ±1 or nothing.
+ */
+export function rowShift(params: RowShiftParams): -1 | 0 | 1 {
+  const { ids, liftedId, targetIndex, id } = params;
+  if (id === liftedId) return 0;
+
+  const from = ids.indexOf(liftedId);
+  if (from === -1) return 0;
+
+  const here = ids.indexOf(id);
+  if (here === -1) return 0;
+
+  // The card's index in the list WITHOUT the lifted one, which is the space
+  // `targetIndex` is measured in.
+  const without = here > from ? here - 1 : here;
+
+  if (without >= targetIndex && without < from) return 1;
+  if (without >= from && without < targetIndex) return -1;
+  return 0;
+}
+
+/**
+ * How far a displaced card travels: the lifted card's height plus the gap to its
+ * neighbour.
+ *
+ * Measured rather than assumed, for the same reason `dropIndex` compares midpoints
+ * — an expanded card is four times the height of a collapsed one, and a constant
+ * here would open a gap of the wrong size under every drag. The gap is read off the
+ * nearest measured neighbour (the separator, the card margin, whatever the list
+ * actually puts between two rows) and is zero when there is nobody to measure
+ * against, which is the single-card list where nothing moves anyway.
+ */
+export function liftedSlotHeight(
+  ids: readonly string[],
+  liftedId: string,
+  layouts: Readonly<Record<string, CardLayout | undefined>>,
+): number {
+  const own = layouts[liftedId];
+  if (!own) return 0;
+
+  const from = ids.indexOf(liftedId);
+  const below = layouts[ids[from + 1] ?? ''];
+  if (below) return below.y - own.y;
+
+  const above = layouts[ids[from - 1] ?? ''];
+  if (above) return own.y - above.y;
+
+  return own.height;
+}

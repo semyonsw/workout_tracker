@@ -59,9 +59,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder } from 'react-native';
 
 import { commit, undo } from '../lib/feedback';
-import { dropIndex, liftIndex, type CardLayout } from '../lib/reorder';
+import { dropIndex, liftIndex, liftedSlotHeight, rowShift, type CardLayout } from '../lib/reorder';
 
 export type { CardLayout };
+
+/**
+ * Is a row in the air ANYWHERE in the app.
+ *
+ * A module-level flag, which is a thing this codebase does not otherwise do, and
+ * it earns it: the swipe that moves between sections lives above every screen
+ * (`components/SwipePager.tsx`) and claims touches on CAPTURE, which is the only
+ * way to take a gesture off a `ScrollView` — and capture runs parent-first. So a
+ * drag that wandered sideways while a row was lifted could be claimed by the pager,
+ * switching section and dropping the row somewhere nobody chose.
+ *
+ * The pager could not ask, because the lift is state inside whichever screen is
+ * mounted and the pager is above all of them. Threading a callback up through four
+ * screens to answer one yes-or-no would put the same flag in four more places.
+ *
+ * There is at most one lift at a time — the gesture is one finger and the list
+ * stops accepting touches while it is up — so a boolean is honest here. It is set
+ * on lift and cleared on every path out of one, including an unmount mid-drag.
+ */
+let liftedSomewhere = false;
+
+export function isReordering(): boolean {
+  return liftedSomewhere;
+}
 
 export interface DragReorder {
   /** The row in the air, or null. */
@@ -73,6 +97,15 @@ export interface DragReorder {
   panHandlers: ReturnType<typeof PanResponder.create>['panHandlers'];
   lift: (id: string) => void;
   drop: () => void;
+  /**
+   * How far a row that is NOT in the air has to move, in pixels, so the gap the
+   * finger is over is actually open. Zero for every row while nothing is lifted.
+   *
+   * A number rather than an `Animated.Value` per row: the value changes a handful
+   * of times per drag (only when the finger crosses a midpoint), and the spring
+   * that carries a row there belongs to the row — see `components/ReorderRow.tsx`.
+   */
+  shiftFor: (id: string) => number;
 }
 
 /**
@@ -104,6 +137,7 @@ export function useDragReorder(
       commit();
       const index = liftIndex(idsRef.current, id);
       liftedRef.current = id;
+      liftedSomewhere = true;
       // The row starts where it already is, so its own index is the first target.
       targetRef.current = index;
       setTargetIndex(index);
@@ -116,6 +150,7 @@ export function useDragReorder(
   const drop = useCallback(() => {
     const id = liftedRef.current;
     liftedRef.current = null;
+    liftedSomewhere = false;
     dragY.setValue(0);
     setLifted(null);
     if (!id) return;
@@ -180,10 +215,43 @@ export function useDragReorder(
   useEffect(() => {
     if (lifted && !ids.includes(lifted)) {
       liftedRef.current = null;
+      liftedSomewhere = false;
       dragY.setValue(0);
       setLifted(null);
     }
   }, [dragY, ids, lifted]);
 
-  return { lifted, dragY, targetIndex, panHandlers: responder.panHandlers, lift, drop };
+  /* Unmounted mid-drag — the screen was left, or the tab changed under it. The
+     flag is global, so leaving it set would disable the section swipe for good. */
+  useEffect(
+    () => () => {
+      liftedSomewhere = false;
+    },
+    [],
+  );
+
+  /**
+   * THE GAP. `rowShift` says which way a row goes and `liftedSlotHeight` says how
+   * far; multiplying them here keeps both facts in `lib/reorder.ts` where they are
+   * tested, and hands the screen one number it can animate.
+   */
+  const shiftFor = useCallback(
+    (id: string): number => {
+      if (!lifted) return 0;
+      const direction = rowShift({ ids, liftedId: lifted, targetIndex, id });
+      if (direction === 0) return 0;
+      return direction * liftedSlotHeight(ids, lifted, layouts.current);
+    },
+    [ids, layouts, lifted, targetIndex],
+  );
+
+  return {
+    lifted,
+    dragY,
+    targetIndex,
+    panHandlers: responder.panHandlers,
+    lift,
+    drop,
+    shiftFor,
+  };
 }

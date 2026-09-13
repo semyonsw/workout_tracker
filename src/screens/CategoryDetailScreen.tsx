@@ -60,9 +60,10 @@ import {
   describeAmount,
   describeCount,
   describeInterval,
-  formatAmd,
+  formatMoney,
 } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
+import { useSettings } from '../state/settingsStore';
 import { palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
@@ -87,6 +88,7 @@ export function CategoryDetailScreen({
   const amounts = useMoney((s) => s.amounts);
   const updateCategory = useMoney((s) => s.updateCategory);
   const archiveCategory = useMoney((s) => s.archiveCategory);
+  const currency = useSettings((s) => s.currencyCode);
 
   const [archiving, setArchiving] = useState(false);
 
@@ -102,7 +104,7 @@ export function CategoryDetailScreen({
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker="Money" onBack={onBack} bordered={false} />
+      <ScreenHeader kicker="Expenses" onBack={onBack} bordered={false} />
 
       <ScrollView
         className="flex-1"
@@ -112,7 +114,9 @@ export function CategoryDetailScreen({
         <Text className="mx-lg mt-sm text-title font-semibold text-ink">{category.name}</Text>
         <Text className="mx-lg mt-xs text-label text-ink-muted">
           {describeInterval(interval, anchor)} ·{' '}
-          <Text className="tabular-nums text-green-bright">{formatAmd(Math.abs(total))}</Text>
+          <Text className="tabular-nums text-green-bright">
+            {formatMoney(Math.abs(total), currency)}
+          </Text>
         </Text>
 
         <View className="mx-lg mt-lg flex-row">
@@ -145,7 +149,7 @@ export function CategoryDetailScreen({
             {rows.map((row, index) => (
               <View key={row.id}>
                 {index > 0 ? <Separator /> : null}
-                <AmountRow amount={row} onPress={() => onOpenAmount(row.id)} />
+                <AmountRow amount={row} currency={currency} onPress={() => onOpenAmount(row.id)} />
               </View>
             ))}
           </ListCard>
@@ -188,20 +192,29 @@ export function CategoryDetailScreen({
 
 /* ------------------------------------------------------------------ */
 
-function AmountRow({ amount, onPress }: { amount: Amount; onPress: () => void }) {
+function AmountRow({
+  amount,
+  currency,
+  onPress,
+}: {
+  amount: Amount;
+  /** Passed down rather than read here: the lib formats, the screen decides. */
+  currency: string;
+  onPress: () => void;
+}) {
   const detail = describeAmount(amount);
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${formatAmd(amount.value)}. ${detail}`}
+      accessibilityLabel={`${formatMoney(amount.value, currency)}. ${detail}`}
       style={pressedStyle}
       className="h-row-lg flex-row items-center px-lg"
     >
       <View className="flex-1 pr-md">
         <Text className="text-body tabular-nums text-ink">
           {amount.direction === 'income' ? '+' : ''}
-          {formatAmd(amount.value)}
+          {formatMoney(amount.value, currency)}
         </Text>
         <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
           {detail}

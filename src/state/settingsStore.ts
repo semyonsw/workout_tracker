@@ -46,6 +46,8 @@ import {
   updateGym,
   type Gym,
 } from '../lib/gyms';
+import { INTERVALS, type Direction, type Interval } from '../lib/money';
+import { TREND_RANGES, type TrendRange } from '../lib/trends';
 import type { MuscleCluster, UnitSystem } from '../types/models';
 
 /*
@@ -154,6 +156,39 @@ export interface Settings {
    */
   weeklySetTargets: Partial<Record<MuscleCluster, number>>;
 
+  /* --- the daily tasks: see `screens/TaskSettingsScreen.tsx` ---------- */
+  /**
+   * Let the rest of the app answer the two tasks it can answer.
+   *
+   * Finishing a workout ticks the training task; recording an amount ticks the
+   * money one (`tickTaskSource`). ON by default, because a tick you did not have
+   * to give is the whole reason those two tasks are worth having — and OFF is a
+   * real preference: a tick nobody can account for is a tick you stop trusting,
+   * and somebody who wants the row to mean "I said so" can have that.
+   */
+  autoTickTasks: boolean;
+  /** Which range the task history opens on. A default, not a lock. */
+  tasksTrendRange: TrendRange;
+
+  /* --- the expenses: see `screens/MoneySettingsScreen.tsx` ------------ */
+  /**
+   * What the amounts are counted in, as a label.
+   *
+   * A LABEL AND NOT A RATE. Every amount is stored as a plain integer with no
+   * currency on it, and changing this does not convert anything — it changes the
+   * three letters printed after the number, which is the whole of what the app
+   * knows about money units. Converting would mean a rate, a date for that rate,
+   * and a second opinion about what last March's taxi cost; the app has none of
+   * those and is not going to invent them.
+   */
+  currencyCode: string;
+  /** The window the expenses section opens on. */
+  moneyDefaultInterval: Interval;
+  /** Which of the two tiles is selected when the section opens. */
+  moneyDefaultDirection: Direction;
+  /** Which range the expense history opens on. */
+  moneyTrendRange: TrendRange;
+
   /* --- automatic backup: see `lib/autoBackup.ts` --------------------- */
   /**
    * Write a backup without being asked.
@@ -220,6 +255,12 @@ export const DEFAULT_SETTINGS: Settings = {
   gyms: gymsFromLegacyPlates(DEFAULT_PLATES_KG),
   activeGymId: DEFAULT_GYM_ID,
   weeklySetTargets: {},
+  autoTickTasks: true,
+  tasksTrendRange: 'month',
+  currencyCode: 'AMD',
+  moneyDefaultInterval: 'month',
+  moneyDefaultDirection: 'expense',
+  moneyTrendRange: 'month',
   autoBackupEnabled: true,
   autoBackupFolderUri: undefined,
   autoBackupIntervalDays: 7,
@@ -342,6 +383,14 @@ export function sanitizeSettings(input: Partial<Settings> | undefined | null): S
     // pointer, and a plate label that goes blank reads as a broken feature.
     activeGymId: resolveActiveGymId(gyms, raw.activeGymId),
     weeklySetTargets: sanitizeWeeklyTargets(raw.weeklySetTargets),
+    autoTickTasks: raw.autoTickTasks !== false,
+    tasksTrendRange: usableRange(raw.tasksTrendRange),
+    currencyCode: usableCurrency(raw.currencyCode),
+    moneyDefaultInterval: INTERVALS.includes(raw.moneyDefaultInterval as Interval)
+      ? (raw.moneyDefaultInterval as Interval)
+      : 'month',
+    moneyDefaultDirection: raw.moneyDefaultDirection === 'income' ? 'income' : 'expense',
+    moneyTrendRange: usableRange(raw.moneyTrendRange),
     autoBackupEnabled: raw.autoBackupEnabled !== false,
     autoBackupFolderUri: usableFolderUri(raw.autoBackupFolderUri),
     autoBackupIntervalDays: clampSetting('autoBackupIntervalDays', raw.autoBackupIntervalDays),
@@ -401,6 +450,26 @@ function usableInstant(value: unknown): string | undefined {
   return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined;
 }
 
+/** A trend range this build knows, or the middle one. */
+function usableRange(value: unknown): TrendRange {
+  return TREND_RANGES.includes(value as TrendRange) ? (value as TrendRange) : 'month';
+}
+
+/**
+ * A currency label: up to four visible characters, trimmed, uppercased.
+ *
+ * Capped and not validated against a list, because the app does not convert and
+ * therefore has no reason to care whether `AMD` is a real code — somebody
+ * counting in `PTS` is counting in points, and that is their business. Empty
+ * falls back to the default rather than printing a bare number, which would make
+ * two different totals on the same screen indistinguishable.
+ */
+function usableCurrency(value: unknown): string {
+  if (typeof value !== 'string') return 'AMD';
+  const trimmed = value.trim().toUpperCase().slice(0, 4);
+  return trimmed === '' ? 'AMD' : trimmed;
+}
+
 /** The rotation list: strings only, and capped so a corrupt blob cannot grow. */
 function usableUriList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -418,7 +487,8 @@ interface SettingsState extends Settings {
       | 'hapticsEnabled'
       | 'keepAwakeEnabled'
       | 'notifyOnTimerEnd'
-      | 'ladderAllExercises',
+      | 'ladderAllExercises'
+      | 'autoTickTasks',
     value: boolean,
   ) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;
@@ -445,6 +515,14 @@ interface SettingsState extends Settings {
 
   /** A weekly set target for one cluster. `undefined` clears it. */
   setWeeklyTarget: (cluster: MuscleCluster, sets: number | undefined) => void;
+
+  /* --- the two sections that are not the training log ---------------- */
+  setTasksTrendRange: (range: TrendRange) => void;
+  /** The label after every amount. Sanitized, so a blank one cannot land. */
+  setCurrencyCode: (code: string) => void;
+  setMoneyDefaultInterval: (interval: Interval) => void;
+  setMoneyDefaultDirection: (direction: Direction) => void;
+  setMoneyTrendRange: (range: TrendRange) => void;
 
   /* --- automatic backup: see `lib/autoBackup.ts` --------------------- */
   setAutoBackupEnabled: (enabled: boolean) => void;
@@ -531,6 +609,18 @@ export const useSettings = create<SettingsState>()(
         else current[cluster] = sets;
         set({ weeklySetTargets: sanitizeWeeklyTargets(current) });
       },
+
+      setTasksTrendRange: (tasksTrendRange) => set({ tasksTrendRange }),
+
+      // Through the sanitizer rather than straight in: this one comes from a text
+      // field, and a blank label would print a bare number.
+      setCurrencyCode: (code) => set({ currencyCode: usableCurrency(code) }),
+
+      setMoneyDefaultInterval: (moneyDefaultInterval) => set({ moneyDefaultInterval }),
+
+      setMoneyDefaultDirection: (moneyDefaultDirection) => set({ moneyDefaultDirection }),
+
+      setMoneyTrendRange: (moneyTrendRange) => set({ moneyTrendRange }),
 
       setAutoBackupEnabled: (autoBackupEnabled) => set({ autoBackupEnabled }),
 

@@ -37,7 +37,7 @@ interface RoutineListScreenProps {
   onStartWorkout: (routineId: ID) => void;
   onCreate: () => void;
   onOpenSequence: () => void;
-  /** Present since this screen moved out of the tab bar and under `More`. */
+  /** Present since this screen moved out of the tab bar and under the workout section. */
   onBack?: () => void;
 }
 

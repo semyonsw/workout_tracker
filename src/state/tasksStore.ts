@@ -32,6 +32,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { dayKey } from '../lib/days';
+import { useSettings } from './settingsStore';
 import {
   reorderWithinVisible,
   type Task,
@@ -272,6 +273,16 @@ export const useTasks = create<TasksState>()(
         set((state) => ({ log: writeEntry(state.log, id, day, { note }) })),
 
       tickAuto: (source, day = dayKey(new Date())) => {
+        /*
+         * THE SWITCH IS CHECKED HERE, not at the two call sites.
+         *
+         * `Let the app tick what it knows` is off, so nothing in the app answers a
+         * row on its own — and the guard belongs where the write happens, because
+         * there is one write and there will be more callers. Read rather than
+         * subscribed: this runs outside React, from a `Finish` and from an amount
+         * being saved, and the answer only has to be right at that instant.
+         */
+        if (!useSettings.getState().autoTickTasks) return;
         const { tasks, log } = get();
         let next = log;
         for (const task of tasks) {

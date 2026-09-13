@@ -133,9 +133,10 @@
  */
 
 import { useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
+import { ReorderRow } from '../components/ReorderRow';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { DragHandle, Icon } from '../components/Icon';
 import {
@@ -281,7 +282,7 @@ export function RoutineEditorScreen({
     );
   };
 
-  const { lifted, dragY, targetIndex, panHandlers, lift, drop } = useDragReorder(
+  const { lifted, dragY, targetIndex, panHandlers, lift, drop, shiftFor } = useDragReorder(
     itemIds,
     rowLayouts,
     commitMove,
@@ -394,16 +395,15 @@ export function RoutineEditorScreen({
                 const isLifted = item.id === lifted;
 
                 return (
-                  <Animated.View
+                  <ReorderRow
                     key={item.id}
-                    // While a row is in the air NOTHING in the list is tappable: a
-                    // finger sliding a row across a ✕ must not remove an exercise.
-                    pointerEvents={lifted ? 'none' : 'auto'}
-                    style={
-                      isLifted
-                        ? { transform: [{ translateY: dragY }], zIndex: 2, elevation: 2 }
-                        : undefined
-                    }
+                    lifted={isLifted}
+                    dragging={lifted != null}
+                    dragY={dragY}
+                    // The rows above and below open the gap while the finger is
+                    // still over it, so you can see which two exercises you are
+                    // dropping between before you let go.
+                    shift={shiftFor(item.id)}
                     onLayout={(e) => {
                       const { y, height } = e.nativeEvent.layout;
                       rowLayouts.current[item.id] = { y, height };
@@ -453,7 +453,7 @@ export function RoutineEditorScreen({
                         onOpenHistory={() => onOpenItem(item, draft())}
                       />
                     ) : null}
-                  </Animated.View>
+                  </ReorderRow>
                 );
               })}
 

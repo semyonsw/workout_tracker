@@ -7,7 +7,7 @@ import {
   byCategory,
   describeAmount,
   describeInterval,
-  formatAmd,
+  formatMoney,
   inInterval,
   shiftAnchor,
   totalsIn,
@@ -170,9 +170,9 @@ describe('a category', () => {
 
 describe('the figure', () => {
   it('groups thousands and carries the unit', () => {
-    expect(formatAmd(9020)).toBe('9,020 AMD');
-    expect(formatAmd(0)).toBe('0 AMD');
-    expect(formatAmd(28970)).toBe('28,970 AMD');
-    expect(formatAmd(-1500)).toBe('-1,500 AMD');
+    expect(formatMoney(9020, 'AMD')).toBe('9,020 AMD');
+    expect(formatMoney(0, 'AMD')).toBe('0 AMD');
+    expect(formatMoney(28970, 'USD')).toBe('28,970 USD');
+    expect(formatMoney(-1500, 'AMD')).toBe('-1,500 AMD');
   });
 });

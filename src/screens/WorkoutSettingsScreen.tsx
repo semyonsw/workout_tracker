@@ -1,6 +1,19 @@
 /**
- * SettingsScreen — every duration the app counts, and the two switches that
- * decide whether it can be heard.
+ * WorkoutSettingsScreen — every duration the app counts, and the two switches
+ * that decide whether it can be heard.
+ *
+ * ONE OF THREE, reached from the section row in `SettingsHomeScreen`. Settings
+ * used to be one screen holding everything: the rest timers, the plates, the
+ * weekly targets, and underneath them eight rows of export and import belonging
+ * to three different logs. Nothing on it was wrong and all of it was in one pile,
+ * so finding the rest step meant scrolling past the backup folder. Each section
+ * now owns its own settings, and the general ones — one export, one import, one
+ * reset — are the section list's own screen.
+ *
+ * What makes a setting belong HERE is that a workout reads it. That is why the
+ * sound, the vibration and the screen-on switches are on this screen rather than
+ * in the general section despite sounding device-wide: every one of them is about
+ * a countdown, and the countdown only runs in a session.
  *
  *   ┌──────────────────────────────────────────────┐
  *   │ SETTINGS                                     │
@@ -74,40 +87,14 @@ import {
   Separator,
   SettingRow,
   StepperRow,
+  SwitchRow,
   TextButton,
-  Toggle,
 } from '../components/primitives';
 import { bumpRestBetweenSets, setRestBetweenSets } from '../state/restSync';
-import {
-  backupBaseName,
-  countPayload,
-  describeCounts,
-  parseBackup,
-  type BackupCounts,
-  type BackupEnvelope,
-} from '../lib/backup';
-import {
-  describeError,
-  folderLabel,
-  pickFolder,
-  pickJsonFile,
-  readTextFile,
-  saveCsvFile,
-  saveJsonFile,
-} from '../lib/backupFile';
-import { csvBaseName, workoutsToCsv } from '../lib/csv';
-import { describeCsvPlan, parseSetsCsv, planCsvImport, type CsvImportPlan } from '../lib/csvImport';
 import { LADDER_SETS, describeLadder, ladderForMax } from '../lib/repLadder';
 import { commit, countFinal, countTick, tap } from '../lib/feedback';
 import { restMedians } from '../lib/restHistory';
 import { formatClock, formatWeight, kgToLb, lbToKg, unitLabel, weightSteps } from '../lib/units';
-import {
-  applyBackup,
-  applyCsvImport,
-  currentSnapshot,
-  exportBackupText,
-  mergeBackupWorkouts,
-} from '../state/dataTransfer';
 import { useLibrary } from '../state/libraryStore';
 import {
   platesInForce,
@@ -117,14 +104,11 @@ import {
 } from '../state/settingsStore';
 import { MAX_GYMS } from '../lib/gyms';
 import { CLUSTERS, clusterLabel } from '../lib/muscles';
-import { describeBackupAge } from '../lib/autoBackup';
-import { SECTION_LABELS, type SectionName } from '../lib/sectionBackup';
 import {
   healthConnectState,
   requestHealthConnect,
   type HealthConnectState,
 } from '../lib/healthConnect';
-import { runBackupNow } from '../hooks/useAutoBackup';
 import { useWorkoutHistory } from '../state/workoutHistoryStore';
 import { palette } from '../theme/tokens';
 import type { UnitSystem } from '../types/models';
@@ -177,55 +161,7 @@ function formatSeconds(seconds: number, zeroLabel = 'Off'): string {
   return formatClock(seconds);
 }
 
-/**
- * A file that has been read and understood, waiting for a yes.
- *
- * `mode` is the whole difference between the two actions, and it is carried here
- * rather than in a second piece of state so the sheet cannot be shown for one and
- * confirmed as the other.
- */
-interface PendingImport {
-  mode: 'replace' | 'merge';
-  file: string;
-  envelope: BackupEnvelope;
-  counts: BackupCounts;
-  /** For a merge: how many of the file's workouts this phone does not have. */
-  newWorkouts: number;
-}
-
-/** The one line under the two rows. `quiet` is "nothing happened", not an alarm. */
-interface DataStatus {
-  tone: 'ok' | 'quiet';
-  text: string;
-}
-
-/**
- * What is on this phone right now, counted the same way a file is.
- *
- * Read at the moment it is needed rather than subscribed to: it is only ever used
- * inside a sentence about something the user just did, and a count that re-renders
- * the whole settings screen on every logged set would be a subscription bought for
- * nothing.
- */
-function onThisPhone(): BackupCounts {
-  return countPayload(currentSnapshot());
-}
-
-export function SettingsScreen({
-  onBack,
-  onOpenSection,
-}: {
-  onBack?: () => void;
-  /**
-   * Open the export/import screen for ONE section.
-   *
-   * The tasks and the money each carry their own row into it from their own tab,
-   * where somebody standing in that section will look for it. The TRAINING log has
-   * no such tab — Today, History and the library are all views of it — so its row
-   * lives here, beside the whole-phone backup it is the scoped version of.
-   */
-  onOpenSection?: (section: SectionName) => void;
-}) {
+export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
   const settings = useSettings();
   /**
    * The bulk half of `Make every exercise a rep ladder`. The flag lives in
@@ -243,20 +179,16 @@ export function SettingsScreen({
    * `COUNT(*)` over an indexed table, on a screen nobody opens mid-set.
    */
   const onDisk = useWorkoutHistory((s) => s.countOnDisk)();
-  /** "The log could not be READ" — see `workoutHistoryStore.loadFailed`. */
-  const loadFailed = useWorkoutHistory((s) => s.loadFailed);
   /*
    * What the user ACTUALLY rests, from the timer's own measurements. Null until
    * there are enough samples to mean anything — see `restHistory.ts` — and the
    * rows below render nothing at all in that case rather than hedging.
    */
   const measured = useMemo(() => restMedians(workouts), [workouts]);
-  const [confirming, setConfirming] = useState<'reset' | 'history' | null>(null);
-
-  /** A parsed file waiting for a yes: importing replaces everything. */
-  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
-  /** A parsed set table waiting for a yes. Adds; never replaces. */
-  const [pendingCsv, setPendingCsv] = useState<{ name: string; plan: CsvImportPlan } | null>(null);
+  /** The whole log, held while the sheet asks. The only sheet on this screen. */
+  const [confirming, setConfirming] = useState<'history' | null>(null);
+  /** One line, for the one thing on this screen that can be refused elsewhere. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   /**
    * Whether Health Connect is installed, granted, or not there at all.
@@ -277,10 +209,6 @@ export function SettingsScreen({
       alive = false;
     };
   }, []);
-  /** One line under the buttons: what the last export or import actually did. */
-  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
-  /** A picker is open or a file is being read. Stops a second tap racing it. */
-  const [busy, setBusy] = useState(false);
   /** Which gym's plate row is open for editing. Null = just the switcher. */
   const [editingGymId, setEditingGymId] = useState<string | null>(null);
 
@@ -333,49 +261,6 @@ export function SettingsScreen({
   };
 
   /**
-   * EXPORT — write everything to one JSON file, in a folder the user picks.
-   *
-   * The folder picker rather than a silent write: a file the user cannot find is
-   * not a backup, and app-private storage is exactly where Android hides files
-   * from its own file manager. What comes back is stated by name, so the next step
-   * ("move it off the phone") is something the user can actually do.
-   */
-  const exportData = async () => {
-    if (busy) return;
-    tap();
-    setBusy(true);
-    setDataStatus(null);
-    try {
-      const outcome = await saveJsonFile(backupBaseName(), exportBackupText());
-      if (!outcome.saved) {
-        setDataStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
-        return;
-      }
-      commit();
-      /*
-       * A MANUAL EXPORT COUNTS AS A BACKUP, and it also teaches the automatic one
-       * where to write. Both matter: without the first, "last backup 40 days ago"
-       * would be a lie told to somebody who exported this morning; without the
-       * second, the app would ask for a folder permission it was just handed.
-       */
-      settings.recordBackup(new Date().toISOString());
-      const adopted = outcome.folderUri != null && settings.autoBackupFolderUri == null;
-      if (adopted) settings.setAutoBackupFolder(outcome.folderUri);
-
-      setDataStatus({
-        tone: 'ok',
-        text: `Saved ${outcome.name} to ${outcome.where} — ${describeCounts(onThisPhone())}.${
-          adopted ? ' Automatic backups will go to that folder from now on.' : ''
-        }`,
-      });
-    } catch (error) {
-      setDataStatus({ tone: 'quiet', text: describeError(error) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /**
    * Turn sharing on (asking for the permission) or off.
    *
    * Off is unconditional and instant — withdrawing consent must never depend on a
@@ -400,259 +285,16 @@ export function SettingsScreen({
     setHealthConnect(granted ? 'ready' : state);
     settings.setShareToHealthConnect(granted);
     if (!granted) {
-      setDataStatus({
-        tone: 'quiet',
-        text: 'Health Connect did not grant permission, so nothing will be shared.',
-      });
+      setNotice('Health Connect did not grant permission, so nothing will be shared.');
     }
   };
 
-  /**
-   * IMPORT OLD WORKOUTS from a set table — the training that predates this app.
-   *
-   * Deliberately a different verb from the two JSON imports beside it: this ADDS
-   * workouts and never replaces anything, and it is the only import that can create
-   * library rows (a sheet refers to exercises this phone has never heard of — see
-   * `lib/csvImport.ts`). Two steps, like the backup import: parse and report, then
-   * apply on a confirmation, because "38 workouts and 4 new exercises" is a thing
-   * somebody should see before it happens.
-   */
-  const importSetsCsv = async () => {
-    if (busy) return;
-    tap();
-    setBusy(true);
-    setDataStatus(null);
-    try {
-      const file = await pickJsonFile();
-      if (!file) {
-        setDataStatus({ tone: 'quiet', text: 'No file picked.' });
-        return;
-      }
-
-      const parsed = parseSetsCsv(await readTextFile(file.uri));
-      if (parsed.error) {
-        setDataStatus({ tone: 'quiet', text: `${file.name}: ${parsed.error}` });
-        return;
-      }
-
-      // The library as it is right now: the planner matches names against it and
-      // only invents a row where nothing matches.
-      const plan = planCsvImport(parsed, useLibrary.getState().exercises);
-      if (plan.workouts.length === 0) {
-        setDataStatus({
-          tone: 'quiet',
-          text: `${file.name}: no readable sets${parsed.skipped > 0 ? ` (${parsed.skipped} rows skipped)` : ''}.`,
-        });
-        return;
-      }
-
-      setPendingCsv({ name: file.name, plan });
-    } catch (error) {
-      setDataStatus({ tone: 'quiet', text: describeError(error) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /** The second step: the user has seen the counts and said yes. */
-  const applyPendingCsv = () => {
-    if (!pendingCsv) return;
-    commit();
-    const applied = applyCsvImport(pendingCsv.plan);
-    setPendingCsv(null);
-    setDataStatus({
-      tone: 'ok',
-      text: `Added ${applied.workoutsAdded} ${
-        applied.workoutsAdded === 1 ? 'workout' : 'workouts'
-      } · ${applied.setsAdded} sets${
-        applied.exercisesAdded > 0 ? ` · ${applied.exercisesAdded} new exercises` : ''
-      }. Slashed dates were read day-first.`,
-    });
-  };
-
-  /**
-   * `Back up now`, and `Choose a folder` when there isn't one.
-   *
-   * The same write path the unattended one uses (`runBackupNow`), so the rotation
-   * and the stamp cannot disagree between the two. Where no folder has been granted
-   * this asks for one first, because that grant is the whole difference between a
-   * backup that survives an uninstall and one that dies with it.
-   */
-  const backUpNow = async () => {
-    if (busy) return;
-    tap();
-    setBusy(true);
-    setDataStatus(null);
-    try {
-      let folder = settings.autoBackupFolderUri;
-      if (!folder) {
-        const picked = await pickFolder();
-        if (!picked) {
-          setDataStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
-          return;
-        }
-        settings.setAutoBackupFolder(picked);
-        folder = picked;
-      }
-
-      const result = await runBackupNow(true);
-      if (!result.wrote) {
-        setDataStatus({
-          tone: 'quiet',
-          text: 'Could not write to that folder. Pick it again to re-grant access.',
-        });
-        return;
-      }
-      commit();
-      setDataStatus({
-        tone: 'ok',
-        text: `Backed up ${result.name} to ${folderLabel(folder)} — ${describeCounts(onThisPhone())}.`,
-      });
-    } catch (error) {
-      setDataStatus({ tone: 'quiet', text: describeError(error) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /**
-   * EXPORT SETS — the same log, flat, one row per set.
-   *
-   * A copy you can read, and the format `Import old workouts from a CSV` reads back.
-   * Still not a backup: a table of set rows carries no routines, no sequence and no
-   * settings, so the JSON file is the only thing that restores. `lib/csv.ts` and
-   * `lib/csvImport.ts` have both halves of that argument.
-   */
-  const exportSets = async () => {
-    if (busy) return;
-    tap();
-    setBusy(true);
-    setDataStatus(null);
-    try {
-      const rows = workouts.reduce((n, w) => n + w.sets.length, 0);
-      if (rows === 0) {
-        /*
-         * An empty log and an unreadable one produce the same zero here, and telling
-         * somebody they have never logged a set when their log is on disk is the
-         * failure this release is about. `loadFailed` is what tells them apart.
-         */
-        setDataStatus({
-          tone: 'quiet',
-          text: loadFailed
-            ? 'The log could not be read, so there is nothing to write. Close the app and open it again.'
-            : 'There are no logged sets to export yet.',
-        });
-        return;
-      }
-      const outcome = await saveCsvFile(csvBaseName(), workoutsToCsv(workouts));
-      if (!outcome.saved) {
-        setDataStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
-        return;
-      }
-      commit();
-      setDataStatus({
-        tone: 'ok',
-        text: `Saved ${outcome.name} to ${outcome.where} — ${rows} ${rows === 1 ? 'set' : 'sets'}.`,
-      });
-    } catch (error) {
-      setDataStatus({ tone: 'quiet', text: describeError(error) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /**
-   * IMPORT — the phone's own file browser, then a question.
-   *
-   * Reading the file and APPLYING it are deliberately two steps: this is the only
-   * irreversible action in the app that isn't a delete, so the sheet gets to state
-   * what is in the file and what is on the phone before anything is replaced.
-   *
-   * TWO ACTIONS, ONE PICKER. `mode` decides what the sheet asks and what the yes
-   * does: `replace` is a restore, `merge` adds only the workouts this phone does
-   * not already have. They share this function because reading and validating a
-   * file is identical work, and they must never share a confirmation — see
-   * `PendingImport`.
-   */
-  const importData = async (mode: 'replace' | 'merge') => {
-    if (busy) return;
-    tap();
-    setBusy(true);
-    setDataStatus(null);
-    try {
-      const file = await pickJsonFile();
-      if (!file) {
-        setDataStatus({ tone: 'quiet', text: 'No file picked.' });
-        return;
-      }
-      const result = parseBackup(await readTextFile(file.uri));
-      if (!result.ok) {
-        setDataStatus({ tone: 'quiet', text: `${file.name}: ${result.error}` });
-        return;
-      }
-      /*
-       * How many workouts a merge would ADD, counted before asking, so the
-       * confirmation states a number rather than a hope. Counted from the file's
-       * ids against this phone's — the same union the store performs, so the sheet
-       * cannot promise more than the merge delivers.
-       */
-      const known = new Set(workouts.map((w) => w.id));
-      const newWorkouts = result.envelope.workouts.filter((w) => {
-        const id = (w as { id?: unknown }).id;
-        return typeof id === 'string' && !known.has(id);
-      }).length;
-
-      setPendingImport({
-        mode,
-        file: file.name,
-        envelope: result.envelope,
-        counts: result.counts,
-        newWorkouts,
-      });
-    } catch (error) {
-      setDataStatus({ tone: 'quiet', text: describeError(error) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirmImport = () => {
-    if (!pendingImport) return;
-
-    if (pendingImport.mode === 'merge') {
-      const merged = mergeBackupWorkouts(pendingImport.envelope);
-      commit();
-      setPendingImport(null);
-      setDataStatus({
-        tone: 'ok',
-        text:
-          merged.workoutsAdded === 0
-            ? 'Nothing to add — every workout in that file was already here.'
-            : `Added ${merged.workoutsAdded} ${
-                merged.workoutsAdded === 1 ? 'workout' : 'workouts'
-              } and ${merged.setsAdded} ${merged.setsAdded === 1 ? 'set' : 'sets'}.`,
-      });
-      return;
-    }
-
-    const applied = applyBackup(pendingImport.envelope);
-    commit();
-    setPendingImport(null);
-    setDataStatus({
-      tone: 'ok',
-      // What LANDED, not what the file claimed: rows that fail validation are
-      // dropped on the way in, and a restore that reports the file's own numbers
-      // is how someone learns not to trust the feature.
-      text: `Restored ${describeCounts(applied)}${applied.settingsApplied ? ', and your settings' : ''}.`,
-    });
-  };
-
-  const asking = confirming != null || pendingImport != null || pendingCsv != null;
+  const asking = confirming != null;
 
   return (
     <View className="flex-1 bg-bg">
       <View className="flex-1" style={asking ? { opacity: 0.28 } : undefined}>
-        <ScreenHeader kicker="Settings" onBack={onBack} bordered={false} />
+        <ScreenHeader kicker="Workout settings" onBack={onBack} bordered={false} />
 
         <ScrollView
           className="flex-1"
@@ -962,7 +604,7 @@ export function SettingsScreen({
               in your head.
 
               So: nothing is set by default, `—` means no opinion, and where a
-              target exists the History tab's row reads `14 / 16` and its bar
+              target exists the training history's row reads `14 / 16` and its bar
               measures against it instead of against the busiest cluster. Nothing
               turns red, nothing warns, and going over is not an error. */}
           <Kicker className="mx-lg mb-sm mt-xxl">Weekly sets</Kicker>
@@ -999,7 +641,7 @@ export function SettingsScreen({
             })}
           </ListCard>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
-            Optional. Set one and the History tab compares this window against it; leave it at
+            Optional. Set one and the training history compares this window against it; leave it at
             &ldquo;—&rdquo; and the counts stay counts.
           </Text>
 
@@ -1019,31 +661,21 @@ export function SettingsScreen({
           </View>
 
           {/* ----------------------------------------------------------
-              EXPORT AND IMPORT, at the bottom, above the two destructive rows.
+              WHAT IS ACTUALLY ON DISK, stated as a fact.
 
-              Everything the user owns lives in three AsyncStorage keys on one
-              phone: an uninstall, a wiped device or a new phone takes all of it,
-              and the app's whole value is a log that goes back far enough to show
-              a plateau. These two rows are the only thing standing between a year
-              of training and a factory reset, which is why they are plain,
-              permanent rows rather than a screen you have to know about.
+              The log lives in SQLite (`historyDb.ts`) and the app holds a copy of
+              it in memory. Those two can disagree in exactly one direction — a read
+              that failed leaves the copy empty while the file is untouched — and
+              when they do, every screen shows an empty history and it looks
+              precisely like a year of training being deleted. One line here is the
+              difference between that and knowing better: it counts the rows in the
+              file, not the array on screen, and it says so when the two do not
+              match.
 
-              `Export data` writes one readable JSON file — every exercise,
-              routine, finished workout WITH its set rows, and your settings —
-              into a folder you pick. `Import data` opens the phone's file browser
-              so you can find that file and read it back. What each one did is
-              stated underneath, by name and by count. */}
-          {/*
-            WHAT IS ACTUALLY ON DISK, stated as a fact.
-        
-            The log lives in SQLite (`historyDb.ts`) and the app holds a copy of it
-            in memory. Those two can disagree in exactly one direction — a read that
-            failed leaves the copy empty while the file is untouched — and when they
-            do, every screen shows an empty History and it looks precisely like a
-            year of training being deleted. One line here is the difference between
-            that and knowing better: it counts the rows in the file, not the array on
-            screen, and it says so when the two do not match.
-          */}
+              The BACKUP rows are not here any more. A backup is not a training
+              setting — it carries the tasks and the money too — so it lives once,
+              in the general section, beside the one export and the one import.
+              See `screens/SettingsHomeScreen.tsx`. */}
           <View className="mx-lg mt-xxl overflow-hidden rounded-surface border border-hairline bg-surface">
             <SettingRow
               label="Workouts on disk"
@@ -1056,68 +688,6 @@ export function SettingsScreen({
               }
               valueTone={onDisk == null || onDisk !== workoutCount ? 'muted' : 'faint'}
             />
-            <Separator inset={0} />
-            {/*
-              AUTOMATIC BACKUP — the row that makes the two below it optional.
-
-              `lib/backup.ts` says a backup is "the only thing standing between a
-              year of training and a factory reset", and then made it a button:
-              protection only as good as the user's memory of a screen they have no
-              other reason to open. So it happens on its own, and this row is the
-              receipt — the AGE of the last copy, in words, because "is it recent
-              enough" is the only question it answers and a date makes the reader do
-              the arithmetic.
-
-              It cannot be on without a folder: Android's only durable destination
-              is a granted directory, and the app's own sandbox dies with the app —
-              which is one of the exact events a backup exists to survive. So the
-              row states which of the two facts is missing.
-            */}
-            <SettingRow
-              label="Last backup"
-              value={describeBackupAge(settings.lastBackupAt)}
-              valueTone={settings.lastBackupAt == null ? 'muted' : 'faint'}
-            />
-            <Separator inset={0} />
-            <SettingRow
-              label="Back up automatically"
-              value={
-                !settings.autoBackupEnabled
-                  ? 'Off'
-                  : settings.autoBackupFolderUri == null
-                    ? 'Needs a folder'
-                    : `Every ${settings.autoBackupIntervalDays} days · ${folderLabel(settings.autoBackupFolderUri)}`
-              }
-              valueTone={
-                settings.autoBackupEnabled && settings.autoBackupFolderUri == null
-                  ? 'muted'
-                  : 'faint'
-              }
-              onPress={() => {
-                tap();
-                settings.setAutoBackupEnabled(!settings.autoBackupEnabled);
-              }}
-            />
-            {settings.autoBackupEnabled ? (
-              <>
-                <Separator inset={0} />
-                <StepperRow
-                  label="Backup every"
-                  value={`${settings.autoBackupIntervalDays} days`}
-                  onDecrease={() => bump('autoBackupIntervalDays', -1)}
-                  onIncrease={() => bump('autoBackupIntervalDays', 1)}
-                />
-              </>
-            ) : null}
-            <Separator inset={0} />
-            <TextButton
-              label={
-                settings.autoBackupFolderUri == null ? 'Choose a backup folder' : 'Back up now'
-              }
-              tone="green"
-              onPress={() => void backUpNow()}
-            />
-            <Separator inset={0} />
             {/*
               HEALTH CONNECT — the one thing this app sends anywhere.
 
@@ -1133,6 +703,7 @@ export function SettingsScreen({
             */}
             {healthConnect !== 'unavailable' ? (
               <>
+                <Separator inset={0} />
                 <SettingRow
                   label="Share workouts with Health Connect"
                   value={
@@ -1147,61 +718,10 @@ export function SettingsScreen({
                   }
                   onPress={() => void toggleHealthConnect()}
                 />
-                <Separator inset={0} />
               </>
             ) : null}
-            <TextButton label="Export data" tone="green" onPress={() => void exportData()} />
-            <Separator inset={0} />
-            <TextButton label="Export sets as CSV" tone="green" onPress={() => void exportSets()} />
-            <Separator inset={0} />
-            {/* TWO CLEARLY-DIFFERENT IMPORTS, named for what they do rather than
-                for what they are. "Replace everything" and "Add workouts from a
-                file" cannot be confused for each other by somebody reading fast,
-                which one row labelled "Import data" with a mode picker behind it
-                absolutely could. */}
-            <TextButton
-              label="Replace everything from a file"
-              tone="green"
-              onPress={() => void importData('replace')}
-            />
-            <Separator inset={0} />
-            <TextButton
-              label="Add workouts from a file"
-              tone="green"
-              onPress={() => void importData('merge')}
-            />
-            <Separator inset={0} />
-            {/* The third import, and the only one that reads a spreadsheet. Named
-                for the job it does — bringing in training that happened before
-                this app — because "import CSV" beside two other imports is three
-                rows nobody can tell apart. */}
-            <TextButton
-              label="Import old workouts from a CSV"
-              tone="green"
-              onPress={() => void importSetsCsv()}
-            />
-            {/* ONE SECTION AT A TIME, under the four that move everything. The app
-                is three logs that fail and get rebuilt independently, and "put my
-                training back, leave my expenses alone" is not something a
-                whole-phone restore can express. The other two sections carry this
-                row on their own tabs. */}
-            {onOpenSection ? (
-              <>
-                <Separator inset={0} />
-                <TextButton
-                  label={`Export or import ${SECTION_LABELS.training.toLowerCase()} on its own`}
-                  tone="green"
-                  onPress={() => {
-                    tap();
-                    onOpenSection('training');
-                  }}
-                />
-              </>
-            ) : null}
-            <Separator inset={0} />
-            <TextButton label="Reset settings to defaults" onPress={() => setConfirming('reset')} />
             {/* Last, and only when there is something to lose. One workout at a
-                time is deleted from the History tab; this is the whole log. */}
+                time is deleted from the history screen; this is the whole log. */}
             {workoutCount > 0 ? (
               <>
                 <Separator inset={0} />
@@ -1213,116 +733,15 @@ export function SettingsScreen({
             ) : null}
           </View>
 
-          {dataStatus ? (
-            <Text
-              className={[
-                'mx-lg mt-md text-label',
-                dataStatus.tone === 'ok' ? 'text-green-bright' : 'text-ink-muted',
-              ].join(' ')}
-            >
-              {dataStatus.text}
-            </Text>
-          ) : null}
+          {notice ? <Text className="mx-lg mt-md text-label text-ink-muted">{notice}</Text> : null}
 
           <Text className="mx-lg mt-md text-label text-ink-faint">
-            A backup is plain JSON, so you can read it, keep it anywhere, and move it to another
-            phone. It holds all three logs — training, the daily tasks and the money — and your
-            settings. <Text className="text-ink-muted">Replace everything</Text> makes this phone
-            look like the file, so export first if there is anything here you would miss. A backup
-            written by an older version carries no tasks and no amounts, and restoring one leaves
-            both of those exactly where they are rather than emptying them.{' '}
-            <Text className="text-ink-muted">Add workouts</Text> only ever adds: workouts from the
-            file that this phone does not already have, and nothing else. Your exercises, routines
-            and settings are never merged, because a merged library brings back every exercise you
-            have deleted. A workout in progress is not part of a backup: it carries a running clock.
-          </Text>
-
-          <Text className="mx-lg mt-md text-label text-ink-faint">
-            The CSV is one row per set — date, workout, exercise, set number, weight, count, and
-            whether it was a warm-up — for a spreadsheet. It is an export only; the JSON file is the
-            backup.
+            Everything on this screen is about training. The daily tasks and the expenses have
+            settings screens of their own, and the backup that carries all three is one row in the
+            general section.
           </Text>
         </ScrollView>
       </View>
-
-      {confirming === 'reset' ? (
-        <ConfirmSheet
-          title="Reset settings?"
-          body="Every duration and switch goes back to its default, and your bodyweight is cleared. Your exercises, routines and history are untouched."
-          confirmLabel="Reset settings"
-          cancelLabel="Keep mine"
-          onConfirm={() => {
-            settings.resetToDefaults();
-            setConfirming(null);
-          }}
-          onCancel={() => setConfirming(null)}
-        />
-      ) : null}
-
-      {pendingImport?.mode === 'replace' ? (
-        <ConfirmSheet
-          title="Replace everything with this file?"
-          body={[
-            `${pendingImport.file} holds ${describeCounts(pendingImport.counts)}.`,
-            `This phone has ${describeCounts(onThisPhone())}, and all of it goes.`,
-            'This cannot be undone.',
-          ].join(' ')}
-          confirmLabel="Import it"
-          cancelLabel="Keep what I have"
-          onConfirm={confirmImport}
-          onCancel={() => setPendingImport(null)}
-        />
-      ) : null}
-
-      {/* The merge asks a different question, so it says a different sentence: HOW
-          MANY workouts will be added, and what will not be touched. A confirmation
-          that reused the replace copy would be the one place this feature could
-          mislead somebody into losing a library. */}
-      {pendingImport?.mode === 'merge' ? (
-        <ConfirmSheet
-          title={
-            pendingImport.newWorkouts === 0
-              ? 'Nothing to add'
-              : `Add ${pendingImport.newWorkouts} ${
-                  pendingImport.newWorkouts === 1 ? 'workout' : 'workouts'
-                }?`
-          }
-          body={[
-            pendingImport.newWorkouts === 0
-              ? `Every workout in ${pendingImport.file} is already on this phone.`
-              : `${pendingImport.newWorkouts} of the ${pendingImport.counts.workouts} workouts in ${pendingImport.file} are not on this phone yet.`,
-            'Your exercises, routines and settings are not touched, and nothing already here is changed or removed.',
-          ].join(' ')}
-          confirmLabel={pendingImport.newWorkouts === 0 ? 'Fine' : 'Add them'}
-          cancelLabel="Not now"
-          onConfirm={confirmImport}
-          onCancel={() => setPendingImport(null)}
-        />
-      ) : null}
-
-      {/* The CSV import states the two things that make it different from the two
-          above: it can CREATE exercises, and it read the dates a particular way.
-          Both are things somebody should learn before the import, not after. */}
-      {pendingCsv ? (
-        <ConfirmSheet
-          title={`Add ${pendingCsv.plan.workouts.length} old ${
-            pendingCsv.plan.workouts.length === 1 ? 'workout' : 'workouts'
-          }?`}
-          body={[
-            `${pendingCsv.name}: ${describeCsvPlan(pendingCsv.plan)}.`,
-            pendingCsv.plan.newExercises.length > 0
-              ? `Exercises the file mentions that you do not have will be created, unfiled — you can give them muscle groups afterwards.`
-              : '',
-            'Nothing already here is changed or removed, and your routines and settings are not touched.',
-          ]
-            .filter((line) => line !== '')
-            .join(' ')}
-          confirmLabel="Add them"
-          cancelLabel="Not now"
-          onConfirm={applyPendingCsv}
-          onCancel={() => setPendingCsv(null)}
-        />
-      ) : null}
 
       {confirming === 'history' ? (
         <ConfirmSheet
@@ -1400,36 +819,6 @@ function MeasuredRestRow({
       </Text>
       <Text className="text-label font-semibold text-green-bright">Use it</Text>
     </Pressable>
-  );
-}
-
-/** Label, optional hint, and the app's one switch. */
-function SwitchRow({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  value: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <View className="min-h-[56px] flex-row items-center py-md px-lg">
-      <View className="flex-1 pr-md">
-        <Text className="text-body font-medium text-ink">{label}</Text>
-        {hint ? <Text className="mt-[2px] text-label text-ink-faint">{hint}</Text> : null}
-      </View>
-      <Toggle
-        value={value}
-        onChange={(next) => {
-          tap();
-          onChange(next);
-        }}
-        accessibilityLabel={label}
-      />
-    </View>
   );
 }
 
