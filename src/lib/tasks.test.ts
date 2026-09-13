@@ -5,8 +5,10 @@ import {
   type TaskLog,
   asksOn,
   dayProgress,
+  describeReminder,
   describeSchedule,
   describeTaskRow,
+  isSpent,
   reorderWithinVisible,
   streakOf,
   summarizeTaskTrend,
@@ -33,6 +35,7 @@ function task(over: Partial<Task> = {}): Task {
     schedule: { kind: 'daily' },
     auto: null,
     startedOn: '2026-09-01',
+    reminder: null,
     archivedAt: null,
     order: 0,
     ...over,
@@ -394,5 +397,87 @@ describe('a month of the whole list', () => {
     const month = tasksMonth([a, b], marks, 2026, 8, '2026-09-02');
     expect(month.done).toBe(3);
     expect(month.asked).toBe(4);
+  });
+});
+
+/**
+ * The two shapes a task grew: a day it only ever asks on, and a day before which
+ * it never asked at all.
+ *
+ * The second one is the older field finally getting a control, and the bug it
+ * prevents is the one that makes a habit log untrustworthy: a task written on
+ * Sunday evening appearing on Saturday's list and turning a day that was 9 of 9
+ * into 9 of 10. Nobody would notice which row did it; they would only notice that
+ * a finished day stopped being finished.
+ */
+describe('a one-day task', () => {
+  const once = task({
+    schedule: { kind: 'once', day: '2026-09-14' },
+    startedOn: '2026-09-14',
+  });
+
+  it('asks on its day and on no other', () => {
+    expect(asksOn(once, '2026-09-13')).toBe(false);
+    expect(asksOn(once, '2026-09-14')).toBe(true);
+    expect(asksOn(once, '2026-09-15')).toBe(false);
+    expect(asksOn(once, '2026-09-21')).toBe(false);
+  });
+
+  it('is spent once its day has gone, and not before', () => {
+    expect(isSpent(once, '2026-09-13')).toBe(false);
+    expect(isSpent(once, '2026-09-14')).toBe(false);
+    expect(isSpent(once, '2026-09-15')).toBe(true);
+    // A repeating task is never spent, whatever the date.
+    expect(isSpent(task(), '2030-01-01')).toBe(false);
+  });
+
+  it('names its day rather than a schedule', () => {
+    expect(describeSchedule(once.schedule)).toBe('Once · 14 September');
+    expect(describeSchedule(once.schedule, 'ru')).toBe('Один раз · 14 сентября');
+  });
+
+  it('counts towards its own day and nothing else', () => {
+    expect(dayProgress([once], {}, '2026-09-14')).toEqual({ done: 0, total: 1, fraction: 0 });
+    // A day that asked for nothing reads full rather than empty — see `dayProgress`.
+    expect(dayProgress([once], {}, '2026-09-15').total).toBe(0);
+  });
+});
+
+describe('the day a task starts', () => {
+  it('leaves every earlier day exactly as it was', () => {
+    const old = task({ id: 'old', startedOn: '2026-09-01' });
+    const added = task({ id: 'new', startedOn: '2026-09-14' });
+    const marks = log('old', { '2026-09-13': 'done' });
+
+    // Yesterday was one of one, and adding a task today does not make it one of two.
+    expect(dayProgress([old, added], marks, '2026-09-13')).toEqual({
+      done: 1,
+      total: 1,
+      fraction: 1,
+    });
+    expect(dayProgress([old, added], marks, '2026-09-14').total).toBe(2);
+  });
+
+  it('is a floor a weekday schedule cannot get under', () => {
+    const mwf = task({
+      schedule: { kind: 'weekdays', days: [0, 2, 4] },
+      startedOn: '2026-09-16',
+    });
+    // 14 September 2026 is a Monday: scheduled, but before it started.
+    expect(asksOn(mwf, '2026-09-14')).toBe(false);
+    expect(asksOn(mwf, '2026-09-16')).toBe(true);
+  });
+});
+
+describe('what a row says about its reminder', () => {
+  it('states the time, on the row and on its own', () => {
+    const noisy = task({ reminder: { hour: 7, minute: 5 } });
+    expect(describeReminder(noisy)).toBe('Reminds at 07:05');
+    expect(describeTaskRow(noisy, {}, '2026-09-13')).toBe('Every day · Reminds at 07:05');
+  });
+
+  it('says nothing at all when the task is silent', () => {
+    expect(describeReminder(task())).toBeNull();
+    expect(describeTaskRow(task(), {}, '2026-09-13')).toBe('Every day');
   });
 });

@@ -41,14 +41,17 @@
  */
 
 import {
-  WEEKDAY_LABELS,
   dayKey,
   daysBetween,
+  formatClockTime,
   formatMonth,
+  formatShortDay,
   parseDay,
   shiftDay,
   weekdayIndex,
+  weekdayLabels,
 } from './days';
+import { t, type Language } from './i18n';
 import { moveToIndex } from './reorder';
 import { rangeLength, type TrendRange } from './trends';
 import type { ID } from '../types/models';
@@ -56,13 +59,50 @@ import type { ID } from '../types/models';
 /** Monday = 0 … Sunday = 6, matching the Monday-first grid the app draws. */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export type TaskSchedule = { kind: 'daily' } | { kind: 'weekdays'; days: readonly Weekday[] };
+/**
+ * When a task asks.
+ *
+ * ── `once` IS A DIFFERENT KIND OF ROW, AND THAT IS THE POINT ───────────────
+ *
+ * The two repeating shapes answer "what am I trying to do with my life"; `once`
+ * answers "wash the dishes tomorrow". Both belong on the same list — the list is
+ * read top to bottom every evening and a second list for one-off jobs is a second
+ * list to remember to open — but they are not the same fact, so they are not the
+ * same shape. A one-day task asks on ITS day and on no other, before or after,
+ * which means it cannot be missed retroactively and it cannot haunt next Tuesday.
+ *
+ * The day is on the schedule rather than being `startedOn` doing double duty:
+ * `startedOn` means "not before this", which is a floor, and a one-day task needs
+ * a ceiling as well. Carrying both in one field would make every reader of
+ * `startedOn` have to know which kind of task it is looking at.
+ */
+export type TaskSchedule =
+  | { kind: 'daily' }
+  | { kind: 'weekdays'; days: readonly Weekday[] }
+  | { kind: 'once'; day: string };
 
 /** What the circle on the left of a row says. Absent = unanswered. */
 export type TaskMark = 'done' | 'missed';
 
 /** Which part of the app ticks this one without being asked. */
 export type TaskAutoSource = 'workout' | 'money';
+
+/**
+ * When the phone should say something about this task, on the days it asks.
+ *
+ * A wall-clock time and nothing else. Not a date, not a lead time, not a repeat
+ * rule: the task already carries the schedule, so a reminder that also carried
+ * days would be a second schedule, free to disagree with the first — and a
+ * Mon/Wed/Fri task that buzzes on Sunday is the app contradicting its own list.
+ *
+ * 24-hour, because that is what the wheel the user sets it on shows.
+ */
+export interface TaskReminder {
+  /** 0–23. */
+  hour: number;
+  /** 0–59. */
+  minute: number;
+}
 
 export interface Task {
   id: ID;
@@ -71,6 +111,15 @@ export interface Task {
   auto: TaskAutoSource | null;
   /** The first day it asked for anything, `YYYY-MM-DD`. Days before it are blank. */
   startedOn: string;
+  /**
+   * When to be reminded, or null for the silent default.
+   *
+   * NULL IS THE DEFAULT AND IT STAYS THE DEFAULT. A habit list that notifies by
+   * default is a habit list that gets silenced at the OS level within a week, and
+   * a silenced channel takes the reminders the user actually wanted with it. So
+   * every reminder in this app is one the user asked for, one task at a time.
+   */
+  reminder: TaskReminder | null;
   /** Archived tasks keep their history and leave the day list. */
   archivedAt: string | null;
   order: number;
@@ -96,22 +145,48 @@ export function weekdayOf(key: string): Weekday | null {
 
 /** Did this task ask for anything on this day? Before `startedOn`, nothing ever did. */
 export function asksOn(task: Task, day: string): boolean {
+  // A one-day task is its own floor and its own ceiling, so it is answered
+  // before `startedOn` is consulted — see the note on `TaskSchedule`.
+  if (task.schedule.kind === 'once') return day === task.schedule.day;
   if (day < task.startedOn) return false;
   if (task.schedule.kind === 'daily') return true;
   const weekday = weekdayOf(day);
   return weekday !== null && task.schedule.days.includes(weekday);
 }
 
+/**
+ * A one-day task whose day has been and gone.
+ *
+ * Not archived and not deleted — the month grid still draws the square and the
+ * history still counts it — it simply has nothing left to ask. The editor uses
+ * this to tell the user which of their one-off rows are finished.
+ */
+export function isSpent(task: Task, today: string): boolean {
+  return task.schedule.kind === 'once' && task.schedule.day < today;
+}
+
 export function entryOf(log: TaskLog, taskId: ID, day: string): TaskEntry {
   return log[taskId]?.[day] ?? EMPTY_ENTRY;
 }
 
-/** "Every day" · "Mon · Wed · Fri" · "Never" for a weekday list nobody picked. */
-export function describeSchedule(schedule: TaskSchedule): string {
-  if (schedule.kind === 'daily') return 'Every day';
-  if (schedule.days.length === 0) return 'Never';
+/** "Every day" · "Mon · Wed · Fri" · "Once · 14 September" · "Never". */
+export function describeSchedule(schedule: TaskSchedule, lang: Language = 'en'): string {
+  if (schedule.kind === 'once') {
+    return `${t('Once', lang)} · ${formatShortDay(schedule.day, lang)}`;
+  }
+  if (schedule.kind === 'daily') return t('Every day', lang);
+  if (schedule.days.length === 0) return t('Never', lang);
+  const labels = weekdayLabels(lang);
   const ordered = [...schedule.days].sort((a, b) => a - b);
-  return ordered.map((day) => WEEKDAY_LABELS[day]).join(' · ');
+  return ordered.map((day) => labels[day]).join(' · ');
+}
+
+/** "Reminds at 07:30", or nothing at all when the task is silent. */
+export function describeReminder(task: Task, lang: Language = 'en'): string | null {
+  if (!task.reminder) return null;
+  return t('Reminds at {time}', lang, {
+    time: formatClockTime(task.reminder.hour, task.reminder.minute),
+  });
 }
 
 /**
@@ -179,13 +254,20 @@ export function tasksOn(tasks: readonly Task[], day: string): Task[] {
  * The note goes LAST and the row clips at one line, so a long note is trimmed
  * rather than pushing the facts off the end.
  */
-export function describeTaskRow(task: Task, log: TaskLog, day: string): string {
+export function describeTaskRow(
+  task: Task,
+  log: TaskLog,
+  day: string,
+  lang: Language = 'en',
+): string {
   const entry = entryOf(log, task.id, day);
-  const parts: string[] = [describeSchedule(task.schedule)];
+  const parts: string[] = [describeSchedule(task.schedule, lang)];
   const streak = streakOf(task, log, day);
-  if (streak >= 2) parts.push(`${streak} in a row`);
-  if (entry.mark === 'missed') parts.push('missed on purpose');
-  if (task.auto) parts.push('auto');
+  if (streak >= 2) parts.push(`${streak} ${t('in a row', lang)}`);
+  const reminder = describeReminder(task, lang);
+  if (reminder) parts.push(reminder);
+  if (entry.mark === 'missed') parts.push(t('missed on purpose', lang));
+  if (task.auto) parts.push(t('auto', lang));
   if (entry.note.trim() !== '') parts.push(entry.note.trim());
   return parts.join(' · ');
 }

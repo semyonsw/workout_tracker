@@ -47,8 +47,10 @@ import { StatusBar } from 'expo-status-bar';
 
 import { Icon } from '../components/Icon';
 import { SectionTopBar } from '../components/SectionTopBar';
+import { GlowPulse } from '../components/bubbles';
 import { pressedStyle } from '../components/motion';
-import { Kicker, ListCard, NavRow, PrimaryButton, Separator } from '../components/primitives';
+import { Kicker, ListCard, PrimaryButton, Separator } from '../components/primitives';
+import { usePlural, useT } from '../hooks/useT';
 import { formatShortDate, formatVolumeKg } from '../lib/units';
 import { palette } from '../theme/tokens';
 import type { ID, RecentSessionSummary } from '../types/models';
@@ -115,15 +117,16 @@ interface HomeScreenProps {
   /**
    * The two screens the training log is set up from.
    *
-   * They had a tab of their own, then a lobby screen called `More`, and both were
-   * the same mistake in different sizes: a routine and an exercise are the CONTENT
-   * of this section, so the place to reach them is the section, at the bottom,
-   * under the routines they are about. See `components/TabBar.tsx`.
+   * They had a tab of their own, then a lobby screen called `More`, then two rows
+   * at the FOOT of this screen — and the foot was the right place only while the
+   * corner held one glyph. It holds three now, at the same size, and these two
+   * are the other two: see `components/SectionTopBar.tsx`. The counts they used
+   * to state are gone with the rows, which is the one thing lost; a count of
+   * routines is not a thing anybody needs before deciding to look at them, and
+   * the screen that opens leads with it anyway.
    */
   onOpenRoutines: () => void;
   onOpenLibrary: () => void;
-  routineCount: number;
-  exerciseCount: number;
 }
 
 export function HomeScreen({
@@ -139,9 +142,9 @@ export function HomeScreen({
   onOpenHistory,
   onOpenRoutines,
   onOpenLibrary,
-  routineCount,
-  exerciseCount,
 }: HomeScreenProps) {
+  const t = useT();
+  const plural = usePlural();
   const next = sequence?.next ?? null;
   /*
    * An empty routine has nothing to open — a ▶ that lands on an editor is a
@@ -156,10 +159,26 @@ export function HomeScreen({
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
 
+      {/* Three destinations, one size, left to right: the routines, the library,
+          the past. See `components/SectionTopBar.tsx` on why they are up here. */}
       <SectionTopBar
-        title="Workout"
+        title={t('Workout')}
+        actions={[
+          {
+            key: 'routines',
+            icon: 'routines',
+            label: t('Open the routines'),
+            onPress: onOpenRoutines,
+          },
+          {
+            key: 'library',
+            icon: 'library',
+            label: t('Open the exercise library'),
+            onPress: onOpenLibrary,
+          },
+        ]}
         onOpenHistory={onOpenHistory}
-        historyLabel="Training history"
+        historyLabel={t('Training history')}
       />
 
       <ScrollView
@@ -169,13 +188,17 @@ export function HomeScreen({
       >
         {inProgress ? (
           <View className="mx-lg mb-xl rounded-surface border border-green-dim bg-green-wash p-lg">
-            <Kicker tone="green">In progress</Kicker>
+            <Kicker tone="green">{t('In progress')}</Kicker>
             <Text className="mt-sm text-title font-medium text-ink">{inProgress.title}</Text>
             <Text className="mt-xs text-label tabular-nums text-ink-muted">
-              {inProgress.done} of {inProgress.total} sets · {inProgress.minutes} min
+              {t('{done} of {total} sets · {minutes} min', {
+                done: inProgress.done,
+                total: inProgress.total,
+                minutes: inProgress.minutes,
+              })}
             </Text>
             <View className="mt-lg">
-              <PrimaryButton label="Back to the workout" onPress={onResume} />
+              <PrimaryButton label={t('Back to the workout')} onPress={onResume} />
             </View>
           </View>
         ) : null}
@@ -183,33 +206,50 @@ export function HomeScreen({
         {sequence ? <SequenceStrip sequence={sequence} onPress={onOpenSequence} /> : null}
 
         {next ? (
-          <View className="mx-lg mt-xl rounded-surface border border-hairline bg-green-wash p-lg">
-            {/* `TODAY`, and the tinted surface, because this card is now one of
-                three things the tab bar offers and it has to say which day it is
-                talking about. The queue is still a queue — the list under it is
-                the rest of the offer — but `NEXT UP` described the sequence,
-                and the sequence is a detail of how this routine got chosen. */}
-            <Kicker>Today</Kicker>
-            <Text className="mt-sm text-title font-semibold text-ink">{next.name}</Text>
-            {next.focus ? (
-              <Text className="mt-xs text-label text-ink-muted">{next.focus}</Text>
-            ) : null}
-            <Text className="mt-xs text-label tabular-nums text-green-bright">
-              {next.exerciseCount} exercises · {next.setCount} sets
-              {next.nudgeCount > 0
-                ? ` · ${next.nudgeCount} ${next.nudgeCount === 1 ? 'nudge' : 'nudges'} waiting`
-                : ''}
-            </Text>
-            <View className="mt-lg">
-              <PrimaryButton label={`Open ${next.name}`} onPress={() => onOpen(next.routineId)} />
+          /* THE ONE THING ON THIS SCREEN THAT MOVES.
+             It is the workout the app is suggesting, in a column of cards that
+             are the same green, and a slow halo is what makes it findable
+             without being read. `GlowPulse` has the argument, and the reason it
+             adds no information the card was not already carrying. */
+          <GlowPulse className="mx-lg mt-xl" radius={14}>
+            <View className="rounded-surface border border-hairline bg-green-wash p-lg">
+              {/* `TODAY`, and the tinted surface, because this card is now one of
+                  three things the tab bar offers and it has to say which day it is
+                  talking about. The queue is still a queue — the list under it is
+                  the rest of the offer — but `NEXT UP` described the sequence,
+                  and the sequence is a detail of how this routine got chosen. */}
+              <Kicker>{t('Today')}</Kicker>
+              <Text className="mt-sm text-title font-semibold text-ink">{next.name}</Text>
+              {next.focus ? (
+                <Text className="mt-xs text-label text-ink-muted">{next.focus}</Text>
+              ) : null}
+              <Text className="mt-xs text-label tabular-nums text-green-bright">
+                {t('{exercises} exercises · {sets} sets', {
+                  exercises: next.exerciseCount,
+                  sets: next.setCount,
+                })}
+                {next.nudgeCount > 0
+                  ? ` · ${next.nudgeCount} ${plural(next.nudgeCount, {
+                      one: t('nudge waiting'),
+                      few: 'подсказки ждут',
+                      many: t('nudges waiting'),
+                    })}`
+                  : ''}
+              </Text>
+              <View className="mt-lg">
+                <PrimaryButton
+                  label={t('Open {name}', { name: next.name })}
+                  onPress={() => onOpen(next.routineId)}
+                />
+              </View>
             </View>
-          </View>
+          </GlowPulse>
         ) : null}
 
         {others.length > 0 ? (
           <>
             <Kicker className="mx-lg mb-md mt-xxl">
-              {next ? 'Other routines' : 'Start a workout'}
+              {next ? t('Other routines') : t('Start a workout')}
             </Kicker>
             <ListCard className="mx-lg">
               {others.map((choice, index) => (
@@ -226,7 +266,7 @@ export function HomeScreen({
 
         {recent.length > 0 ? (
           <>
-            <Kicker className="mx-lg mb-md mt-xxl">Recent</Kicker>
+            <Kicker className="mx-lg mb-md mt-xxl">{t('Recent')}</Kicker>
             <ListCard className="mx-lg">
               {recent.map((session, index) => (
                 <View key={session.id}>
@@ -242,16 +282,8 @@ export function HomeScreen({
           </>
         ) : null}
 
-        {/* THE TWO COUNTS ARE THE POINT OF THE ROWS. `Routines · 6` says whether
-            there is anything to open without opening anything, which is the
-            question you have when you are looking at the bottom of this screen at
-            all. */}
-        <Kicker className="mx-lg mb-md mt-xxl">Set up</Kicker>
-        <ListCard className="mx-lg">
-          <NavRow label="Routines" value={String(routineCount)} onPress={onOpenRoutines} />
-          <Separator />
-          <NavRow label="Exercise library" value={String(exerciseCount)} onPress={onOpenLibrary} />
-        </ListCard>
+        {/* The two `Set up` rows that used to sit here are the two glyphs in the
+            corner now — same destinations, one tap instead of a scroll. */}
       </ScrollView>
     </View>
   );
@@ -269,9 +301,10 @@ export function HomeScreen({
  * the thing you want after looking at your order is usually to change it.
  */
 function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress: () => void }) {
+  const t = useT();
   return (
     <View>
-      <Kicker className="mx-lg">Sequence</Kicker>
+      <Kicker className="mx-lg">{t('Sequence')}</Kicker>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -283,7 +316,7 @@ function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress:
             key={step.key}
             onPress={onPress}
             accessibilityRole="button"
-            accessibilityLabel={`${step.name}${step.isCurrent ? ', next up' : ''}. Edit the sequence.`}
+            accessibilityLabel={`${step.name}${step.isCurrent ? `, ${t('next up')}` : ''}. ${t('Edit the sequence.')}`}
             style={pressedStyle}
             className="flex-row items-center"
           >
@@ -323,7 +356,14 @@ function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress:
  * "this one now".
  */
 function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => void }) {
-  const detail = [choice.focus, `${choice.exerciseCount} exercises · ${choice.setCount} sets`]
+  const t = useT();
+  const detail = [
+    choice.focus,
+    t('{exercises} exercises · {sets} sets', {
+      exercises: choice.exerciseCount,
+      sets: choice.setCount,
+    }),
+  ]
     .filter(Boolean)
     .join(' · ');
 
@@ -331,7 +371,7 @@ function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => 
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Open ${choice.name}. ${detail}`}
+      accessibilityLabel={`${t('Open {name}', { name: choice.name })}. ${detail}`}
       style={pressedStyle}
       className="h-row-lg flex-row items-center px-lg"
     >
@@ -410,12 +450,14 @@ function RecentRow({
 
 /** Nothing to open: every routine is empty, or there are none. */
 function Empty() {
+  const t = useT();
   return (
     <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
-      <Kicker>Nothing to open</Kicker>
+      <Kicker>{t('Nothing to open')}</Kicker>
       <Text className="mt-sm text-body text-ink-muted">
-        Put some exercises in a routine — Routines, at the foot of this screen — and it shows up
-        here, ready to open.
+        {t(
+          'Put some exercises in a routine — the list glyph in the corner of this screen — and it shows up here, ready to open.',
+        )}
       </Text>
     </View>
   );

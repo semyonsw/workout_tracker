@@ -21,13 +21,34 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { palette } from '../theme/tokens';
-import { Icon } from './Icon';
+import { BubblePressable } from './bubbles';
+import { Icon, type IconName } from './Icon';
+import { pressedStyle } from './motion';
 
 export interface HeaderAction {
   label: string;
   onPress: () => void;
   /** `primary` = green fill. `muted` = surface-alt, for "not yet / not now". */
   tone?: 'primary' | 'muted';
+}
+
+/**
+ * A 36px glyph LEFT of the pill action.
+ *
+ * One caller: the routine editor's die. It is a glyph rather than a second pill
+ * because the pill is the commit — `Save` — and two pills in one corner is two
+ * things that look equally like the way out of the screen. A circle the same
+ * size as the ones in `SectionTopBar` reads as what it is: a thing that does
+ * something to the screen you are on, not a thing that leaves it.
+ */
+export interface HeaderIconAction {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  /** Held rather than tapped — the die's "ask me what to put in it". */
+  onLongPress?: () => void;
+  /** Lit, while it is doing something. */
+  active?: boolean;
 }
 
 interface ScreenHeaderProps {
@@ -39,6 +60,8 @@ interface ScreenHeaderProps {
   subtitle?: string;
   onBack?: () => void;
   action?: HeaderAction;
+  /** A glyph button before the pill. See `HeaderIconAction`. */
+  iconAction?: HeaderIconAction;
   /**
    * The hairline under the header. Absent where the content below is itself a
    * distinct surface (a search field), so the two rules don't stack.
@@ -53,6 +76,7 @@ export function ScreenHeader({
   subtitle,
   onBack,
   action,
+  iconAction,
   bordered = true,
   children,
 }: ScreenHeaderProps) {
@@ -92,6 +116,31 @@ export function ScreenHeader({
             </Text>
           ) : null}
         </View>
+
+        {iconAction ? (
+          <BubblePressable
+            onPress={iconAction.onPress}
+            onLongPress={iconAction.onLongPress}
+            delayLongPress={320}
+            hitSlop={8}
+            radius="pill"
+            accessibilityRole="button"
+            accessibilityLabel={iconAction.label}
+            style={pressedStyle}
+            className={[
+              'mr-sm h-[36px] w-[36px] items-center justify-center rounded-pill border',
+              iconAction.active
+                ? 'border-green-bright bg-surface-alt'
+                : 'border-hairline bg-surface',
+            ].join(' ')}
+          >
+            <Icon
+              name={iconAction.icon}
+              size={18}
+              color={iconAction.active ? palette.greenBright : palette.inkMuted}
+            />
+          </BubblePressable>
+        ) : null}
 
         {action ? (
           <Pressable

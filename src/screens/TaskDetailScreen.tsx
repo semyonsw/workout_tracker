@@ -52,10 +52,19 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { TaskEditorSheet } from '../components/TaskEditorSheet';
 import { pressedStyle } from '../components/motion';
 import { FieldWell, Kicker, PrimaryButton, TextButton } from '../components/primitives';
-import { WEEKDAY_INITIALS, dayKey, formatLongDay, formatShortDay, parseDay } from '../lib/days';
+import { useLanguage, usePlural, useT } from '../hooks/useT';
+import {
+  dayKey,
+  formatLongDay,
+  formatMonth,
+  formatShortDay,
+  parseDay,
+  weekdayInitials,
+} from '../lib/days';
 import {
   type Task,
   type TaskCell,
+  describeReminder,
   describeSchedule,
   entryOf,
   streakOf,
@@ -70,6 +79,9 @@ interface TaskDetailScreenProps {
 }
 
 export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
+  const plural = usePlural();
   const log = useTasks((s) => s.log);
   const setNote = useTasks((s) => s.setNote);
   const updateTask = useTasks((s) => s.updateTask);
@@ -99,7 +111,7 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker="Tasks" onBack={onBack} bordered={false} />
+      <ScreenHeader kicker={t('Tasks')} onBack={onBack} bordered={false} />
 
       <ScrollView
         className="flex-1"
@@ -108,12 +120,32 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
       >
         <Text className="mx-lg mt-sm text-title font-semibold text-ink">{task.name}</Text>
         <Text className="mx-lg mt-xs text-label text-ink-muted">
-          {describeSchedule(task.schedule)} · since {formatLongDay(task.startedOn)}
+          {[
+            describeSchedule(task.schedule, lang),
+            /* A one-day task's start day IS its day — see `addTask` — so saying
+               "since the 14th" about a task that only ever asks on the 14th is a
+               sentence with no information in it. */
+            task.schedule.kind === 'once'
+              ? null
+              : `${t('since')} ${formatLongDay(task.startedOn, lang)}`,
+            describeReminder(task, lang),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </Text>
 
         <View className="mx-lg mt-lg flex-row gap-md">
-          <Well label="Streak" value={String(streak)} unit={streak === 1 ? 'day' : 'days'} green />
-          <Well label="This month" value={String(month.done)} unit={`of ${month.asked}`} />
+          <Well
+            label={t('Streak')}
+            value={String(streak)}
+            unit={plural(streak, { one: t('day'), few: 'дня', many: t('days') })}
+            green
+          />
+          <Well
+            label={t('This month')}
+            value={String(month.done)}
+            unit={t('of {asked}', { asked: month.asked })}
+          />
         </View>
 
         <View className="mx-lg mt-xl flex-row items-center justify-center">
@@ -121,19 +153,21 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
             onPress={() => step(-1)}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="The month before"
+            accessibilityLabel={t('The month before')}
             style={pressedStyle}
             className="h-hit w-[32px] items-center justify-center"
           >
             <Icon name="chevron-left" size={18} color={palette.inkMuted} />
           </Pressable>
-          <Text className="mx-lg text-body font-medium tabular-nums text-ink">{month.label}</Text>
+          <Text className="mx-lg text-body font-medium tabular-nums text-ink">
+            {formatMonth(cursor.year, cursor.month, lang)}
+          </Text>
           <Pressable
             onPress={() => step(1)}
             disabled={atLatest}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="The month after"
+            accessibilityLabel={t('The month after')}
             style={pressedStyle}
             className="h-hit w-[32px] items-center justify-center"
           >
@@ -142,7 +176,7 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
         </View>
 
         <View className="mx-lg mt-md flex-row">
-          {WEEKDAY_INITIALS.map((initial, index) => (
+          {weekdayInitials(lang).map((initial, index) => (
             <Text
               key={`${initial}${index}`}
               className="flex-1 text-center text-micro font-semibold text-ink-faint"
@@ -175,35 +209,41 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
         </View>
 
         <Text className="mx-lg mt-md text-label text-ink-faint">
-          Filled is done, outlined is missed, faint is unanswered. Blank days were never asked for.
+          {t(
+            'Filled is done, outlined is missed, faint is unanswered. Blank days were never asked for.',
+          )}
         </Text>
 
-        <Kicker className="mx-lg mb-sm mt-xl">Note · {formatShortDay(noteDay)}</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xl">
+          {t('Note')} · {formatShortDay(noteDay, lang)}
+        </Kicker>
         <View className="mx-lg">
           <FieldWell
             value={note}
             size="body"
-            placeholder="What happened that day"
+            placeholder={t('What happened that day')}
             onChangeText={(text) => setNote(task.id, noteDay, text)}
-            accessibilityLabel={`Note for ${formatLongDay(noteDay)}`}
+            accessibilityLabel={`${t('Note')} · ${formatLongDay(noteDay, lang)}`}
           />
         </View>
 
         <View className="mx-lg mt-xl">
-          <PrimaryButton label="Edit task" onPress={() => setEditing(true)} />
+          <PrimaryButton label={t('Edit task')} onPress={() => setEditing(true)} />
         </View>
         <View className="mx-lg">
-          <TextButton label="Archive this task" onPress={() => setArchiving(true)} />
+          <TextButton label={t('Archive this task')} onPress={() => setArchiving(true)} />
         </View>
       </ScrollView>
 
       {editing ? (
         <TaskEditorSheet
-          title="Edit task"
+          title={t('Edit task')}
           name={task.name}
           schedule={task.schedule}
-          onSave={(name, schedule) => {
-            updateTask(task.id, { name, schedule });
+          startedOn={task.startedOn}
+          reminder={task.reminder}
+          onSave={(draft) => {
+            updateTask(task.id, draft);
             setEditing(false);
           }}
           onDismiss={() => setEditing(false)}
@@ -212,10 +252,10 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
 
       {archiving ? (
         <ConfirmSheet
-          title={`Archive “${task.name}”?`}
-          body="It leaves the day list. Every day you already answered stays where it is."
-          confirmLabel="Archive it"
-          cancelLabel="Keep it"
+          title={`${t('Archive this task')} — “${task.name}”?`}
+          body={t('It leaves the day list. Every day you already answered stays where it is.')}
+          confirmLabel={t('Archive it')}
+          cancelLabel={t('Keep it')}
           onConfirm={() => {
             archiveTask(task.id);
             setArchiving(false);

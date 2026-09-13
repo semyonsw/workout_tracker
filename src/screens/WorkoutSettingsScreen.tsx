@@ -79,6 +79,7 @@ import { ConfirmSheet } from '../components/ConfirmSheet';
 import { Icon } from '../components/Icon';
 import { pressedStyle } from '../components/motion';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { TimeWheel } from '../components/TimeWheel';
 import {
   Kicker,
   ListCard,
@@ -90,6 +91,10 @@ import {
   SwitchRow,
   TextButton,
 } from '../components/primitives';
+import { useLanguage, useT } from '../hooks/useT';
+import { parseClockTime, weekdayLabels } from '../lib/days';
+import { notificationsGranted } from '../lib/notify';
+import type { Weekday } from '../lib/tasks';
 import { bumpRestBetweenSets, setRestBetweenSets } from '../state/restSync';
 import { LADDER_SETS, describeLadder, ladderForMax } from '../lib/repLadder';
 import { commit, countFinal, countTick, tap } from '../lib/feedback';
@@ -436,6 +441,23 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
             <Separator />
             <TestBeepRow />
           </ListCard>
+
+          {/* ----------------------------------------------------------
+              THE WORKOUT SCHEDULE — the only thing in this app that speaks first.
+
+              Every other notification here is a TIMER: the user started a rest,
+              the phone tells them it is over. This one arrives without being
+              asked, on a day the user may not have opened the app at all, and
+              that is the whole point — a training plan you have to remember to
+              look at is a training plan you stop following in week three.
+
+              WEEKDAYS AND NOT THE SEQUENCE, and it is worth being explicit about
+              why, because the sequence looks like the obvious source. It advances
+              when you TRAIN (`advanceSequence`), so reading it would mean the
+              nudge arrives after the thing it was nudging you towards. A reminder
+              has to fire on a day you have NOT trained yet, which is a fact about
+              the week and not about the queue. */}
+          <WorkoutReminder />
 
           {/* ----------------------------------------------------------
               BODY — one number, and it is opt-in.
@@ -868,5 +890,102 @@ function TestBeepRow() {
       </Text>
       <Icon name="play" size={16} color={palette.greenBright} />
     </Pressable>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * "Remind me to train" — a switch, the days, and the wheel.
+ *
+ * Its own component rather than another block inside a 900-line screen, because
+ * it owns three things nothing else here does: a permission it has to ask about,
+ * a set of days, and a picker that is 220px tall when it is open.
+ *
+ * ── IT STATES WHEN NOTHING WILL COME OF IT ────────────────────────────────
+ *
+ * The worst state this feature has is a switch that is ON behind a notification
+ * permission the user denied at install: every control looks right, the schedule
+ * is armed, and nothing ever arrives. Nothing in the app can fix that — the
+ * permission is the phone's, not ours — so the honest thing is to say so, here,
+ * where the switch is. Checked when the section mounts rather than subscribed,
+ * because a permission changes in Settings and coming back to this screen is
+ * what re-mounts it.
+ *
+ * ── THE WHEEL IS FOLDED AWAY ──────────────────────────────────────────────
+ *
+ * Under the switch, and only while the switch is on. A 24-hour picker sitting
+ * open under an off switch is 220px of a control that does nothing, in a screen
+ * that is already long.
+ */
+function WorkoutReminder() {
+  const t = useT();
+  const lang = useLanguage();
+  const enabled = useSettings((s) => s.workoutReminderEnabled);
+  const days = useSettings((s) => s.workoutReminderDays);
+  const time = useSettings((s) => s.workoutReminderTime);
+  const setEnabled = useSettings((s) => s.setWorkoutReminderEnabled);
+  const toggleDay = useSettings((s) => s.toggleWorkoutReminderDay);
+  const setTime = useSettings((s) => s.setWorkoutReminderTime);
+
+  /** Null while it is still being asked. Nothing is said until there is an answer. */
+  const [granted, setGranted] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void notificationsGranted().then((ok) => {
+      if (alive) setGranted(ok);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const at = parseClockTime(time) ?? { hour: 18, minute: 0 };
+
+  return (
+    <>
+      <Kicker className="mx-lg mb-sm mt-xxl">{t('Workout reminder')}</Kicker>
+      <ListCard className="mx-lg">
+        <SwitchRow
+          label={t('Remind me to train')}
+          hint={t('A notification at the time you set, on the days you picked.')}
+          value={enabled}
+          onChange={setEnabled}
+        />
+      </ListCard>
+
+      {enabled ? (
+        <>
+          <Kicker className="mx-lg mb-sm mt-lg">{t('On which days')}</Kicker>
+          <View className="mx-lg flex-row flex-wrap">
+            {weekdayLabels(lang).map((label, index) => {
+              const weekday = index as Weekday;
+              return (
+                <SelectChip
+                  key={label + index}
+                  label={label}
+                  selected={days.includes(weekday)}
+                  onPress={() => {
+                    tap();
+                    toggleDay(weekday);
+                  }}
+                />
+              );
+            })}
+          </View>
+
+          <Kicker className="mx-lg mb-sm mt-lg">{t('At what time')}</Kicker>
+          <View className="mx-lg">
+            <TimeWheel hour={at.hour} minute={at.minute} onChange={setTime} />
+          </View>
+        </>
+      ) : null}
+
+      {enabled && granted === false ? (
+        <Text className="mx-lg mt-md text-label text-ink-faint">
+          {t('Notifications are switched off for this app, so nothing will arrive.')}
+        </Text>
+      ) : null}
+    </>
   );
 }

@@ -36,7 +36,7 @@
  * decorative glyph in this app.
  */
 
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 export type IconName =
   | 'check'
@@ -51,7 +51,28 @@ export type IconName =
   | 'play'
   | 'pause'
   | 'edit'
-  | 'history';
+  | 'history'
+  /*
+   * The three that make the workout section's corner a row of destinations
+   * rather than one glyph and two rows at the foot of a scroll. `history` was
+   * already here; these two join it at the same size, because they answer the
+   * same kind of question — where in this section do I go.
+   */
+  | 'routines'
+  | 'library'
+  /* The two the reminders needed: what a reminder IS, and what it is set to. */
+  | 'bell'
+  | 'clock'
+  /**
+   * THE ONE PLAYFUL GLYPH IN THE APP, and it earns the exception by being the
+   * only control whose whole point is that you do not know what it will do.
+   *
+   * A die is the single mark that says "chance" without a word, in every
+   * language this app speaks and every one it does not. Everything else here is
+   * a verb; this is a promise of a surprise, and drawing it as anything else —
+   * a shuffle arrow, a wand — would be describing the mechanism instead.
+   */
+  | 'dice';
 
 interface IconProps {
   name: IconName;
@@ -75,6 +96,28 @@ const STROKE: Record<IconName, number> = {
   pause: 2.5,
   edit: 2,
   history: 2,
+  routines: 2,
+  library: 2,
+  bell: 2,
+  clock: 2,
+  dice: 2,
+};
+
+/**
+ * Dots drawn as real circles rather than as round-capped zero-length strokes.
+ *
+ * One glyph needs them — the die's pips — and a pip is a FILL, not a stroke: at
+ * 18px a capped stroke renders as a smudge that changes size with the weight,
+ * which is exactly the thing that would make five of them look like four.
+ */
+const DOTS: Partial<Record<IconName, readonly [number, number][]>> = {
+  dice: [
+    [8.4, 8.4],
+    [15.6, 8.4],
+    [12, 12],
+    [8.4, 15.6],
+    [15.6, 15.6],
+  ],
 };
 
 const PATHS: Record<IconName, string[]> = {
@@ -106,6 +149,25 @@ const PATHS: Record<IconName, string[]> = {
     'M3.2 3.4v3.4h3.4',
     'M12 7.6V12l3.2 1.9',
   ],
+  // A list with its bullets: a routine is an ORDER of exercises, and the marks
+  // down the left are what separate it from the book beside it.
+  routines: ['M4.5 7h.01M4.5 12h.01M4.5 17h.01', 'M9 7h10.5M9 12h10.5M9 17h10.5'],
+  // An open book. The library is the only place in the app that is a reference
+  // rather than a log, and this is the one mark that says so.
+  library: [
+    'M12 6.6C10.4 5.1 8.4 4.6 4.6 4.6v12.8c3.8 0 5.8.5 7.4 2',
+    'M12 6.6c1.6-1.5 3.6-2 7.4-2v12.8c-3.8 0-5.8.5-7.4 2',
+    'M12 6.6v12.8',
+  ],
+  // A bell, with the clapper as its own stroke so the shape still reads at 14px.
+  bell: ['M18 15.6V10a6 6 0 00-12 0v5.6L4.4 18.2h15.2z', 'M9.9 21a2.3 2.3 0 004.2 0'],
+  // The same dial and the same 12-and-4 hands as `history`, WITHOUT the rewind
+  // notch — which is the entire difference between "when" and "when it was".
+  clock: ['M12 3.5a8.5 8.5 0 100 17 8.5 8.5 0 000-17z', 'M12 7.6V12l3.2 1.9'],
+  // A die on its five face: a rounded square, and the pips come from `DOTS`.
+  dice: [
+    'M7.6 4h8.8A3.6 3.6 0 0120 7.6v8.8a3.6 3.6 0 01-3.6 3.6H7.6A3.6 3.6 0 014 16.4V7.6A3.6 3.6 0 017.6 4z',
+  ],
 };
 
 export function Icon({ name, size, color }: IconProps) {
@@ -120,6 +182,9 @@ export function Icon({ name, size, color }: IconProps) {
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+      ))}
+      {DOTS[name]?.map(([cx, cy]) => (
+        <Circle key={`${cx},${cy}`} cx={cx} cy={cy} r={1.55} fill={color} />
       ))}
     </Svg>
   );

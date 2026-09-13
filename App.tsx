@@ -30,6 +30,11 @@
  *     key, and it stays quiet either way: a migration that could not run tries
  *     again next launch, and a dialog on launch about a storage system the user has
  *     never heard of is worse than a History tab that fills itself in tomorrow.
+ *   • the REMINDER SYNC, which makes Android's notification queue match the tasks
+ *     that asked to speak and the workout schedule. Also here rather than in a
+ *     screen, and also silent: a reminder that cannot be armed — no permission,
+ *     exact alarms refused — must not become a dialog in front of somebody who
+ *     opened the app to train, and the settings screen reports it instead.
  *   • the AUTOMATIC BACKUP, which writes the whole log into a folder the user has
  *     granted, if the last copy is old enough. Here because launch is the only
  *     moment a sideloaded app can reliably run anything (see `lib/notify.ts` on
@@ -54,6 +59,7 @@ import { prepareAudio } from './src/lib/beeper';
 import { ensureTimerChannels, requestNotificationPermission } from './src/lib/notify';
 import { migrateHistoryIfNeeded, useWorkoutHistory } from './src/state/workoutHistoryStore';
 import { useAutoBackup } from './src/hooks/useAutoBackup';
+import { useReminders } from './src/hooks/useReminders';
 
 /*
  * Timer alerts — rest ending, and the bell on a timed hold.
@@ -92,6 +98,12 @@ export default function App() {
    * launches where the user never opens Settings, which is all of them.
    */
   useAutoBackup();
+  /*
+   * Same argument, for the same reason: a reminder the user set has to be armed
+   * on the launches where they never open the tasks section, which is most of
+   * them. `hooks/useReminders.ts` has the rest.
+   */
+  useReminders();
 
   useEffect(() => {
     void requestNotificationPermission();

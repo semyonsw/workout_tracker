@@ -36,6 +36,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { TrendChart } from '../components/TrendChart';
 import { pressedStyle } from '../components/motion';
 import { Kicker, Segmented, SelectChip } from '../components/primitives';
+import { useT } from '../hooks/useT';
 import { WEEKDAY_INITIALS, dayKey, formatShortDay, parseDay } from '../lib/days';
 import { tap } from '../lib/feedback';
 import {
@@ -65,6 +66,7 @@ interface TasksHistoryScreenProps {
 }
 
 export function TasksHistoryScreen({ selected, onBack, onPickDay }: TasksHistoryScreenProps) {
+  const t = useT();
   const tasks = useTasks((s) => s.tasks);
   const log = useTasks((s) => s.log);
   const today = dayKey(new Date());
@@ -73,7 +75,7 @@ export function TasksHistoryScreen({ selected, onBack, onPickDay }: TasksHistory
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker="Task history" onBack={onBack} bordered={false}>
+      <ScreenHeader kicker={t('Task history')} onBack={onBack} bordered={false}>
         <View className="mt-md">
           <Segmented
             options={VIEWS}
@@ -295,6 +297,7 @@ function MonthCell({
  * `taskTrendSeries` owns that and every other rule the chart obeys.
  */
 function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog; today: string }) {
+  const t = useT();
   /*
    * Seeded from the setting, and then the chips own it. A range that wrote itself
    * back to settings on every tap would make "which range does this open on" and
@@ -315,7 +318,7 @@ function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog
         {TREND_RANGES.map((option) => (
           <SelectChip
             key={option}
-            label={TREND_RANGE_LABELS[option]}
+            label={t(TREND_RANGE_LABELS[option])}
             selected={option === range}
             onPress={() => {
               tap();
@@ -326,8 +329,17 @@ function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog
       </View>
 
       <View className="mx-lg mt-md flex-row gap-md">
-        <Well label="Done" value={`${summary.percent}%`} unit={`of ${summary.asked}`} green />
-        <Well label="Full days" value={String(summary.perfectDays)} unit={`of ${summary.days}`} />
+        <Well
+          label={t('Done')}
+          value={`${summary.percent}%`}
+          unit={t('of {asked}', { asked: summary.asked })}
+          green
+        />
+        <Well
+          label={t('Full days')}
+          value={String(summary.perfectDays)}
+          unit={t('of {asked}', { asked: summary.days })}
+        />
       </View>
 
       {points.length >= 2 ? (

@@ -31,7 +31,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import { dayKey } from '../lib/days';
+import { clampHour, clampMinute, dayKey } from '../lib/days';
 import { useSettings } from './settingsStore';
 import {
   reorderWithinVisible,
@@ -39,6 +39,7 @@ import {
   type TaskAutoSource,
   type TaskLog,
   type TaskMark,
+  type TaskReminder,
   type TaskSchedule,
   type Weekday,
 } from '../lib/tasks';
@@ -70,13 +71,16 @@ export function seedTasks(today = dayKey(new Date())): Task[] {
     schedule,
     auto,
     startedOn: today,
+    // The nine shipped rows are silent, like every task is until it is asked to
+    // speak — see `Task.reminder`.
+    reminder: null,
     archivedAt: null,
     order,
   }));
 }
 
-function sanitizeSchedule(raw: unknown): TaskSchedule {
-  const value = raw as Partial<TaskSchedule> | undefined;
+function sanitizeSchedule(raw: unknown, fallbackDay: string): TaskSchedule {
+  const value = raw as { kind?: string; days?: unknown; day?: unknown } | undefined;
   if (value && value.kind === 'weekdays') {
     const days = Array.isArray(value.days) ? value.days : [];
     const kept = [
@@ -86,7 +90,26 @@ function sanitizeSchedule(raw: unknown): TaskSchedule {
     ];
     return { kind: 'weekdays', days: kept.sort((a, b) => a - b) };
   }
+  if (value && value.kind === 'once') {
+    /*
+     * A one-day task with an unreadable day would ask on no day ever, which is a
+     * row that sits in the list doing nothing and cannot be explained. It falls
+     * back to the task's own start day — the only other date it carries.
+     */
+    const day = typeof value.day === 'string' && DAY_KEY.test(value.day) ? value.day : fallbackDay;
+    return { kind: 'once', day };
+  }
   return { kind: 'daily' };
+}
+
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A time the wheel could have produced, or null. */
+function sanitizeReminder(raw: unknown): TaskReminder | null {
+  const value = raw as Partial<TaskReminder> | null | undefined;
+  if (!value || typeof value !== 'object') return null;
+  if (!Number.isFinite(value.hour) || !Number.isFinite(value.minute)) return null;
+  return { hour: clampHour(Number(value.hour)), minute: clampMinute(Number(value.minute)) };
 }
 
 function sanitizeTask(raw: unknown, index: number, today: string): Task | null {
@@ -95,13 +118,15 @@ function sanitizeTask(raw: unknown, index: number, today: string): Task | null {
   const name = typeof value.name === 'string' ? value.name.trim() : '';
   if (name === '') return null;
   const auto = value.auto === 'workout' || value.auto === 'money' ? value.auto : null;
+  const startedOn =
+    typeof value.startedOn === 'string' && value.startedOn !== '' ? value.startedOn : today;
   return {
     id: value.id,
     name,
-    schedule: sanitizeSchedule(value.schedule),
+    schedule: sanitizeSchedule(value.schedule, startedOn),
     auto,
-    startedOn:
-      typeof value.startedOn === 'string' && value.startedOn !== '' ? value.startedOn : today,
+    startedOn,
+    reminder: sanitizeReminder(value.reminder),
     archivedAt: typeof value.archivedAt === 'string' ? value.archivedAt : null,
     order: Number.isFinite(value.order) ? Number(value.order) : index,
   };
@@ -142,9 +167,37 @@ export function sanitizeTasks(input: Partial<TasksValue> | undefined | null): Ta
   return { tasks, log: sanitizeLog(input?.log, tasks) };
 }
 
+/**
+ * Everything a new task is, as one object.
+ *
+ * It was `(name, schedule)`, and it grew a start day and a reminder in the same
+ * release — three positional arguments where two of them are optional is a call
+ * site nobody can read, and the fourth would have been worse.
+ */
+export interface TaskSpec {
+  name: string;
+  schedule: TaskSchedule;
+  /**
+   * The first day it asks. Defaults to TODAY, and that default is the whole
+   * point: a task added this evening must not appear on yesterday's list and
+   * turn a day that was finished into a day with a hole in it.
+   */
+  startedOn?: string;
+  reminder?: TaskReminder | null;
+}
+
 interface TasksState extends TasksValue {
-  addTask: (name: string, schedule: TaskSchedule) => ID | null;
-  updateTask: (id: ID, patch: { name?: string; schedule?: TaskSchedule }) => void;
+  addTask: (spec: TaskSpec) => ID | null;
+  updateTask: (
+    id: ID,
+    patch: {
+      name?: string;
+      schedule?: TaskSchedule;
+      startedOn?: string;
+      /** `null` clears it, which is why this is not `TaskReminder | undefined`. */
+      reminder?: TaskReminder | null;
+    },
+  ) => void;
   archiveTask: (id: ID) => void;
   /**
    * Put `movedId` at `toIndex` within the rows the DAY SCREEN is showing.
@@ -198,19 +251,33 @@ export const useTasks = create<TasksState>()(
       tasks: seedTasks(),
       log: {},
 
-      addTask: (name, schedule) => {
-        const trimmed = name.trim();
+      addTask: (spec) => {
+        const trimmed = spec.name.trim();
         if (trimmed === '') return null;
         const id = `task_${Date.now().toString(36)}`;
+        const today = dayKey(new Date());
+        /*
+         * A one-day task starts on its own day, whatever was passed.
+         *
+         * Those two dates are the same fact for a `once` row, and letting them
+         * differ is how you get a task whose schedule says the 14th while
+         * `startedOn` says the 20th — `asksOn` answers from the schedule, so the
+         * row would be right and the detail screen's "since" line would be a lie.
+         * That includes a task set for TOMORROW, which is the whole reason the
+         * shape exists.
+         */
+        const startedOn =
+          spec.schedule.kind === 'once' ? spec.schedule.day : (spec.startedOn ?? today);
         set((state) => ({
           tasks: [
             ...state.tasks,
             {
               id,
               name: trimmed,
-              schedule,
+              schedule: spec.schedule,
               auto: null,
-              startedOn: dayKey(new Date()),
+              startedOn,
+              reminder: spec.reminder ?? null,
               archivedAt: null,
               order: state.tasks.length,
             },
@@ -224,10 +291,16 @@ export const useTasks = create<TasksState>()(
           tasks: state.tasks.map((task) => {
             if (task.id !== id) return task;
             const name = patch.name?.trim();
+            const schedule = patch.schedule ?? task.schedule;
             return {
               ...task,
               name: name !== undefined && name !== '' ? name : task.name,
-              schedule: patch.schedule ?? task.schedule,
+              schedule,
+              // Same rule as `addTask`: for a one-day row the two dates are one
+              // fact, so the schedule's day is the answer to both.
+              startedOn:
+                schedule.kind === 'once' ? schedule.day : (patch.startedOn ?? task.startedOn),
+              reminder: patch.reminder !== undefined ? patch.reminder : task.reminder,
             };
           }),
         })),

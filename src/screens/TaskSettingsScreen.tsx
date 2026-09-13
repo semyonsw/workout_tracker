@@ -40,11 +40,13 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Kicker, ListCard, SelectChip, SwitchRow } from '../components/primitives';
+import { useT } from '../hooks/useT';
 import { tap } from '../lib/feedback';
 import { TREND_RANGES, TREND_RANGE_LABELS } from '../lib/trends';
 import { useSettings } from '../state/settingsStore';
 
 export function TaskSettingsScreen({ onBack }: { onBack: () => void }) {
+  const t = useT();
   const autoTickTasks = useSettings((s) => s.autoTickTasks);
   const setFlag = useSettings((s) => s.setFlag);
   const tasksTrendRange = useSettings((s) => s.tasksTrendRange);
@@ -53,34 +55,44 @@ export function TaskSettingsScreen({ onBack }: { onBack: () => void }) {
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker="Daily tasks settings" onBack={onBack} bordered={false} />
+      <ScreenHeader kicker={t('Daily tasks settings')} onBack={onBack} bordered={false} />
 
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
-        <Kicker className="mx-lg mb-sm mt-md">Answering</Kicker>
+        <Kicker className="mx-lg mb-sm mt-md">{t('Answering')}</Kicker>
         <ListCard className="mx-lg">
           <SwitchRow
-            label="Let the app tick what it knows"
-            hint="Finishing a workout ticks the training task; recording an amount ticks the expense one"
+            label={t('Let the app tick what it knows')}
+            hint={t(
+              'Finishing a workout ticks the training task; recording an amount ticks the expense one',
+            )}
             value={autoTickTasks}
             onChange={(value) => setFlag('autoTickTasks', value)}
           />
         </ListCard>
         <Text className="mx-lg mt-sm text-label text-ink-faint">
           {autoTickTasks
-            ? 'Both rows are still ordinary tasks — you can tick them, skip them, and change what they say. This only means something else usually gets there first.'
-            : 'Every task waits for you. Nothing in the app answers a row on its own, and marks already given stay exactly as they are.'}
+            ? t(
+                'Both rows are still ordinary tasks — you can tick them, skip them, and change what they say. This only means something else usually gets there first.',
+              )
+            : t(
+                'Every task waits for you. Nothing in the app answers a row on its own, and marks already given stay exactly as they are.',
+              )}
         </Text>
 
-        <Kicker className="mx-lg mb-sm mt-xxl">History opens on</Kicker>
+        {/* Every task's own reminder is set where the task is — on its editor,
+            beside the days it asks on. A screen listing every reminder in the app
+            would be a second place to change one, and the two would disagree the
+            first time somebody edited a task from the day list. */}
+        <Kicker className="mx-lg mb-sm mt-xxl">{t('History opens on')}</Kicker>
         <View className="mx-lg flex-row flex-wrap">
           {TREND_RANGES.map((range) => (
             <SelectChip
               key={range}
-              label={TREND_RANGE_LABELS[range]}
+              label={t(TREND_RANGE_LABELS[range])}
               selected={range === tasksTrendRange}
               onPress={() => {
                 tap();
@@ -90,8 +102,9 @@ export function TaskSettingsScreen({ onBack }: { onBack: () => void }) {
           ))}
         </View>
         <Text className="mx-lg text-label text-ink-faint">
-          Which range the ⟲ in the corner of the daily tasks opens on. The chips on that screen
-          still change it while you are reading.
+          {t(
+            'Which range the ⟲ in the corner of the daily tasks opens on. The chips on that screen still change it while you are reading.',
+          )}
         </Text>
       </ScrollView>
     </View>

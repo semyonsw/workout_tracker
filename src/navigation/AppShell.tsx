@@ -877,6 +877,8 @@ export function AppShell() {
       <RoutineEditorScreen
         routine={routine}
         exercisesById={exercisesById}
+        /* The whole library, for the die — see `RoutineEditorScreenProps`. */
+        library={exercises}
         defaultRestSeconds={restSecondsBetweenSets}
         isNew={route.isNew}
         /*
@@ -1271,8 +1273,6 @@ export function AppShell() {
               onOpenHistory={() => push({ name: 'workoutHistory' })}
               onOpenRoutines={() => push({ name: 'routines' })}
               onOpenLibrary={() => push({ name: 'library' })}
-              routineCount={routines.length}
-              exerciseCount={exercises.length}
             />
           ) : null}
 

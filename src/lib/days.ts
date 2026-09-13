@@ -20,6 +20,8 @@
  * wrong column once every spring.
  */
 
+import type { Language } from './i18n';
+
 /** `YYYY-MM-DD` in LOCAL time — the day the user was standing in. */
 export function dayKey(at: string | Date): string {
   const date = at instanceof Date ? at : new Date(at);
@@ -90,26 +92,142 @@ export const MONTH_NAMES = [
   'December',
 ] as const;
 
+/**
+ * The Russian months, TWICE, because the language declines them and the app
+ * prints both cases.
+ *
+ * `Сентябрь 2026` is a heading — the month named, nominative. `12 сентября` is a
+ * date — the month in the genitive, because the day is what the phrase is about.
+ * One table would make one of those two wrong on every screen that shows it, and
+ * "12 Сентябрь" is the kind of wrong that reads as a machine wrote it.
+ */
+export const MONTH_NAMES_RU = [
+  'Январь',
+  'Февраль',
+  'Март',
+  'Апрель',
+  'Май',
+  'Июнь',
+  'Июль',
+  'Август',
+  'Сентябрь',
+  'Октябрь',
+  'Ноябрь',
+  'Декабрь',
+] as const;
+
+/** The same twelve in the genitive, for `12 сентября`. */
+export const MONTH_NAMES_RU_OF = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+] as const;
+
 /** The column headings, Monday first. */
 export const WEEKDAY_INITIALS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
 
+export const WEEKDAY_INITIALS_RU = ['П', 'В', 'С', 'Ч', 'П', 'С', 'В'] as const;
+
 export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
-/** "September 2026". `month` is 0-based, as `Date` uses it. */
-export function formatMonth(year: number, month: number): string {
-  return `${MONTH_NAMES[month]} ${year}`;
+export const WEEKDAY_LABELS_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'] as const;
+
+export const WEEKDAY_NAMES = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+] as const;
+
+export const WEEKDAY_NAMES_RU = [
+  'Понедельник',
+  'Вторник',
+  'Среда',
+  'Четверг',
+  'Пятница',
+  'Суббота',
+  'Воскресенье',
+] as const;
+
+/**
+ * The tables for one language.
+ *
+ * `lang` defaults to English on every formatter below, which is what makes this
+ * change additive: a caller that has not been translated yet keeps printing
+ * exactly what it printed before.
+ */
+export function weekdayLabels(lang: Language = 'en'): readonly string[] {
+  return lang === 'ru' ? WEEKDAY_LABELS_RU : WEEKDAY_LABELS;
 }
 
-/** "12 September 2026". */
-export function formatLongDay(key: string): string {
+export function weekdayInitials(lang: Language = 'en'): readonly string[] {
+  return lang === 'ru' ? WEEKDAY_INITIALS_RU : WEEKDAY_INITIALS;
+}
+
+export function weekdayNames(lang: Language = 'en'): readonly string[] {
+  return lang === 'ru' ? WEEKDAY_NAMES_RU : WEEKDAY_NAMES;
+}
+
+/** "September 2026" / "Сентябрь 2026". `month` is 0-based, as `Date` uses it. */
+export function formatMonth(year: number, month: number, lang: Language = 'en'): string {
+  const names = lang === 'ru' ? MONTH_NAMES_RU : MONTH_NAMES;
+  return `${names[month]} ${year}`;
+}
+
+/** "12 September 2026" / "12 сентября 2026". */
+export function formatLongDay(key: string, lang: Language = 'en'): string {
   const date = parseDay(key);
   if (!date) return key;
-  return `${date.getDate()} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+  const names = lang === 'ru' ? MONTH_NAMES_RU_OF : MONTH_NAMES;
+  return `${date.getDate()} ${names[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 /** "12 September" — the year left off, for rows already inside a month. */
-export function formatShortDay(key: string): string {
+export function formatShortDay(key: string, lang: Language = 'en'): string {
   const date = parseDay(key);
   if (!date) return key;
-  return `${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`;
+  const names = lang === 'ru' ? MONTH_NAMES_RU_OF : MONTH_NAMES;
+  return `${date.getDate()} ${names[date.getMonth()]}`;
+}
+
+/**
+ * `HH:MM` on a 24-hour clock, from a number of hours and minutes.
+ *
+ * Twenty-four hours and no AM/PM anywhere in the app: the wheel the user sets a
+ * reminder on runs 00–23, and a 12-hour label beside a 24-hour picker is two
+ * clocks disagreeing on one screen.
+ */
+export function formatClockTime(hour: number, minute: number): string {
+  return `${pad(clampHour(hour))}:${pad(clampMinute(minute))}`;
+}
+
+export function clampHour(hour: number): number {
+  return Number.isFinite(hour) ? Math.min(23, Math.max(0, Math.trunc(hour))) : 0;
+}
+
+export function clampMinute(minute: number): number {
+  return Number.isFinite(minute) ? Math.min(59, Math.max(0, Math.trunc(minute))) : 0;
+}
+
+/** `"07:30"` → `{ hour: 7, minute: 30 }`. Anything else → null. */
+export function parseClockTime(value: unknown): { hour: number; minute: number } | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return { hour, minute };
 }

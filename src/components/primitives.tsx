@@ -17,6 +17,18 @@
  * These exist so a new screen is a composition rather than a new set of
  * spacing decisions. Every value here is from the design; none of them are
  * parameterised beyond what the design actually varies.
+ *
+ * ── EVERY TAPPABLE THING HERE IS A `BubblePressable` ──────────────────────
+ *
+ * Which is what makes the app's press feedback one decision rather than forty.
+ * A ring opens from the point of contact and leaves; `pressedStyle` still does
+ * the dim-and-shrink underneath, because the two say different things — one is
+ * "under your finger now", the other is "that landed". `components/bubbles.tsx`
+ * has the whole argument and the reason it costs nothing at rest.
+ *
+ * The `radius` each one passes is its own corner, so a ring cannot escape a pill
+ * button with square corners. That is the one thing to remember when adding a
+ * control here.
  */
 
 import type { ReactNode } from 'react';
@@ -24,6 +36,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { tap } from '../lib/feedback';
 import { palette } from '../theme/tokens';
+import { BubblePressable } from './bubbles';
 import { Icon } from './Icon';
 import { pressedStyle } from './motion';
 
@@ -136,14 +149,14 @@ export function SettingRow({
 
   if (!onPress) return body;
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
       style={pressedStyle}
     >
       {body}
-    </Pressable>
+    </BubblePressable>
   );
 }
 
@@ -166,7 +179,7 @@ export function NavRow({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={value ? `${label}, ${value}` : label}
@@ -178,7 +191,7 @@ export function NavRow({
         <Text className="mr-md text-body font-medium tabular-nums text-ink-muted">{value}</Text>
       ) : null}
       <Icon name="chevron-right" size={16} color={palette.inkFaint} />
-    </Pressable>
+    </BubblePressable>
   );
 }
 
@@ -258,16 +271,17 @@ export function StepButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
       hitSlop={4}
+      radius="pill"
       accessibilityRole="button"
       accessibilityLabel={label}
       style={pressedStyle}
       className="h-[36px] w-[36px] items-center justify-center rounded-pill border border-hairline bg-surface-alt"
     >
       <Icon name={icon} size={14} color={palette.ink} />
-    </Pressable>
+    </BubblePressable>
   );
 }
 
@@ -286,7 +300,7 @@ export function AddRow({
 }) {
   const green = tone === 'green';
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -299,7 +313,7 @@ export function AddRow({
       >
         {label}
       </Text>
-    </Pressable>
+    </BubblePressable>
   );
 }
 
@@ -503,9 +517,11 @@ export function Segmented<T extends string>({
       {options.map((option) => {
         const selected = option.value === value;
         return (
-          <Pressable
+          <BubblePressable
             key={option.value}
             onPress={() => onChange(option.value)}
+            radius="pill"
+            bubbleColor={selected ? palette.ink : palette.greenBright}
             accessibilityRole="radio"
             accessibilityState={{ selected }}
             accessibilityLabel={option.label}
@@ -523,7 +539,7 @@ export function Segmented<T extends string>({
             >
               {option.label}
             </Text>
-          </Pressable>
+          </BubblePressable>
         );
       })}
     </View>
@@ -552,9 +568,11 @@ export function SelectChip({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
       hitSlop={6}
+      radius="pill"
+      bubbleColor={selected ? palette.ink : palette.greenBright}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={label}
@@ -572,7 +590,7 @@ export function SelectChip({
       >
         {label}
       </Text>
-    </Pressable>
+    </BubblePressable>
   );
 }
 
@@ -627,8 +645,12 @@ export function PrimaryButton({
 }) {
   const primary = variant === 'primary';
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
+      radius="pill"
+      // On a green fill the green ring is invisible; ink is the only colour on
+      // that surface that can be seen leaving.
+      bubbleColor={primary ? palette.ink : palette.greenBright}
       accessibilityRole="button"
       accessibilityLabel={label}
       style={pressedStyle}
@@ -640,7 +662,7 @@ export function PrimaryButton({
       <Text className={`text-body ${primary ? 'font-semibold text-ink' : 'font-medium text-ink'}`}>
         {label}
       </Text>
-    </Pressable>
+    </BubblePressable>
   );
 }
 
@@ -662,7 +684,7 @@ export function TextButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -677,6 +699,6 @@ export function TextButton({
       >
         {label}
       </Text>
-    </Pressable>
+    </BubblePressable>
   );
 }

@@ -148,6 +148,7 @@ import { ReorderRow } from '../components/ReorderRow';
 import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
+import { useT } from '../hooks/useT';
 import type { DraftEntry, DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
 import { useAutoRounds } from '../hooks/useAutoRounds';
@@ -239,6 +240,7 @@ export function ActiveWorkoutScreen({
   onAddExercise,
   onEditExercise,
 }: ActiveWorkoutScreenProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   /**
@@ -639,7 +641,7 @@ export function ActiveWorkoutScreen({
       <View className="flex-1 items-center justify-center bg-bg px-xl">
         <Text className="text-body text-ink-muted">No workout in progress</Text>
         <View className="mt-xl w-full">
-          <PrimaryButton label="Back" variant="ghost" onPress={onExit} />
+          <PrimaryButton label={t('Back')} variant="ghost" onPress={onExit} />
         </View>
       </View>
     );
@@ -662,10 +664,10 @@ export function ActiveWorkoutScreen({
         <View className="mt-xl w-full">
           {onAddExercise ? (
             <View className="mb-sm">
-              <PrimaryButton label="Add an exercise" onPress={onAddExercise} />
+              <PrimaryButton label={t('Add an exercise')} onPress={onAddExercise} />
             </View>
           ) : null}
-          <PrimaryButton label="Back" variant="ghost" onPress={onExit} />
+          <PrimaryButton label={t('Back')} variant="ghost" onPress={onExit} />
         </View>
       </View>
     );
@@ -695,7 +697,7 @@ export function ActiveWorkoutScreen({
           confirming something about THIS list, and should still see it. */}
       <View className="flex-1" style={dimmed ? { opacity: 0.28 } : undefined}>
         <ScreenHeader
-          kicker={lifted ? `Moving · ${liftedName}` : session.title}
+          kicker={lifted ? `${t('Moving')} · ${liftedName}` : session.title}
           kickerTone={lifted ? 'green' : 'faint'}
           subtitle={
             lifted
@@ -720,12 +722,17 @@ export function ActiveWorkoutScreen({
           {lifted ? null : (
             <View className="mt-sm flex-row items-center">
               {isStarted ? null : (
-                <SessionChip label="Start workout" icon="play" tone="green" onPress={handleStart} />
+                <SessionChip
+                  label={t('Start workout')}
+                  icon="play"
+                  tone="green"
+                  onPress={handleStart}
+                />
               )}
-              <SessionChip label="Stop and exit" icon="x" onPress={handleStopAndExit} />
+              <SessionChip label={t('Stop and exit')} icon="x" onPress={handleStopAndExit} />
               {isStarted ? (
                 <SessionChip
-                  label="Restart clock"
+                  label={t('Restart clock')}
                   icon="play"
                   onPress={() => {
                     tap();
@@ -907,9 +914,9 @@ export function ActiveWorkoutScreen({
 
       {confirming === 'clock' ? (
         <ConfirmSheet
-          title="Restart the clock?"
+          title={t('Restart the clock?')}
           body={`This workout reads ${elapsedMinutes} min. Restarting the clock makes it 0, and history will record it from this moment — the sets you already logged stay exactly as they are.`}
-          confirmLabel="Restart it"
+          confirmLabel={t('Restart it')}
           cancelLabel={`Keep ${elapsedMinutes} min`}
           onConfirm={() => {
             commit();
@@ -926,8 +933,8 @@ export function ActiveWorkoutScreen({
           body={`${removingEntry.sets.filter((set) => set.isCompleted).length} logged ${
             removingEntry.sets.filter((set) => set.isCompleted).length === 1 ? 'set' : 'sets'
           } will go with it, and nothing about them reaches your history. The exercise itself stays in your library.`}
-          confirmLabel="Remove it"
-          cancelLabel="Keep it"
+          confirmLabel={t('Remove it')}
+          cancelLabel={t('Keep it')}
           onConfirm={() => {
             undo();
             removeEntry(removingEntry.localId);
@@ -939,10 +946,10 @@ export function ActiveWorkoutScreen({
 
       {confirming === 'discard' ? (
         <ConfirmSheet
-          title="Stop and exit without saving?"
+          title={t('Stop and exit without saving?')}
           body={`${progress.done} ${progress.done === 1 ? 'set' : 'sets'} logged in this workout will be thrown away, and nothing will reach your history. Use Finish instead if you want to keep ${progress.done === 1 ? 'it' : 'them'}.`}
-          confirmLabel="Throw it away"
-          cancelLabel="Keep logging"
+          confirmLabel={t('Throw it away')}
+          cancelLabel={t('Keep logging')}
           onConfirm={() => {
             undo();
             discardSession();

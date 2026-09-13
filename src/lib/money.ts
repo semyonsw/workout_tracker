@@ -45,6 +45,7 @@ import {
   weekEnd,
   weekStart,
 } from './days';
+import { t, type Language } from './i18n';
 import type { ID } from '../types/models';
 
 export type Direction = 'expense' | 'income';
@@ -110,20 +111,20 @@ export function formatMoney(value: number, code: string): string {
 }
 
 /** The month's name on its own, without the year. */
-function monthName(year: number, month: number): string {
-  return formatMonth(year, month).split(' ')[0];
+function monthName(year: number, month: number, lang: Language = 'en'): string {
+  return formatMonth(year, month, lang).split(' ')[0];
 }
 
 /** "07 – 13 September", or "28 September – 04 October" across a seam. */
-export function formatWeek(day: string): string {
+export function formatWeek(day: string, lang: Language = 'en'): string {
   const from = parseDay(weekStart(day));
   const to = parseDay(weekEnd(day));
   if (!from || !to) return day;
-  const toLabel = monthName(to.getFullYear(), to.getMonth());
+  const toLabel = monthName(to.getFullYear(), to.getMonth(), lang);
   if (from.getMonth() === to.getMonth()) {
     return `${pad(from.getDate())} – ${pad(to.getDate())} ${toLabel}`;
   }
-  return `${pad(from.getDate())} ${monthName(from.getFullYear(), from.getMonth())} – ${pad(to.getDate())} ${toLabel}`;
+  return `${pad(from.getDate())} ${monthName(from.getFullYear(), from.getMonth(), lang)} – ${pad(to.getDate())} ${toLabel}`;
 }
 
 /**
@@ -132,21 +133,30 @@ export function formatWeek(day: string): string {
  * These are the SAME strings the header shows once an interval is chosen, so the
  * sheet is a preview of the screen rather than a list of nouns.
  */
-export function describeInterval(interval: Interval, anchor: string): string {
+export function describeInterval(
+  interval: Interval,
+  anchor: string,
+  lang: Language = 'en',
+): string {
   const date = parseDay(anchor);
   if (!date) return '';
   switch (interval) {
     case 'day':
-      return formatLongDay(anchor);
+      return formatLongDay(anchor, lang);
     case 'week':
-      return formatWeek(anchor);
+      return formatWeek(anchor, lang);
     case 'month':
-      return formatMonth(date.getFullYear(), date.getMonth());
+      return formatMonth(date.getFullYear(), date.getMonth(), lang);
     case 'year':
-      return `${date.getFullYear()} year`;
+      return `${date.getFullYear()} ${t('year', lang)}`;
     case 'all':
-      return 'Everything recorded';
+      return t('Everything recorded', lang);
   }
+}
+
+/** The picker's row names, in the language the screen is in. */
+export function intervalLabel(interval: Interval, lang: Language = 'en'): string {
+  return t(INTERVAL_LABELS[interval], lang);
 }
 
 /**

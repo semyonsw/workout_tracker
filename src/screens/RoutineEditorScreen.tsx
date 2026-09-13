@@ -136,8 +136,10 @@ import { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
+import { RandomRoutineSheet } from '../components/RandomRoutineSheet';
 import { ReorderRow } from '../components/ReorderRow';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { ShuffleReel } from '../components/ShuffleReel';
 import { DragHandle, Icon } from '../components/Icon';
 import {
   AddRow,
@@ -149,7 +151,15 @@ import {
   Toggle,
 } from '../components/primitives';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
+import { useT } from '../hooks/useT';
 import { tap, undo } from '../lib/feedback';
+import {
+  DEFAULT_RANDOM_SPEC,
+  drawablePool,
+  rollRoutine,
+  type RandomSpec,
+  type RolledRoutine,
+} from '../lib/randomRoutine';
 import {
   bumpTargetCount,
   bumpTargetMin,
@@ -169,6 +179,14 @@ import type { Exercise, ID, Routine, RoutineItem } from '../types/models';
 interface RoutineEditorScreenProps {
   routine: Routine;
   exercisesById: Record<ID, Exercise>;
+  /**
+   * THE WHOLE LIBRARY, for the die.
+   *
+   * `exercisesById` resolves the rows this routine already has; the die needs
+   * everything it could draw instead, which is a different question and not one
+   * a lookup keyed by the current items can answer.
+   */
+  library: readonly Exercise[];
   /**
    * The between-sets rest from Settings, for the rows that are following it.
    *
@@ -230,6 +248,7 @@ export interface RoutineDraft {
 export function RoutineEditorScreen({
   routine,
   exercisesById,
+  library,
   defaultRestSeconds,
   isNew = false,
   onBack,
@@ -253,6 +272,27 @@ export function RoutineEditorScreen({
   const [openId, setOpenId] = useState<ID | null>(null);
   /** The item the user asked to remove, held while the sheet asks. */
   const [removing, setRemoving] = useState<RoutineItem | null>(null);
+  const t = useT();
+
+  /*
+   * ── THE DIE ──────────────────────────────────────────────────────────
+   *
+   * Three pieces of state and they are three different things. `randomSpec` is
+   * what the die will draw from NEXT — it survives a roll, so re-rolling the same
+   * request is one tap. `rolling` is the answer the reel is currently spinning
+   * towards, and it is what the screen shows INSTEAD of the exercise list while
+   * it spins. `asking` is the long-press sheet.
+   *
+   * The roll is computed BEFORE the animation rather than after it: the reel's
+   * last frame has to be the real answer (see `ShuffleReel`), and an animation
+   * that decides at the end is an animation that can disagree with what it just
+   * showed you.
+   */
+  const [randomSpec, setRandomSpec] = useState<RandomSpec>(DEFAULT_RANDOM_SPEC);
+  const [rolling, setRolling] = useState<RolledRoutine | null>(null);
+  const [asking, setAsking] = useState(false);
+  /** Nothing to roll from: the die is present but inert, and says so. */
+  const [rollFailed, setRollFailed] = useState(false);
 
   /**
    * Where each row sits and how tall it is, captured on layout. Offsets are
@@ -328,6 +368,37 @@ export function RoutineEditorScreen({
     onCommit({ name, items: next });
   };
 
+  /**
+   * Roll, and REPLACE what is in the editor.
+   *
+   * Replace and not append, because "random routine" is what the die promises
+   * and a die that adds five exercises to the six you have is a die that built
+   * an eleven-exercise routine nobody asked for. The name goes with it — that is
+   * the derived `Pull + Core` — and both land in the DRAFT rather than the store,
+   * so backing out without saving leaves the routine exactly as it was. The die
+   * is an edit like any other on this screen.
+   */
+  const roll = (spec: RandomSpec) => {
+    const rolled = rollRoutine(library, spec);
+    setRandomSpec(spec);
+    setAsking(false);
+    if (!rolled) {
+      setRollFailed(true);
+      return;
+    }
+    setRollFailed(false);
+    // The row is open on an item the roll is about to delete.
+    setOpenId(null);
+    setRolling(rolled);
+  };
+
+  /** The reel has stopped on the answer: commit it to the draft. */
+  const settle = (rolled: RolledRoutine) => {
+    const stamp = Date.now().toString(36);
+    setName(rolled.name);
+    setItems(rolled.items.map((item, order) => ({ ...item, id: `ri_${stamp}_${order}`, order })));
+  };
+
   const dimmed = removing != null;
 
   return (
@@ -336,22 +407,44 @@ export function RoutineEditorScreen({
         <ScreenHeader
           kicker={
             lifted && liftedExercise
-              ? `Moving · ${liftedExercise.name}`
+              ? `${t('Moving')} · ${liftedExercise.name}`
               : isNew
-                ? 'New routine'
-                : 'Edit routine'
+                ? t('New routine')
+                : t('Edit routine')
           }
           kickerTone={lifted ? 'green' : 'faint'}
           /* Where it would land, because the list does not shuffle under the
              finger to show it. Same readout as the logging screen's. */
           subtitle={
-            lifted ? `Slide to move it · position ${targetIndex + 1} of ${items.length}` : undefined
+            lifted
+              ? t('Slide to move it · position {at} of {of}', {
+                  at: targetIndex + 1,
+                  of: items.length,
+                })
+              : undefined
           }
           onBack={lifted ? undefined : onBack}
+          /* The die goes while a row is in the air: rebuilding the list under a
+             finger that is dragging one of its rows is the one state this screen
+             cannot be in. */
+          iconAction={
+            lifted
+              ? undefined
+              : {
+                  icon: 'dice',
+                  label: t('Roll a random routine. Long press to choose what goes in it.'),
+                  active: rolling != null,
+                  onPress: () => roll(randomSpec),
+                  onLongPress: () => {
+                    tap();
+                    setAsking(true);
+                  },
+                }
+          }
           action={
             lifted
-              ? { label: 'Drop', onPress: drop }
-              : { label: 'Save', onPress: () => onSave(draft()) }
+              ? { label: t('Drop'), onPress: drop }
+              : { label: t('Save'), onPress: () => onSave(draft()) }
           }
         />
 
@@ -364,22 +457,47 @@ export function RoutineEditorScreen({
           {/* The name field hides while reordering: one thing at a time. */}
           {lifted ? null : (
             <>
-              <Kicker className="mx-lg mb-sm">Routine name</Kicker>
+              <Kicker className="mx-lg mb-sm">{t('Routine name')}</Kicker>
               <View className="mx-lg">
                 <FieldWell
                   value={name}
-                  placeholder="Routine name"
+                  placeholder={t('Routine name')}
                   onChangeText={setName}
                   selectAllOnFocus={isNew}
-                  autoFocus={isNew}
-                  accessibilityLabel="Routine name"
+                  /* Not while the die is spinning: a keyboard arriving over the
+                     reel hides the thing the user is watching. */
+                  autoFocus={isNew && rolling == null}
+                  accessibilityLabel={t('Routine name')}
                 />
               </View>
             </>
           )}
 
+          {rollFailed ? (
+            <Text className="mx-lg mt-md text-label text-ink-faint">
+              {t('Nothing to roll — the library is empty.')}
+            </Text>
+          ) : null}
+
+          {/* While the reel spins it stands IN PLACE OF the list: the list is
+              about to be replaced by what the reel is showing, and rendering both
+              would be the screen contradicting itself for a second. */}
+          {rolling ? (
+            <View className="mx-lg mt-xl">
+              <ShuffleReel
+                key={rolling.exercises.map((e) => e.id).join('-')}
+                pool={drawablePool(library, randomSpec.clusters).map((e) => e.name)}
+                result={rolling.exercises.map((e) => e.name)}
+                onSettled={() => {
+                  settle(rolling);
+                  setRolling(null);
+                }}
+              />
+            </View>
+          ) : null}
+
           <Kicker className={`mx-lg mb-sm ${lifted ? '' : 'mt-xl'}`}>
-            Exercises · {items.length}
+            {t('Exercises')} · {items.length}
           </Kicker>
 
           {/* The drag surface — its own View around the card rather than the card
@@ -460,7 +578,7 @@ export function RoutineEditorScreen({
               {lifted ? null : (
                 <>
                   <Separator inset={0} />
-                  <AddRow label="Add exercise" onPress={() => onAddExercise(draft())} />
+                  <AddRow label={t('Add exercise')} onPress={() => onAddExercise(draft())} />
                 </>
               )}
             </ListCard>
@@ -476,11 +594,20 @@ export function RoutineEditorScreen({
                   <TextButton label="Duplicate this routine" onPress={() => onDuplicate(draft())} />
                 </View>
               ) : null}
-              <TextButton label="Delete routine" onPress={onDelete} />
+              <TextButton label={t('Delete routine')} onPress={onDelete} />
             </View>
           )}
         </ScrollView>
       </View>
+
+      {asking ? (
+        <RandomRoutineSheet
+          exercises={library}
+          spec={randomSpec}
+          onRoll={roll}
+          onDismiss={() => setAsking(false)}
+        />
+      ) : null}
 
       {removing ? (
         <ConfirmSheet

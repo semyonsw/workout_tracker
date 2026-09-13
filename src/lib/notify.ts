@@ -48,6 +48,8 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
+import type { PlannedReminder } from './reminders';
+
 /** Bumped when a channel's SOUND or IMPORTANCE changes — Android freezes both. */
 const CHANNEL_VERSION = 2;
 
@@ -55,6 +57,22 @@ const CHANNEL_VERSION = 2;
 export const CHANNEL_GO = `timer-go-v${CHANNEL_VERSION}`;
 /** The tick: the last seconds before a deadline. */
 export const CHANNEL_GETSET = `timer-getset-v${CHANNEL_VERSION}`;
+
+/**
+ * REMINDERS — a task's own time of day, and the workout schedule.
+ *
+ * Its own channel and not the timer's, which is the whole point of channels: the
+ * two are different events with different urgencies and the user has to be able
+ * to tune them apart. A rest timer ending is a thing you need THIS SECOND and it
+ * gets `MAX` with the app's loud tone; "read before sleep" at 22:30 is a thing
+ * you need today, and a reminder that sounds like a set ending is a reminder
+ * that gets the whole app silenced.
+ *
+ * So this one is `DEFAULT` importance and carries NO custom sound: it uses
+ * whatever the phone's own notification tone is, which is what somebody's
+ * muscle memory already reads as "something wants me later".
+ */
+export const CHANNEL_REMINDER = `reminders-v${CHANNEL_VERSION}`;
 
 /** Channels from earlier versions, deleted so the system UI stays honest. */
 const RETIRED_CHANNELS = ['timers', 'timer-go-v1', 'timer-getset-v1'];
@@ -107,8 +125,34 @@ export async function ensureTimerChannels(): Promise<void> {
       bypassDnd: false,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
+
+    await Notifications.setNotificationChannelAsync(CHANNEL_REMINDER, {
+      name: 'Reminders',
+      description: 'A task, or a workout, at the time you asked to be reminded.',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      vibrationPattern: [0, 200],
+      enableVibrate: true,
+      bypassDnd: false,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+    });
   } catch {
     channelsReady = false; // let a later call try again
+  }
+}
+
+/**
+ * Has the user actually granted notifications?
+ *
+ * Asked by the settings screens so a switch that is on can say when nothing will
+ * come of it — an armed reminder behind a denied permission is the single most
+ * confusing state this feature has, because everything in the app looks right.
+ */
+export async function notificationsGranted(): Promise<boolean> {
+  try {
+    const current = await Notifications.getPermissionsAsync();
+    return current.granted === true;
+  } catch {
+    return false;
   }
 }
 
@@ -212,5 +256,121 @@ export async function cancelTimerAlerts(ids: readonly (string | null)[]): Promis
     } catch {
       // Already fired, already cancelled, or the module is unavailable.
     }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reminders                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The marker that separates THIS app's reminders from its timer alerts.
+ *
+ * Everything scheduled here carries `data.kind = 'reminder'`, and `syncReminders`
+ * cancels by reading it back off the queue. That matters: the obvious
+ * implementation is `cancelAllScheduledNotificationsAsync`, and it would silently
+ * cancel the rest-timer alert of a workout that is running while the user edits a
+ * task's reminder — a rest that then ends in complete silence with the phone in a
+ * pocket.
+ */
+const REMINDER_KIND = 'reminder';
+
+/**
+ * Monday = 0 … Sunday = 6  →  Android's 1 = Sunday … 7 = Saturday.
+ *
+ * The app counts weeks from Monday everywhere (`weekdayIndex`), and the platform
+ * counts them from Sunday. One conversion, in one place, so a Friday reminder
+ * cannot arrive on a Thursday because two files disagreed about what 4 means.
+ */
+function expoWeekday(weekday: number): number {
+  return ((weekday + 1) % 7) + 1;
+}
+
+function triggerFor(reminder: PlannedReminder): Notifications.NotificationTriggerInput | null {
+  const channel = Platform.OS === 'android' ? { channelId: CHANNEL_REMINDER } : {};
+  const { trigger } = reminder;
+
+  if (trigger.kind === 'daily') {
+    return {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: trigger.hour,
+      minute: trigger.minute,
+      ...channel,
+    };
+  }
+  if (trigger.kind === 'weekly') {
+    return {
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday: expoWeekday(trigger.weekday),
+      hour: trigger.hour,
+      minute: trigger.minute,
+      ...channel,
+    };
+  }
+  // A dated alert whose instant has passed is refused rather than scheduled:
+  // `planReminders` already drops those, and this is the belt to that braces.
+  if (trigger.at - Date.now() < 1000) return null;
+  return {
+    type: Notifications.SchedulableTriggerInputTypes.DATE,
+    date: new Date(trigger.at),
+    ...channel,
+  };
+}
+
+/**
+ * Make Android's queue match the plan. Returns how many alerts are armed.
+ *
+ * Cancel-then-schedule rather than a diff, and deliberately: the queue is a
+ * dozen entries, re-scheduling one is microseconds, and a diff would need to
+ * compare triggers across a bridge that hands them back in a different shape
+ * from the one they went in as. Two syncs with nothing changed therefore produce
+ * the same armed alerts at the same instants, which is the property that matters.
+ *
+ * Never throws. Every failure mode here — no permission, exact alarms refused, a
+ * module that is not present in this build — leaves the app working exactly as it
+ * did before reminders existed, and the settings screen is what reports that the
+ * permission is missing.
+ */
+export async function syncReminders(plan: readonly PlannedReminder[]): Promise<number> {
+  try {
+    await ensureTimerChannels();
+    await cancelAllReminders();
+
+    let armed = 0;
+    for (const reminder of plan) {
+      const trigger = triggerFor(reminder);
+      if (!trigger) continue;
+      try {
+        await Notifications.scheduleNotificationAsync({
+          identifier: reminder.id,
+          content: {
+            title: reminder.title,
+            body: reminder.body,
+            data: { kind: REMINDER_KIND },
+            ...(Platform.OS === 'android' ? { channelId: CHANNEL_REMINDER } : {}),
+          },
+          trigger,
+        });
+        armed += 1;
+      } catch {
+        // One bad alert must not take the other eleven down with it.
+      }
+    }
+    return armed;
+  } catch {
+    return 0;
+  }
+}
+
+/** Drop every reminder this app scheduled, leaving the timer alerts alone. */
+export async function cancelAllReminders(): Promise<void> {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const entry of scheduled) {
+      if ((entry.content?.data as { kind?: string } | undefined)?.kind !== REMINDER_KIND) continue;
+      await Notifications.cancelScheduledNotificationAsync(entry.identifier).catch(() => {});
+    }
+  } catch {
+    // Nothing scheduled, or the module is unavailable. Either way, nothing to do.
   }
 }

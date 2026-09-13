@@ -40,6 +40,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { FieldWell, Kicker, SelectChip } from '../components/primitives';
+import { useT } from '../hooks/useT';
 import { tap } from '../lib/feedback';
 import { INTERVALS, INTERVAL_LABELS } from '../lib/money';
 import { TREND_RANGES, TREND_RANGE_LABELS } from '../lib/trends';
@@ -51,6 +52,7 @@ const DIRECTIONS = [
 ];
 
 export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
+  const t = useT();
   const settings = useSettings();
 
   /*
@@ -65,7 +67,7 @@ export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker="Expenses settings" onBack={onBack} bordered={false} />
+      <ScreenHeader kicker={t('Expenses settings')} onBack={onBack} bordered={false} />
 
       <ScrollView
         className="flex-1"

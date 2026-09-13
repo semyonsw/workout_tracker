@@ -463,7 +463,9 @@ describe('the expenses settings', () => {
     expect(
       sanitizeSettings({ moneyDefaultInterval: 'decade' } as unknown as Partial<Settings>)
         .moneyDefaultInterval,
-    ).toBe('month');
+      // The DEFAULT, which is the day — the expenses section opens on "what did
+      // I spend today", not on a month total. See `DEFAULT_SETTINGS`.
+    ).toBe('day');
     expect(sanitizeSettings({ moneyDefaultDirection: 'income' }).moneyDefaultDirection).toBe(
       'income',
     );

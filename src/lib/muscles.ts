@@ -32,6 +32,7 @@
  * thing that can disagree with itself.
  */
 
+import { t, term, type Language } from './i18n';
 import type { Exercise, ID, MuscleCluster, MuscleGroup, RoutineItem } from '../types/models';
 
 /**
@@ -104,9 +105,26 @@ export function clusterOf(exercise: MuscleSubject): MuscleCluster | null {
 /* Labels                                                              */
 /* ------------------------------------------------------------------ */
 
-/** "Pull". Rendered uppercase by the caller's style where that's the design. */
-export function clusterLabel(cluster: MuscleCluster): string {
-  return cluster.charAt(0).toUpperCase() + cluster.slice(1);
+/**
+ * "Pull" / "Тяга". Rendered uppercase by the caller's style where that's the
+ * design.
+ *
+ * The KEY stays the English word — the union is an identifier, and a translated
+ * value used as one is a library tree that cannot be opened after a language
+ * change. Only what is drawn goes through `t`.
+ */
+export function clusterLabel(cluster: MuscleCluster, lang: Language = 'en'): string {
+  return t(cluster.charAt(0).toUpperCase() + cluster.slice(1), lang);
+}
+
+/**
+ * "Back" / "Спина" — one muscle group, named.
+ *
+ * Through `term` rather than `t`, because `Back` is also the chevron in every
+ * header: one English string, two Russian words. See `lib/i18n.ts`.
+ */
+export function muscleLabel(muscle: MuscleGroup, lang: Language = 'en'): string {
+  return term('muscle', muscle.charAt(0).toUpperCase() + muscle.slice(1), lang);
 }
 
 /* ------------------------------------------------------------------ */
@@ -236,22 +254,29 @@ export function routineFocus(exercises: Exercise[]): RoutineFocus | null {
  * Capped at three muscles with a `+n`: past three the line has stopped telling
  * you what day it is and started listing the routine back to you.
  */
-export function describeRoutineFocus(exercises: Exercise[]): string | null {
+export function describeRoutineFocus(exercises: Exercise[], lang: Language = 'en'): string | null {
   const focus = routineFocus(exercises);
   if (!focus) return null;
 
   const named = focus.muscles.slice(0, MAX_NAMED_MUSCLES);
   const extra = focus.muscles.length - named.length;
-  const tail = named.length > 0 ? ` · ${named.join(', ')}${extra > 0 ? ` +${extra}` : ''}` : '';
-  return `${clusterLabel(focus.cluster)}${tail}`;
+  const tail =
+    named.length > 0
+      ? ` · ${named.map((muscle) => muscleLabel(muscle, lang).toLowerCase()).join(', ')}${
+          extra > 0 ? ` +${extra}` : ''
+        }`
+      : '';
+  return `${clusterLabel(focus.cluster, lang)}${tail}`;
 }
 
 /** The same line for a routine's items, resolving the library as it goes. */
 export function describeItemsFocus(
   items: RoutineItem[],
   exercisesById: Record<ID, Exercise>,
+  lang: Language = 'en',
 ): string | null {
   return describeRoutineFocus(
     items.map((item) => exercisesById[item.exerciseId]).filter((e): e is Exercise => e != null),
+    lang,
   );
 }

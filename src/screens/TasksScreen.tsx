@@ -70,14 +70,8 @@ import { pressedStyle } from '../components/motion';
 import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
 import { TaskEditorSheet } from '../components/TaskEditorSheet';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
-import {
-  WEEKDAY_LABELS,
-  dayKey,
-  formatLongDay,
-  parseDay,
-  shiftDay,
-  weekdayIndex,
-} from '../lib/days';
+import { useLanguage, useT } from '../hooks/useT';
+import { dayKey, formatLongDay, parseDay, shiftDay, weekdayIndex, weekdayNames } from '../lib/days';
 import {
   type Task,
   type TaskMark,
@@ -86,6 +80,7 @@ import {
   entryOf,
   tasksOn,
 } from '../lib/tasks';
+import type { Language } from '../lib/i18n';
 import { useTasks } from '../state/tasksStore';
 import { palette } from '../theme/tokens';
 import type { ID } from '../types/models';
@@ -100,6 +95,8 @@ interface TasksScreenProps {
 }
 
 export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: TasksScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
   const tasks = useTasks((s) => s.tasks);
   const log = useTasks((s) => s.log);
   const cycleMark = useTasks((s) => s.cycleMark);
@@ -130,9 +127,9 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
       {/* The ⟲ goes while a row is in the air: leaving the screen mid-drag would
           unmount the row under the finger, and there is one thing to do. */}
       <SectionTopBar
-        title="Daily tasks"
+        title={t('Daily tasks')}
         onOpenHistory={lifted ? undefined : onOpenHistory}
-        historyLabel="Task history"
+        historyLabel={t('Task history')}
       />
 
       <ScrollView
@@ -146,18 +143,23 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
           <>
             {lifted && liftedTask ? (
               <View className="mx-lg items-center">
-                <Kicker tone="green">Moving · {liftedTask.name}</Kicker>
+                <Kicker tone="green">
+                  {t('Moving')} · {liftedTask.name}
+                </Kicker>
                 <Text className="mt-xs text-label tabular-nums text-ink-muted">
-                  Slide to move it · position {targetIndex + 1} of {rows.length}
+                  {t('Slide to move it · position {at} of {of}', {
+                    at: targetIndex + 1,
+                    of: rows.length,
+                  })}
                 </Text>
                 <Pressable
                   onPress={drop}
                   accessibilityRole="button"
-                  accessibilityLabel="Drop it here"
+                  accessibilityLabel={t('Drop it here')}
                   style={pressedStyle}
                   className="mt-sm h-hit justify-center px-lg"
                 >
-                  <Text className="text-label font-semibold text-green-bright">Drop</Text>
+                  <Text className="text-label font-semibold text-green-bright">{t('Drop')}</Text>
                 </Pressable>
               </View>
             ) : (
@@ -167,7 +169,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                     onPress={() => onChangeDay(shiftDay(day, -1))}
                     hitSlop={12}
                     accessibilityRole="button"
-                    accessibilityLabel="The day before"
+                    accessibilityLabel={t('The day before')}
                     style={pressedStyle}
                     className="h-hit w-[32px] items-center justify-center"
                   >
@@ -175,7 +177,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                   </Pressable>
 
                   <Text className="mx-lg text-title font-semibold tabular-nums text-ink">
-                    {formatLongDay(day)}
+                    {formatLongDay(day, lang)}
                   </Text>
 
                   <Pressable
@@ -183,7 +185,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                     disabled={isToday}
                     hitSlop={12}
                     accessibilityRole="button"
-                    accessibilityLabel="The day after"
+                    accessibilityLabel={t('The day after')}
                     style={pressedStyle}
                     className="h-hit w-[32px] items-center justify-center"
                   >
@@ -195,7 +197,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
 
                 <View className="mx-lg items-center">
                   <Kicker tone={isToday ? 'green' : 'faint'}>
-                    {isToday ? 'Today' : weekdayName(day)}
+                    {isToday ? t('Today') : weekdayName(day, lang)}
                   </Kicker>
                 </View>
 
@@ -203,7 +205,10 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                     target: a day that asked for nothing reads full rather than empty. */}
                 <View
                   accessibilityRole="progressbar"
-                  accessibilityLabel={`${progress.done} of ${progress.total} done`}
+                  accessibilityLabel={t('{done} of {total} done', {
+                    done: progress.done,
+                    total: progress.total,
+                  })}
                   className="mx-lg mt-lg h-[6px] overflow-hidden rounded-pill bg-green-dim"
                 >
                   <View
@@ -213,8 +218,8 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                 </View>
                 <Text className="mx-lg mt-sm text-label tabular-nums text-ink-muted">
                   {progress.total === 0
-                    ? 'Nothing asked for today'
-                    : `${progress.done} of ${progress.total} done`}
+                    ? t('Nothing asked for today')
+                    : t('{done} of {total} done', { done: progress.done, total: progress.total })}
                 </Text>
               </>
             )}
@@ -244,7 +249,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                       <TaskRow
                         task={task}
                         mark={entryOf(log, task.id, day).mark}
-                        detail={describeTaskRow(task, log, day)}
+                        detail={describeTaskRow(task, log, day, lang)}
                         dimmed={lifted != null && !isLifted}
                         onToggle={() => cycleMark(task.id, day)}
                         onOpen={() => onOpenTask(task.id)}
@@ -258,7 +263,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                 {lifted ? null : (
                   <>
                     {rows.length > 0 ? <Separator inset={0} /> : null}
-                    <AddRow label="Add task" tone="faint" onPress={() => setAdding(true)} />
+                    <AddRow label={t('Add task')} tone="faint" onPress={() => setAdding(true)} />
                   </>
                 )}
               </ListCard>
@@ -266,13 +271,13 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
 
             {rows.length === 0 ? (
               <Text className="mx-lg mt-lg text-label text-ink-faint">
-                Nothing is scheduled for this day.
+                {t('Nothing is scheduled for this day.')}
               </Text>
             ) : null}
 
             {lifted ? null : (
               <Text className="mx-lg mt-md text-label text-ink-faint">
-                Long press a row, then slide. The others open a gap where it will land.
+                {t('Long press a row, then slide. The others open a gap where it will land.')}
               </Text>
             )}
           </>
@@ -281,9 +286,9 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
 
       {adding ? (
         <TaskEditorSheet
-          title="New task"
-          onSave={(name, schedule) => {
-            addTask(name, schedule);
+          title={t('New task')}
+          onSave={(draft) => {
+            addTask(draft);
             setAdding(false);
           }}
           onDismiss={() => setAdding(false)}
@@ -295,9 +300,9 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
 
 /* ------------------------------------------------------------------ */
 
-function weekdayName(day: string): string {
+function weekdayName(day: string, lang: Language): string {
   const date = parseDay(day);
-  return date ? WEEKDAY_LABELS[weekdayIndex(date)] : '';
+  return date ? weekdayNames(lang)[weekdayIndex(date)] : '';
 }
 
 function TaskRow({
@@ -317,6 +322,7 @@ function TaskRow({
   onOpen: () => void;
   onLongPress?: () => void;
 }) {
+  const t = useT();
   return (
     <View className="h-row-lg flex-row items-center" style={dimmed ? { opacity: 0.4 } : undefined}>
       <Pressable
@@ -325,8 +331,8 @@ function TaskRow({
         delayLongPress={280}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: mark === 'done' }}
-        accessibilityLabel={`${task.name}. ${answerOf(mark)}. Tap to change.`}
-        accessibilityHint={onLongPress ? 'Long press, then slide to reorder' : undefined}
+        accessibilityLabel={`${task.name}. ${t(answerOf(mark))}. ${t('Tap to change.')}`}
+        accessibilityHint={onLongPress ? t('Long press, then slide to reorder') : undefined}
         style={pressedStyle}
         className="h-row-lg w-[56px] items-center justify-center"
       >
@@ -338,8 +344,8 @@ function TaskRow({
         onLongPress={onLongPress}
         delayLongPress={280}
         accessibilityRole="button"
-        accessibilityLabel={`${task.name}. ${detail}. Open the month.`}
-        accessibilityHint={onLongPress ? 'Long press, then slide to reorder' : undefined}
+        accessibilityLabel={`${task.name}. ${detail}. ${t('Open the month.')}`}
+        accessibilityHint={onLongPress ? t('Long press, then slide to reorder') : undefined}
         style={pressedStyle}
         className="h-row-lg flex-1 flex-row items-center pr-lg"
       >

@@ -24,6 +24,7 @@ import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { pressedStyle } from '../components/motion';
 import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
+import { useT } from '../hooks/useT';
 import { describeItemsFocus } from '../lib/muscles';
 import { palette } from '../theme/tokens';
 import type { Exercise, ID, Routine, TrainingSequence } from '../types/models';
@@ -52,38 +53,43 @@ export function RoutineListScreen({
   onBack,
 }: RoutineListScreenProps) {
   const insets = useSafeAreaInsets();
+  const t = useT();
   const stepCount = sequence.routineIds.length;
 
   return (
     <View className="flex-1 bg-bg">
-      {onBack ? <ScreenHeader kicker="Routines" onBack={onBack} bordered={false} /> : null}
+      {onBack ? <ScreenHeader kicker={t('Routines')} onBack={onBack} bordered={false} /> : null}
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingTop: onBack ? 8 : insets.top + 24, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <Kicker className="mx-lg mb-sm">Sequence</Kicker>
+        <Kicker className="mx-lg mb-sm">{t('Sequence')}</Kicker>
         <ListCard className="mx-lg">
           <Pressable
             onPress={onOpenSequence}
             accessibilityRole="button"
-            accessibilityLabel="Training sequence"
+            accessibilityLabel={t('Training sequence')}
             style={pressedStyle}
             className="h-row-lg flex-row items-center px-lg"
           >
             <View className="flex-1 pr-md">
-              <Text className="text-body font-medium text-ink">Training sequence</Text>
+              <Text className="text-body font-medium text-ink">{t('Training sequence')}</Text>
               <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
                 {stepCount === 0
-                  ? 'Off · no order set'
-                  : `${sequence.isActive ? 'On' : 'Off'} · ${stepCount} ${stepCount === 1 ? 'step' : 'steps'}`}
+                  ? t('Off · no order set')
+                  : `${sequence.isActive ? t('On') : t('Off')} · ${stepCount} ${t(
+                      stepCount === 1 ? 'step' : 'steps',
+                    )}`}
               </Text>
             </View>
             <Icon name="chevron-right" size={18} color={palette.inkFaint} />
           </Pressable>
         </ListCard>
 
-        <Kicker className="mx-lg mb-sm mt-xl">Routines · {routines.length}</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xl">
+          {t('Routines')} · {routines.length}
+        </Kicker>
 
         <ListCard className="mx-lg">
           {routines.map((routine, index) => {
@@ -97,7 +103,7 @@ export function RoutineListScreen({
                   <Pressable
                     onPress={() => onOpen(routine.id)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Edit ${routine.name}`}
+                    accessibilityLabel={`${t('Edit routine')} — ${routine.name}`}
                     style={pressedStyle}
                     className="h-row-lg flex-1 flex-row items-center pl-lg"
                   >
@@ -140,7 +146,7 @@ export function RoutineListScreen({
           })}
 
           <Separator inset={0} />
-          <AddRow label="Add routine" onPress={onCreate} />
+          <AddRow label={t('Add routine')} onPress={onCreate} />
         </ListCard>
       </ScrollView>
     </View>

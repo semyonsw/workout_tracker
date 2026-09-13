@@ -61,8 +61,9 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { Icon } from '../components/Icon';
 import { pressedStyle, Reveal } from '../components/motion';
 import { FieldWell, Kicker, ListCard, Separator } from '../components/primitives';
+import { useLanguage, useT } from '../hooks/useT';
 import { describeShape } from '../lib/exerciseShape';
-import { buildMuscleTree, clusterLabel } from '../lib/muscles';
+import { buildMuscleTree, clusterLabel, muscleLabel } from '../lib/muscles';
 import { palette } from '../theme/tokens';
 import type { Exercise, ID, MuscleGroup } from '../types/models';
 
@@ -111,6 +112,8 @@ export function ExerciseLibraryScreen({
   onCreate,
   onDelete,
 }: ExerciseLibraryScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
   const trimmed = query.trim();
   const { clusters, unfiled } = useMemo(() => buildMuscleTree(exercises), [exercises]);
 
@@ -119,7 +122,7 @@ export function ExerciseLibraryScreen({
       {/* No hairline under the header: the search field below is its own surface,
           and two rules 16 apart read as a mistake. */}
       <ScreenHeader
-        kicker={kicker ?? (onBack ? 'Add exercise' : 'Library')}
+        kicker={kicker ?? (onBack ? t('Add exercise') : t('Library'))}
         onBack={onBack}
         bordered={false}
       />
@@ -129,9 +132,9 @@ export function ExerciseLibraryScreen({
           value={query}
           size="body"
           shape="pill"
-          placeholder="Search exercises, muscles, days"
+          placeholder={t('Search exercises, muscles, days')}
           onChangeText={onChangeQuery}
-          accessibilityLabel="Search exercises"
+          accessibilityLabel={t('Search exercises')}
         />
       </View>
 
@@ -174,7 +177,9 @@ export function ExerciseLibraryScreen({
               className="mx-lg mt-xl h-row flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg"
             >
               <Icon name="plus" size={14} color={palette.greenBright} />
-              <Text className="ml-md text-body font-medium text-ink">Create “{trimmed}”</Text>
+              <Text className="ml-md text-body font-medium text-ink">
+                {t('Create “{name}”', { name: trimmed })}
+              </Text>
             </Pressable>
           </>
         ) : (
@@ -187,7 +192,7 @@ export function ExerciseLibraryScreen({
                   {index > 0 ? <Separator inset={0} /> : null}
 
                   <DisclosureRow
-                    label={clusterLabel(node.cluster)}
+                    label={clusterLabel(node.cluster, lang)}
                     count={node.total}
                     open={open}
                     indent={0}
@@ -202,7 +207,7 @@ export function ExerciseLibraryScreen({
                           <View key={group.muscle}>
                             <Separator inset={16} />
                             <DisclosureRow
-                              label={group.muscle}
+                              label={muscleLabel(group.muscle, lang)}
                               count={group.exercises.length}
                               open={groupOpen}
                               indent={1}
@@ -246,7 +251,7 @@ export function ExerciseLibraryScreen({
               <View>
                 <Separator inset={0} />
                 <DisclosureRow
-                  label="Unfiled"
+                  label={t('Unfiled')}
                   count={unfiled.length}
                   open={expanded.has(UNFILED_KEY)}
                   indent={0}
@@ -279,18 +284,20 @@ export function ExerciseLibraryScreen({
           <Pressable
             onPress={() => onCreate('')}
             accessibilityRole="button"
-            accessibilityLabel="New exercise"
+            accessibilityLabel={t('New exercise')}
             style={pressedStyle}
             className="mx-lg mt-lg h-row flex-row items-center justify-center rounded-surface border border-hairline bg-surface-alt"
           >
             <Icon name="plus" size={14} color={palette.greenBright} />
-            <Text className="ml-sm text-label font-medium text-green-bright">New exercise</Text>
+            <Text className="ml-sm text-label font-medium text-green-bright">
+              {t('New exercise')}
+            </Text>
           </Pressable>
         )}
 
         {recentlyUsed.length > 0 ? (
           <>
-            <Kicker className="mx-lg mb-sm mt-xxl">Recently used</Kicker>
+            <Kicker className="mx-lg mb-sm mt-xxl">{t('Recently used')}</Kicker>
             <ListCard className="mx-lg">
               {recentlyUsed.map((exercise, index) => (
                 <View key={exercise.id}>
@@ -450,18 +457,19 @@ function ExerciseRow({
  * the exercise will land HERE rather than wherever the create screen defaults to.
  */
 function AddToGroupRow({ muscle, onPress }: { muscle: MuscleGroup; onPress: () => void }) {
+  const t = useT();
+  const lang = useLanguage();
+  const label = t('Add exercise to {muscle}', { muscle: muscleLabel(muscle, lang).toLowerCase() });
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Add an exercise to ${muscle}`}
+      accessibilityLabel={label}
       style={pressedStyle}
       className="h-row flex-row items-center pl-[48px] pr-lg"
     >
       <Icon name="plus" size={14} color={palette.greenBright} />
-      <Text className="ml-sm text-label font-medium text-green-bright">
-        Add exercise to {muscle}
-      </Text>
+      <Text className="ml-sm text-label font-medium text-green-bright">{label}</Text>
     </Pressable>
   );
 }

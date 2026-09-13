@@ -75,9 +75,10 @@ import { pressedStyle } from '../components/motion';
 import { Kicker, PrimaryButton, Separator, TextButton } from '../components/primitives';
 import { dayKey } from '../lib/days';
 import { tap } from '../lib/feedback';
+import { useLanguage, useT } from '../hooks/useT';
 import {
   INTERVALS,
-  INTERVAL_LABELS,
+  intervalLabel,
   type Direction,
   type Interval,
   type MoneyCategory,
@@ -111,6 +112,8 @@ interface MoneyScreenProps {
 }
 
 export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: MoneyScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
   const categories = useMoney((s) => s.categories);
   const amounts = useMoney((s) => s.amounts);
   const addCategory = useMoney((s) => s.addCategory);
@@ -149,9 +152,9 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
       <StatusBar style="light" />
 
       <SectionTopBar
-        title="Expenses"
+        title={t('Expenses')}
         onOpenHistory={onOpenHistory}
-        historyLabel="Expense history"
+        historyLabel={t('Expense history')}
       />
 
       <ScrollView
@@ -160,7 +163,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
         showsVerticalScrollIndicator={false}
       >
         <View className="items-center">
-          <Kicker>Overall balance</Kicker>
+          <Kicker>{t('Overall balance')}</Kicker>
           <View className="mt-xs flex-row items-baseline">
             <Text className="text-display font-semibold tabular-nums text-ink">
               {formatValue(balance)}
@@ -175,7 +178,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             disabled={!steppable}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="The window before"
+            accessibilityLabel={t('The window before')}
             style={pressedStyle}
             className="h-hit w-[32px] items-center justify-center"
           >
@@ -185,12 +188,12 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
           <Pressable
             onPress={() => setPicking(true)}
             accessibilityRole="button"
-            accessibilityLabel={`${describeInterval(interval, anchor)}. Change the time interval.`}
+            accessibilityLabel={`${describeInterval(interval, anchor, lang)}. ${t('Change the time interval.')}`}
             style={pressedStyle}
             className="h-hit flex-row items-center px-md"
           >
             <Text className="mr-xs text-body font-medium tabular-nums text-ink">
-              {describeInterval(interval, anchor)}
+              {describeInterval(interval, anchor, lang)}
             </Text>
             <Icon name="chevron-down" size={14} color={palette.inkMuted} />
           </Pressable>
@@ -200,7 +203,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             disabled={!steppable}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="The window after"
+            accessibilityLabel={t('The window after')}
             style={pressedStyle}
             className="h-hit w-[32px] items-center justify-center"
           >
@@ -210,7 +213,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
 
         <View className="mx-lg mt-md flex-row overflow-hidden rounded-surface border border-hairline bg-surface">
           <DirectionTile
-            label="Expenses"
+            label={t('Expenses')}
             value={totals.expenses}
             currency={currency}
             selected={direction === 'expense'}
@@ -218,7 +221,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
           />
           <View className="w-hairline bg-hairline" />
           <DirectionTile
-            label="Incomes"
+            label={t('Incomes')}
             value={totals.incomes}
             currency={currency}
             selected={direction === 'income'}
@@ -245,35 +248,35 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             <Pressable
               onPress={() => setNaming(true)}
               accessibilityRole="button"
-              accessibilityLabel="Add a category"
+              accessibilityLabel={t('Add category')}
               style={pressedStyle}
               className="flex-row items-center rounded-surface border border-dashed border-hairline p-md"
             >
               <View className="h-hit w-hit items-center justify-center rounded-surface bg-surface">
                 <Icon name="plus" size={18} color={palette.inkMuted} />
               </View>
-              <Text className="ml-md text-label font-medium text-ink-muted">Add</Text>
+              <Text className="ml-md text-label font-medium text-ink-muted">{t('Add')}</Text>
             </Pressable>
           </View>
         </View>
 
         <View className="mx-lg mt-xl">
           <PrimaryButton
-            label={direction === 'expense' ? 'Add expense' : 'Add income'}
+            label={direction === 'expense' ? t('Add expense') : t('Add income')}
             onPress={() => onAddAmount(null, direction)}
           />
         </View>
       </ScrollView>
 
       {picking ? (
-        <Sheet title="Time interval" onDismiss={() => setPicking(false)}>
+        <Sheet title={t('Time interval')} onDismiss={() => setPicking(false)}>
           <View className="overflow-hidden rounded-surface bg-surface-alt">
             {INTERVALS.map((option, index) => (
               <View key={option}>
                 {index > 0 ? <Separator inset={16} /> : null}
                 <IntervalRow
-                  label={INTERVAL_LABELS[option]}
-                  detail={describeInterval(option, anchor)}
+                  label={intervalLabel(option, lang)}
+                  detail={describeInterval(option, anchor, lang)}
                   selected={option === interval}
                   onPress={() => {
                     setInterval(option);
@@ -283,13 +286,13 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
               </View>
             ))}
           </View>
-          <TextButton label="Cancel" onPress={() => setPicking(false)} />
+          <TextButton label={t('Cancel')} onPress={() => setPicking(false)} />
         </Sheet>
       ) : null}
 
       {naming ? (
         <CategoryEditorSheet
-          title="New category"
+          title={t('Add category')}
           onSave={(name, glyph) => {
             addCategory(name, glyph);
             setNaming(false);
@@ -305,8 +308,8 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
         <Sheet title={`${holding.glyph}  ${holding.name}`} onDismiss={() => setHolding(null)}>
           <View className="overflow-hidden rounded-surface bg-surface-alt">
             <SheetRow
-              label="Edit category"
-              detail="Its name, its glyph and everything recorded in it"
+              label={t('Edit category')}
+              detail={t('Its name, its glyph and everything recorded in it')}
               onPress={() => {
                 const category = holding;
                 setHolding(null);
@@ -315,8 +318,12 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             />
             <Separator inset={16} />
             <SheetRow
-              label={direction === 'expense' ? 'Add an income here' : 'Add an expense here'}
-              detail={`A tap on the tile adds ${direction === 'expense' ? 'an expense' : 'an income'}`}
+              label={direction === 'expense' ? t('Add an income here') : t('Add an expense here')}
+              detail={
+                direction === 'expense'
+                  ? t('A tap on the tile adds an expense')
+                  : t('A tap on the tile adds an income')
+              }
               onPress={() => {
                 const category = holding;
                 setHolding(null);
@@ -324,7 +331,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
               }}
             />
           </View>
-          <TextButton label="Cancel" onPress={() => setHolding(null)} />
+          <TextButton label={t('Cancel')} onPress={() => setHolding(null)} />
         </Sheet>
       ) : null}
     </View>

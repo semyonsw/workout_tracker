@@ -46,7 +46,10 @@ import {
   updateGym,
   type Gym,
 } from '../lib/gyms';
+import { formatClockTime, parseClockTime } from '../lib/days';
+import { usableLanguage, type Language } from '../lib/i18n';
 import { INTERVALS, type Direction, type Interval } from '../lib/money';
+import type { Weekday } from '../lib/tasks';
 import { TREND_RANGES, type TrendRange } from '../lib/trends';
 import type { MuscleCluster, UnitSystem } from '../types/models';
 
@@ -156,6 +159,32 @@ export interface Settings {
    */
   weeklySetTargets: Partial<Record<MuscleCluster, number>>;
 
+  /**
+   * Which language the app speaks. Russian by default — see `lib/i18n.ts`.
+   *
+   * A setting rather than the phone's locale, because the phone's locale is a
+   * fact about the phone and this is a fact about the person holding it: the same
+   * device is handed to somebody who reads Russian and somebody who does not, and
+   * the toggle in the corner of Settings is one tap either way.
+   */
+  language: Language;
+
+  /* --- the workout reminder: see `screens/WorkoutSettingsScreen.tsx` --- */
+  /**
+   * Have the phone say "time to train" on the days you train.
+   *
+   * OFF by default, like every other reminder in this app. The days are a
+   * weekday list rather than the training sequence's cursor, because the sequence
+   * advances when you TRAIN and a reminder has to fire on a day you have not
+   * trained yet — reading the queue would mean the nudge arrives after the thing
+   * it was nudging you to do.
+   */
+  workoutReminderEnabled: boolean;
+  /** Monday = 0 … Sunday = 6, matching the grid the whole app draws. */
+  workoutReminderDays: Weekday[];
+  /** `HH:MM`, 24-hour. The wheel writes it; `lib/reminders.ts` reads it. */
+  workoutReminderTime: string;
+
   /* --- the daily tasks: see `screens/TaskSettingsScreen.tsx` ---------- */
   /**
    * Let the rest of the app answer the two tasks it can answer.
@@ -255,10 +284,23 @@ export const DEFAULT_SETTINGS: Settings = {
   gyms: gymsFromLegacyPlates(DEFAULT_PLATES_KG),
   activeGymId: DEFAULT_GYM_ID,
   weeklySetTargets: {},
+  language: 'ru',
+  workoutReminderEnabled: false,
+  workoutReminderDays: [0, 2, 4],
+  workoutReminderTime: '18:00',
   autoTickTasks: true,
   tasksTrendRange: 'month',
   currencyCode: 'AMD',
-  moneyDefaultInterval: 'month',
+  /*
+   * ONE DAY, not one month.
+   *
+   * The question this section is opened with is "what did I spend today" — it is
+   * asked on the way home from the shop, with the receipt still in a pocket, and
+   * a month total cannot answer it. The month is one tap away on the picker and
+   * the balance above it was never windowed at all, so nothing is hidden by this;
+   * what changes is which question the section answers before you touch it.
+   */
+  moneyDefaultInterval: 'day',
   moneyDefaultDirection: 'expense',
   moneyTrendRange: 'month',
   autoBackupEnabled: true,
@@ -383,12 +425,16 @@ export function sanitizeSettings(input: Partial<Settings> | undefined | null): S
     // pointer, and a plate label that goes blank reads as a broken feature.
     activeGymId: resolveActiveGymId(gyms, raw.activeGymId),
     weeklySetTargets: sanitizeWeeklyTargets(raw.weeklySetTargets),
+    language: usableLanguage(raw.language),
+    workoutReminderEnabled: raw.workoutReminderEnabled === true,
+    workoutReminderDays: sanitizeWeekdays(raw.workoutReminderDays),
+    workoutReminderTime: usableClockTime(raw.workoutReminderTime),
     autoTickTasks: raw.autoTickTasks !== false,
     tasksTrendRange: usableRange(raw.tasksTrendRange),
     currencyCode: usableCurrency(raw.currencyCode),
     moneyDefaultInterval: INTERVALS.includes(raw.moneyDefaultInterval as Interval)
       ? (raw.moneyDefaultInterval as Interval)
-      : 'month',
+      : DEFAULT_SETTINGS.moneyDefaultInterval,
     moneyDefaultDirection: raw.moneyDefaultDirection === 'income' ? 'income' : 'expense',
     moneyTrendRange: usableRange(raw.moneyTrendRange),
     autoBackupEnabled: raw.autoBackupEnabled !== false,
@@ -450,6 +496,30 @@ function usableInstant(value: unknown): string | undefined {
   return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined;
 }
 
+/** Weekday indices this app draws, deduplicated and in order. */
+function sanitizeWeekdays(value: unknown): Weekday[] {
+  if (!Array.isArray(value)) return [];
+  const kept = new Set(
+    value.filter((day): day is Weekday => Number.isInteger(day) && day >= 0 && day <= 6),
+  );
+  return [...kept].sort((a, b) => a - b);
+}
+
+/**
+ * `HH:MM` on a 24-hour clock, or the default.
+ *
+ * Through `parseClockTime` and back out through `formatClockTime` rather than a
+ * regex test, so `7:5` from a hand-edited backup becomes `07:05` instead of being
+ * thrown away — and so anything unparseable becomes a time the scheduler can
+ * actually use rather than a `NaN` trigger.
+ */
+function usableClockTime(value: unknown): string {
+  const parsed = parseClockTime(value);
+  return parsed
+    ? formatClockTime(parsed.hour, parsed.minute)
+    : DEFAULT_SETTINGS.workoutReminderTime;
+}
+
 /** A trend range this build knows, or the middle one. */
 function usableRange(value: unknown): TrendRange {
   return TREND_RANGES.includes(value as TrendRange) ? (value as TrendRange) : 'month';
@@ -492,6 +562,12 @@ interface SettingsState extends Settings {
     value: boolean,
   ) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;
+  /** The one write behind the РУ / EN toggle in the corner of Settings. */
+  setLanguage: (language: Language) => void;
+  /** The workout reminder, as three writes because they are three questions. */
+  setWorkoutReminderEnabled: (enabled: boolean) => void;
+  toggleWorkoutReminderDay: (day: Weekday) => void;
+  setWorkoutReminderTime: (hour: number, minute: number) => void;
   /**
    * Set or clear the bodyweight. `undefined` clears it, which is a real choice —
    * "I would rather the app said nothing than guessed".
@@ -564,6 +640,38 @@ export const useSettings = create<SettingsState>()(
       setFlag: (key, value) => set({ [key]: value } as Partial<Settings>),
 
       setUnitSystem: (unitSystem) => set({ unitSystem }),
+
+      setLanguage: (language) => set({ language: usableLanguage(language) }),
+
+      /*
+       * Turning it on with no days picked would arm a reminder that can never
+       * fire, which reads on screen as the switch not working. Monday/Wednesday/
+       * Friday is the same default the shipped `Gym / Boxing` task carries.
+       */
+      setWorkoutReminderEnabled: (workoutReminderEnabled) =>
+        set({
+          workoutReminderEnabled,
+          workoutReminderDays:
+            workoutReminderEnabled && get().workoutReminderDays.length === 0
+              ? [...DEFAULT_SETTINGS.workoutReminderDays]
+              : get().workoutReminderDays,
+        }),
+
+      toggleWorkoutReminderDay: (day) => {
+        const current = get().workoutReminderDays;
+        const next = current.includes(day)
+          ? current.filter((d) => d !== day)
+          : [...current, day].sort((a, b) => a - b);
+        // The last day cannot be taken away while the reminder is on: an armed
+        // reminder with no day is the switch lying about what it does.
+        set({
+          workoutReminderDays: next,
+          workoutReminderEnabled: next.length === 0 ? false : get().workoutReminderEnabled,
+        });
+      },
+
+      setWorkoutReminderTime: (hour, minute) =>
+        set({ workoutReminderTime: formatClockTime(hour, minute) }),
 
       /*
        * BOTH, always. The scalar is what "what do I weigh now" reads and the log is

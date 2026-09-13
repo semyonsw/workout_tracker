@@ -2,7 +2,7 @@
  * SettingsHomeScreen — three doors, one export, one import, one reset.
  *
  *   ┌──────────────────────────────────────────────┐
- *   │ SETTINGS                                     │
+ *   │ SETTINGS                            РУ  EN   │
  *   │ SECTIONS                                     │
  *   │ ┌──────────────────────────────────────────┐ │
  *   │ │ Workout settings                       › │ │
@@ -47,6 +47,15 @@
  * The automatic backup stays, above them, because it is not an export — it is the
  * thing that makes remembering to export optional, and `lib/backup.ts` is right
  * that protection depending on the user's memory of a menu is not protection.
+ *
+ * ── AND THE LANGUAGE IS IN THE CORNER, NOT IN A ROW ────────────────────────
+ *
+ * It is the one setting whose whole job is to be findable by somebody who cannot
+ * read the screen it is on. A row saying `Язык` is invisible to exactly the
+ * person who needs it, and so is one saying `Language`. Two letters in the
+ * corner, each in its own script, are legible either way — and they are in the
+ * corner rather than in the list because the corner is the same place on every
+ * section root, which is where somebody who cannot read the app will look.
  */
 
 import { useState } from 'react';
@@ -54,7 +63,7 @@ import { ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
-import { SectionTopBar } from '../components/SectionTopBar';
+import { LanguageToggle, SectionTopBar } from '../components/SectionTopBar';
 import {
   Kicker,
   ListCard,
@@ -82,7 +91,9 @@ import {
   readTextFile,
   saveJsonFile,
 } from '../lib/backupFile';
+import { useLanguage, useT } from '../hooks/useT';
 import { commit, tap } from '../lib/feedback';
+import { LANGUAGES, LANGUAGE_LABELS, LANGUAGE_NAMES, type Language } from '../lib/i18n';
 import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
 import { SETTING_LIMITS, useSettings } from '../state/settingsStore';
 
@@ -122,6 +133,8 @@ export function SettingsHomeScreen({
   onOpenMoneySettings,
 }: SettingsHomeScreenProps) {
   const settings = useSettings();
+  const t = useT();
+  const language = useLanguage();
 
   const [status, setStatus] = useState<Status | null>(null);
   const [pending, setPending] = useState<PendingImport | null>(null);
@@ -268,7 +281,23 @@ export function SettingsHomeScreen({
     <View className="flex-1 bg-bg">
       <View className="flex-1" style={asking ? { opacity: 0.28 } : undefined}>
         <StatusBar style="light" />
-        <SectionTopBar title="Settings" />
+        <SectionTopBar
+          title={t('Settings')}
+          trailing={
+            <LanguageToggle
+              options={LANGUAGES.map((value) => ({
+                value,
+                label: LANGUAGE_LABELS[value],
+                name: LANGUAGE_NAMES[value],
+              }))}
+              active={language}
+              onSelect={(value) => {
+                tap();
+                settings.setLanguage(value as Language);
+              }}
+            />
+          }
+        />
 
         <ScrollView
           className="flex-1"
@@ -276,13 +305,13 @@ export function SettingsHomeScreen({
           showsVerticalScrollIndicator={false}
           scrollEnabled={!asking}
         >
-          <Kicker className="mx-lg mb-sm mt-md">Sections</Kicker>
+          <Kicker className="mx-lg mb-sm mt-md">{t('Sections')}</Kicker>
           <ListCard className="mx-lg">
-            <NavRow label="Workout settings" onPress={onOpenWorkoutSettings} />
+            <NavRow label={t('Workout settings')} onPress={onOpenWorkoutSettings} />
             <Separator />
-            <NavRow label="Daily tasks settings" onPress={onOpenTaskSettings} />
+            <NavRow label={t('Daily tasks settings')} onPress={onOpenTaskSettings} />
             <Separator />
-            <NavRow label="Expenses settings" onPress={onOpenMoneySettings} />
+            <NavRow label={t('Expenses settings')} onPress={onOpenMoneySettings} />
           </ListCard>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
             Each one holds only what its own section reads. Rest, plates and weekly targets are
@@ -305,7 +334,7 @@ export function SettingsHomeScreen({
               is a granted directory, and the app's own sandbox dies with the app —
               which is one of the exact events a backup exists to survive. So the
               row states which of the two facts is missing. */}
-          <Kicker className="mx-lg mb-sm mt-xxl">Everything, in one file</Kicker>
+          <Kicker className="mx-lg mb-sm mt-xxl">{t('Everything, in one file')}</Kicker>
           <View className="mx-lg overflow-hidden rounded-surface border border-hairline bg-surface">
             <SettingRow
               label="Last backup"
