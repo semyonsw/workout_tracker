@@ -190,3 +190,58 @@ describe('counting', () => {
     expect(speaking.map((t) => t.id)).toEqual(['a']);
   });
 });
+
+/**
+ * Two properties that hold across the whole input space rather than at one
+ * example, and both are about Android's queue rather than about the app's
+ * screens — which is exactly why they need pinning here: neither can be seen by
+ * looking at the app, and both are wrong in a way the user experiences as
+ * "the reminders are broken" with nothing on screen to explain it.
+ */
+describe('what the queue is handed', () => {
+  it('never schedules an instant that has already gone, at any hour', () => {
+    for (let hour = 0; hour < 24; hour += 1) {
+      const alerts = plan([
+        task({
+          schedule: { kind: 'once', day: '2026-09-13' },
+          startedOn: '2026-09-13',
+          reminder: { hour, minute: 0 },
+        }),
+      ]);
+      for (const alert of alerts) {
+        if (alert.trigger.kind === 'date') {
+          expect(alert.trigger.at).toBeGreaterThan(now().getTime());
+        }
+      }
+    }
+  });
+
+  /*
+   * The id IS the notification identifier, so a collision does not add a second
+   * alert — it silently REPLACES the first. Two tasks quietly sharing one
+   * reminder is the kind of bug that reads as "it only reminds me about one of
+   * them" months later.
+   */
+  it('gives every alert an id of its own', () => {
+    const alerts = plan(
+      [
+        task({
+          id: 'a',
+          schedule: { kind: 'weekdays', days: [0, 1, 2, 3, 4, 5, 6] },
+          reminder: { hour: 7, minute: 0 },
+        }),
+        task({ id: 'b', reminder: { hour: 8, minute: 0 } }),
+        task({
+          id: 'c',
+          schedule: { kind: 'once', day: '2026-09-20' },
+          startedOn: '2026-09-20',
+          reminder: { hour: 9, minute: 0 },
+        }),
+      ],
+      { enabled: true, days: [0, 1, 2], time: '18:00' },
+    );
+    const ids = alerts.map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.length).toBe(7 + 1 + 1 + 3);
+  });
+});

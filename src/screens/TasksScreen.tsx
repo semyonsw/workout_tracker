@@ -79,6 +79,7 @@ import {
   describeTaskRow,
   entryOf,
   tasksOn,
+  upcomingOnce,
 } from '../lib/tasks';
 import type { Language } from '../lib/i18n';
 import { useTasks } from '../state/tasksStore';
@@ -109,6 +110,15 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
   const rows = useMemo(() => tasksOn(tasks, day), [tasks, day]);
   const progress = dayProgress(tasks, log, day);
   const isToday = day === today;
+  /*
+   * The one-day tasks that have not come round yet. Only on TODAY: on a past day
+   * this would be a list of things that had not happened then either, which is
+   * a sentence about nothing.
+   */
+  const upcoming = useMemo(
+    () => (isToday ? upcomingOnce(tasks, today) : []),
+    [isToday, tasks, today],
+  );
 
   /* The drag: the same hook and the same geometry as every other reorder here. */
   const rowLayouts = useRef<Record<ID, CardLayout>>({});
@@ -273,6 +283,27 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
               <Text className="mx-lg mt-lg text-label text-ink-faint">
                 {t('Nothing is scheduled for this day.')}
               </Text>
+            ) : null}
+
+            {/* Stated, not listed as rows: there is no circle, because a day that
+                has not arrived cannot be answered. See `upcomingOnce`. */}
+            {!lifted && upcoming.length > 0 ? (
+              <View className="mx-lg mt-xl">
+                <Kicker>{t('Coming up')}</Kicker>
+                {upcoming.map((task) => (
+                  <Text
+                    key={task.id}
+                    numberOfLines={1}
+                    className="mt-sm text-label tabular-nums text-ink-muted"
+                  >
+                    {task.name}
+                    <Text className="text-ink-faint">
+                      {'  ·  '}
+                      {task.schedule.kind === 'once' ? formatLongDay(task.schedule.day, lang) : ''}
+                    </Text>
+                  </Text>
+                ))}
+              </View>
             ) : null}
 
             {lifted ? null : (

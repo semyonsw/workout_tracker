@@ -509,9 +509,10 @@ function sanitizeWeekdays(value: unknown): Weekday[] {
  * `HH:MM` on a 24-hour clock, or the default.
  *
  * Through `parseClockTime` and back out through `formatClockTime` rather than a
- * regex test, so `7:5` from a hand-edited backup becomes `07:05` instead of being
- * thrown away — and so anything unparseable becomes a time the scheduler can
- * actually use rather than a `NaN` trigger.
+ * bare regex test, so a legal but untidy `7:05` is normalised to `07:05` on the
+ * way in and every reader downstream gets one shape. Anything `parseClockTime`
+ * refuses — and it refuses rather than guesses — lands on the default, which is
+ * a time the scheduler can actually use rather than a `NaN` trigger.
  */
 function usableClockTime(value: unknown): string {
   const parsed = parseClockTime(value);

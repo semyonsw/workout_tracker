@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { shiftDay } from './days';
 import {
   type Task,
   type TaskLog,
@@ -16,6 +17,7 @@ import {
   taskTrendSeries,
   tasksMonth,
   tasksOn,
+  upcomingOnce,
 } from './tasks';
 
 /**
@@ -479,5 +481,50 @@ describe('what a row says about its reminder', () => {
   it('says nothing at all when the task is silent', () => {
     expect(describeReminder(task())).toBeNull();
     expect(describeTaskRow(task(), {}, '2026-09-13')).toBe('Every day');
+  });
+});
+
+/**
+ * The future one-day rows.
+ *
+ * `upcomingOnce` exists because saving a task for tomorrow produced NO visible
+ * change on a screen that will not walk into tomorrow — the sheet closed, the
+ * list was identical, and the only honest reading was that the app had dropped
+ * it. What these pin is that making it visible did not also make it countable:
+ * a day that has not arrived still contributes nothing to any score.
+ */
+describe('one-day tasks that have not come round yet', () => {
+  const today = '2026-09-13';
+  const once = (id: string, day: string, over: Partial<Task> = {}) =>
+    task({ id, schedule: { kind: 'once', day }, startedOn: day, ...over });
+
+  it('lists the future ones, soonest first, and nothing else', () => {
+    const listed = upcomingOnce(
+      [
+        once('far', '2026-09-20'),
+        once('soon', '2026-09-14'),
+        once('gone', '2026-09-12'),
+        once('today', today),
+        task({ id: 'daily' }),
+      ],
+      today,
+    );
+    expect(listed.map((t) => t.id)).toEqual(['soon', 'far']);
+  });
+
+  it('leaves out archived rows and stops before it becomes a second list', () => {
+    const many = Array.from({ length: 9 }, (_, i) => once(`t${i}`, shiftDay(today, i + 1)));
+    expect(upcomingOnce(many, today)).toHaveLength(4);
+    expect(
+      upcomingOnce([once('x', '2026-09-30', { archivedAt: '2026-01-01T00:00:00.000Z' })], today),
+    ).toEqual([]);
+  });
+
+  // The whole point: visible is not the same as countable.
+  it('counts towards no day but its own', () => {
+    const future = once('f', '2026-09-20');
+    expect(asksOn(future, today)).toBe(false);
+    expect(dayProgress([future], {}, today).total).toBe(0);
+    expect(dayProgress([future], {}, '2026-09-20').total).toBe(1);
   });
 });

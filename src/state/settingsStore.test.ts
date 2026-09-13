@@ -484,3 +484,71 @@ describe('the expenses settings', () => {
     expect(currentSettings().moneyTrendRange).toBe('quarter');
   });
 });
+
+/**
+ * The language and the workout reminder, through the sanitizer.
+ *
+ * Both are read OUTSIDE React by the reminder scheduler (`useReminders` reads
+ * the store directly when the app comes back to the foreground), so a value that
+ * rehydrates wrong is an alarm at the wrong hour or on the wrong day, with
+ * nothing on any screen to show for it.
+ */
+describe('the language and the workout reminder', () => {
+  it('ships in Russian and falls back to it for anything unreadable', () => {
+    expect(DEFAULT_SETTINGS.language).toBe('ru');
+    expect(sanitizeSettings({ language: 'en' }).language).toBe('en');
+    expect(sanitizeSettings({ language: 'fr' } as unknown as Partial<Settings>).language).toBe(
+      'ru',
+    );
+    expect(sanitizeSettings({}).language).toBe('ru');
+  });
+
+  // `=== true`, not `!== false`: a device upgrading from a build with no such
+  // key must not wake up notifying somebody who never asked to be notified.
+  it('keeps the reminder off unless it was explicitly on', () => {
+    expect(DEFAULT_SETTINGS.workoutReminderEnabled).toBe(false);
+    expect(sanitizeSettings({}).workoutReminderEnabled).toBe(false);
+    expect(sanitizeSettings({ workoutReminderEnabled: true }).workoutReminderEnabled).toBe(true);
+  });
+
+  it('drops a weekday nobody could have meant and sorts what is left', () => {
+    expect(
+      sanitizeSettings({ workoutReminderDays: [4, 9, 0, 4, -1] } as unknown as Partial<Settings>)
+        .workoutReminderDays,
+    ).toEqual([0, 4]);
+  });
+
+  it('normalises a legal time and falls back on an illegal one', () => {
+    expect(sanitizeSettings({ workoutReminderTime: '7:05' }).workoutReminderTime).toBe('07:05');
+    expect(sanitizeSettings({ workoutReminderTime: '25:00' }).workoutReminderTime).toBe(
+      DEFAULT_SETTINGS.workoutReminderTime,
+    );
+    expect(
+      sanitizeSettings({ workoutReminderTime: 700 } as unknown as Partial<Settings>)
+        .workoutReminderTime,
+    ).toBe(DEFAULT_SETTINGS.workoutReminderTime);
+  });
+
+  /*
+   * Turning it on with no days picked would arm a reminder that can never fire,
+   * which on screen is a switch that does nothing. Taking the last day away
+   * while it is on is the same state reached from the other side.
+   */
+  it('cannot be armed with no days, from either direction', () => {
+    const s = useSettings.getState();
+    s.setWorkoutReminderEnabled(false);
+    for (const day of [...useSettings.getState().workoutReminderDays]) {
+      s.toggleWorkoutReminderDay(day);
+    }
+    expect(useSettings.getState().workoutReminderDays).toEqual([]);
+
+    s.setWorkoutReminderEnabled(true);
+    expect(useSettings.getState().workoutReminderDays.length).toBeGreaterThan(0);
+    expect(useSettings.getState().workoutReminderEnabled).toBe(true);
+
+    for (const day of [...useSettings.getState().workoutReminderDays]) {
+      s.toggleWorkoutReminderDay(day);
+    }
+    expect(useSettings.getState().workoutReminderEnabled).toBe(false);
+  });
+});

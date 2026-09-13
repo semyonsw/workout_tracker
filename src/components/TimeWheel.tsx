@@ -142,13 +142,27 @@ function Column({
    * each other and the column fights the finger.
    */
   const settled = useRef(value);
+  /** First layout done, so the mount scroll happens exactly once. */
+  const mounted = useRef(false);
 
   const index = Math.max(
     0,
     values.findIndex((v) => v === value),
   );
 
+  /**
+   * Put the column where the value says — but ONLY when the value came from
+   * somewhere else.
+   *
+   * This used to run on every change including the column's own, and that is a
+   * flick that does not work: `scrollTo` during live momentum cancels it, so a
+   * fling meant to spin from 07 to 14 committed 08 and stopped dead there. The
+   * finger's own scrolling needs no correction, so `settled` — which `settle`
+   * has already written — is the test for whose change this is.
+   */
   useEffect(() => {
+    if (mounted.current && settled.current === value) return;
+    mounted.current = true;
     settled.current = value;
     // `animated: false` on mount is deliberate: a wheel that spins to 18:00
     // while the sheet is still arriving is two animations for one act.
@@ -165,6 +179,22 @@ function Column({
     onSelect(next);
   };
 
+  /**
+   * A release that still has speed in it is NOT the answer — momentum is about
+   * to carry the column somewhere else, and `onMomentumScrollEnd` is what will
+   * report where it lands. Committing here as well would log the value the
+   * finger happened to be over at the instant it lifted.
+   *
+   * A slow drag released with no speed produces no momentum event at all, which
+   * is the case this handler exists for: without it, the careful one-row
+   * adjustment at the end is silently ignored.
+   */
+  const settleIfStopped = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const speed = Math.abs(event.nativeEvent.velocity?.y ?? 0);
+    if (speed > 0.05) return;
+    settle(event);
+  };
+
   return (
     <ScrollView
       ref={ref}
@@ -177,7 +207,7 @@ function Column({
       onMomentumScrollEnd={settle}
       // A slow drag released without a flick fires no momentum event — see the
       // file header. This is the half that catches the careful adjustment.
-      onScrollEndDrag={settle}
+      onScrollEndDrag={settleIfStopped}
     >
       {values.map((v) => {
         const selected = v === value;

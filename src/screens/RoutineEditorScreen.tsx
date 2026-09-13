@@ -245,6 +245,16 @@ export interface RoutineDraft {
   items: RoutineItem[];
 }
 
+/**
+ * `display: none` rather than unmounting the list while the die spins.
+ *
+ * Unmounting would throw away every row's measured offset in `rowLayouts`, and
+ * those are what the drag-reorder reads — so the first long press after a roll
+ * would drag against stale geometry. Hidden, the rows keep their layout, take no
+ * space and receive no touches, which is all three things this needs.
+ */
+const HIDDEN_WHILE_ROLLING = { display: 'none' } as const;
+
 export function RoutineEditorScreen({
   routine,
   exercisesById,
@@ -479,9 +489,15 @@ export function RoutineEditorScreen({
             </Text>
           ) : null}
 
-          {/* While the reel spins it stands IN PLACE OF the list: the list is
-              about to be replaced by what the reel is showing, and rendering both
-              would be the screen contradicting itself for a second. */}
+          {/* While the reel spins it stands IN PLACE OF the list, and everything
+              under it goes with it.
+
+              Both halves matter. Leaving the old list on screen under a spinning
+              reel states two routines at once, one of which is a second away from
+              being untrue. And leaving `+ Add exercise` and `Delete routine`
+              reachable means a tap can commit the PRE-ROLL draft and navigate
+              away while the reel is still counting down to overwrite it — the
+              roll then lands on a screen that has gone. */}
           {rolling ? (
             <View className="mx-lg mt-xl">
               <ShuffleReel
@@ -496,16 +512,18 @@ export function RoutineEditorScreen({
             </View>
           ) : null}
 
-          <Kicker className={`mx-lg mb-sm ${lifted ? '' : 'mt-xl'}`}>
-            {t('Exercises')} · {items.length}
-          </Kicker>
+          {rolling ? null : (
+            <Kicker className={`mx-lg mb-sm ${lifted ? '' : 'mt-xl'}`}>
+              {t('Exercises')} · {items.length}
+            </Kicker>
+          )}
 
           {/* The drag surface — its own View around the card rather than the card
               itself, because `ListCard` takes props it understands and would drop
               these on the floor. It claims a touch only while a row is lifted, so
               every tap, every chip and the scroll itself are untouched until then.
               `clip={false}` only while one is up: see the file header. */}
-          <View {...panHandlers}>
+          <View {...panHandlers} style={rolling ? HIDDEN_WHILE_ROLLING : undefined}>
             <ListCard className="mx-lg" clip={!lifted}>
               {items.map((item, index) => {
                 const exercise = exercisesById[item.exerciseId];
@@ -584,7 +602,7 @@ export function RoutineEditorScreen({
             </ListCard>
           </View>
 
-          {lifted ? null : (
+          {lifted || rolling ? null : (
             <View className="mx-lg mt-xl">
               {/* Above `Delete`, and separated from it by its own row: the two are
                   opposite in every way except that they both live at the bottom of

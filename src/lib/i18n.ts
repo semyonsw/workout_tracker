@@ -274,6 +274,7 @@ const RU: Record<string, string> = {
   'Pick at least one day.': 'Выберите хотя бы один день.',
   'Nothing asked for today': 'На сегодня ничего не запланировано',
   'Nothing is scheduled for this day.': 'На этот день ничего не запланировано.',
+  'Coming up': 'Впереди',
   '{done} of {total} done': 'сделано {done} из {total}',
   'Long press a row, then slide. The others open a gap where it will land.':
     'Удержите строку и ведите. Остальные раздвинутся там, где она встанет.',

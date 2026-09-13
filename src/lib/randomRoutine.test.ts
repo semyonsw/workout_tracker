@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { drawableCount, rollRoutine, rolledName, shuffled } from './randomRoutine';
+import { RANDOM_LIMITS, drawableCount, rollRoutine, rolledName, shuffled } from './randomRoutine';
 import type { Exercise, MuscleGroup } from '../types/models';
 
 /**
@@ -178,5 +178,34 @@ describe('the reel’s shuffle', () => {
     const out = shuffled(values, () => 0.5);
     expect([...out].sort()).toEqual(values);
     expect(values).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+/**
+ * The loop that deals the slots is the one place here that could hang: it spins
+ * over the clusters until it has enough, and "enough" is a number computed from
+ * pool sizes. These run it against every count a stepper can produce, with a
+ * real `Math.random`, because a die that freezes the routine editor is the worst
+ * failure this feature has and it would only show up on an unlucky draw.
+ */
+describe('the deal terminates, whatever it is asked for', () => {
+  const small = [exercise('a', 'chest'), exercise('b', 'back'), exercise('c', 'core')];
+
+  it('finishes for every count the sheet can ask for, and never repeats', () => {
+    for (let n = RANDOM_LIMITS.exerciseCount.min; n <= RANDOM_LIMITS.exerciseCount.max; n += 1) {
+      const rolled = rollRoutine(small, { clusters: [], exerciseCount: n, sets: null });
+      const ids = rolled?.exercises.map((e) => e.id) ?? [];
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids.length).toBeLessThanOrEqual(small.length);
+      expect(ids.length).toBeGreaterThan(0);
+    }
+  });
+
+  // `Math.floor(rand() * len)` is an out-of-bounds index when rand() returns 1.
+  it('survives a random source that returns its extremes', () => {
+    for (const rand of [() => 0, () => 0.9999999, () => 1]) {
+      const rolled = rollRoutine(small, { clusters: [], exerciseCount: 3, sets: null }, rand);
+      expect(rolled?.exercises.filter(Boolean)).toHaveLength(3);
+    }
   });
 });

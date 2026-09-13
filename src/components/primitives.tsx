@@ -532,6 +532,11 @@ export function Segmented<T extends string>({
             ].join(' ')}
           >
             <Text
+              /* A segment is a fixed-height pill in a fixed-width row, and the
+                 labels are translated — `Выбранные дни` is half again the width
+                 of `Chosen days`. Wrapping would push the control past 36 and
+                 break the row it sits in, so it clips instead. */
+              numberOfLines={1}
               className={[
                 'text-label',
                 selected ? 'font-semibold text-ink' : 'font-medium text-ink-muted',
@@ -659,7 +664,12 @@ export function PrimaryButton({
         primary ? 'bg-green' : 'border border-hairline bg-surface-alt',
       ].join(' ')}
     >
-      <Text className={`text-body ${primary ? 'font-semibold text-ink' : 'font-medium text-ink'}`}>
+      <Text
+        // Same reason as `Segmented`: the label carries a routine name and a
+        // translation, and this button is a fixed 56 high.
+        numberOfLines={1}
+        className={`text-body ${primary ? 'font-semibold text-ink' : 'font-medium text-ink'}`}
+      >
         {label}
       </Text>
     </BubblePressable>

@@ -165,6 +165,40 @@ export function isSpent(task: Task, today: string): boolean {
   return task.schedule.kind === 'once' && task.schedule.day < today;
 }
 
+/**
+ * One-day tasks whose day has not arrived yet, soonest first.
+ *
+ * ── WHY THIS EXISTS: A TASK YOU CANNOT SEE IS A TASK YOU DID NOT WRITE DOWN ──
+ *
+ * The day screen walks BACKWARDS only, and that refusal is right — there is
+ * nothing to tick in the future and a screen offering to let you tick it would
+ * be offering to lie (`TasksScreen`). But the whole point of a one-day task is
+ * that you write it down for TOMORROW, and with the pager refusing to go there,
+ * saving one produced no visible change whatsoever: the sheet closed, today's
+ * list was identical, and the only honest reading was that the app had lost it.
+ *
+ * So the future rows are LISTED, on today, under the day's list, as a statement
+ * rather than as rows — no circles, nothing to answer. That is the difference
+ * this keeps: you can see what is coming, and you still cannot tick it early.
+ *
+ * Capped, because "what is coming" stops being useful somewhere before it
+ * becomes a second list of everything.
+ */
+export function upcomingOnce(tasks: readonly Task[], today: string, limit = 4): Task[] {
+  return tasks
+    .filter(
+      (task) =>
+        task.archivedAt === null && task.schedule.kind === 'once' && task.schedule.day > today,
+    )
+    .sort((a, b) => {
+      const dayA = a.schedule.kind === 'once' ? a.schedule.day : '';
+      const dayB = b.schedule.kind === 'once' ? b.schedule.day : '';
+      // Soonest first; two on the same day keep their list order.
+      return dayA === dayB ? a.order - b.order : dayA < dayB ? -1 : 1;
+    })
+    .slice(0, limit);
+}
+
 export function entryOf(log: TaskLog, taskId: ID, day: string): TaskEntry {
   return log[taskId]?.[day] ?? EMPTY_ENTRY;
 }
