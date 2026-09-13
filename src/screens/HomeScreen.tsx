@@ -414,7 +414,7 @@ function Empty() {
     <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
       <Kicker>Nothing to open</Kicker>
       <Text className="mt-sm text-body text-ink-muted">
-        Put some exercises in a routine — `Routines`, at the foot of this screen — and it shows up
+        Put some exercises in a routine — Routines, at the foot of this screen — and it shows up
         here, ready to open.
       </Text>
     </View>

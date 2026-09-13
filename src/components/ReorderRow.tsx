@@ -70,12 +70,33 @@ export function ReorderRow({
   const offset = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    /*
+     * THE DROP SNAPS, IT DOES NOT SPRING, and getting this wrong is a flash on
+     * every single reorder.
+     *
+     * While a row is in the air the gap is a LIE the offsets tell: a row shifted
+     * −84 is drawn a slot above where it is laid out. Releasing makes the lie
+     * true — the list re-splices and that row is now really in the slot it was
+     * being drawn in. Springing to zero from there would animate it from where it
+     * already is to where it already is, which on screen is a slide in from the
+     * NEXT slot over: the list rearranging itself a second time, after the
+     * rearrangement the user asked for.
+     *
+     * So the moment nothing is lifted, every offset is zero instantly. The splice
+     * and this run in the same React batch — `useDragReorder.drop` clears the lift
+     * and commits the move together — so there is no frame where the new order is
+     * on screen with an old offset still applied.
+     */
+    if (!dragging) {
+      offset.setValue(0);
+      return;
+    }
     Animated.spring(offset, {
       toValue: shift,
       ...SPRING,
       useNativeDriver: true,
     }).start();
-  }, [offset, shift]);
+  }, [dragging, offset, shift]);
 
   return (
     <Animated.View

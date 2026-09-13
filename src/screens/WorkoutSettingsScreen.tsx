@@ -269,6 +269,10 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
    */
   const toggleHealthConnect = async () => {
     tap();
+    // The line below the card is about the LAST attempt. Leaving a "did not grant
+    // permission" under a switch that is now on would be the screen contradicting
+    // itself, so every attempt starts by clearing it.
+    setNotice(null);
     if (settings.shareToHealthConnect) {
       settings.setShareToHealthConnect(false);
       return;

@@ -183,14 +183,25 @@ export function AppShell() {
    */
   const [focusWorkoutId, setFocusWorkoutId] = useState<ID | null>(null);
   /**
-   * Which day the tasks section is showing.
+   * A past day the user has WALKED TO in the tasks section, or null for today.
    *
    * Held here and not in `TasksScreen` because the month grid — the one control
    * that makes walking back three weeks one tap instead of twenty-one — is a
    * PUSHED screen now, and a day picked in it has to outlive the screen that
    * picked it. Everything else about the tasks belongs to the store.
+   *
+   * NULL RATHER THAN TODAY'S KEY, and it is not a detail. This state used to live
+   * in the screen, where it was re-seeded from the clock every time the screen
+   * mounted — which is to say every time the tab changed. Lifting it up here made
+   * it outlive that, and a stored `2026-09-13` would have gone stale in two ways:
+   * the app left open past midnight would keep offering yesterday's circles to
+   * tick, and coming back to the section days later would land on whatever day was
+   * last read rather than on today. Null is "follow the clock", so both answer
+   * themselves, and `leaveSection` below drops the pin on the way out so the old
+   * behaviour — leave the section, come back to today — is exactly preserved.
    */
-  const [taskDay, setTaskDay] = useState(() => dayKey(new Date()));
+  const [pinnedTaskDay, setPinnedTaskDay] = useState<string | null>(null);
+  const taskDay = pinnedTaskDay ?? dayKey(new Date());
   const [stack, setStack] = useState<Route[]>([]);
   const [query, setQuery] = useState('');
   /*
@@ -332,6 +343,25 @@ export function AppShell() {
   );
   /** Every pushed screen dismissed at once, back to the tab bar. */
   const popToRoot = useCallback(() => setStack([]), []);
+
+  /**
+   * Changing section, by the bar or by a swipe — the one path, so the two cannot
+   * leave different state behind.
+   *
+   * It does one thing beyond `setTab`: LEAVING the tasks unpins the day. Walking
+   * back to last Tuesday is a thing you do inside that section, not a place you
+   * want the app to still be sitting in the next time you open it — and before
+   * this state was lifted out of `TasksScreen`, the unmount did exactly this for
+   * free. Pushing a screen (the month grid, a task's own screen) is not leaving,
+   * so the pin survives the trip that sets it.
+   */
+  const selectTab = useCallback(
+    (next: TabName) => {
+      if (tab === 'Tasks' && next !== 'Tasks') setPinnedTaskDay(null);
+      setTab(next);
+    },
+    [tab],
+  );
 
   /**
    * Open one finished workout, wherever the tap came from: go to the workout
@@ -1195,7 +1225,7 @@ export function AppShell() {
         /* A square tapped is a day to ANSWER, so it lands on the screen where the
            circles are rather than leaving the grid open over it. */
         onPickDay={(day) => {
-          setTaskDay(day);
+          setPinnedTaskDay(day);
           pop();
         }}
       />
@@ -1218,7 +1248,7 @@ export function AppShell() {
           clearly horizontal gesture, so every scroll, every row and the
           long-press-then-slide reorder inside these screens are untouched — see
           `components/SwipePager.tsx`. */}
-      <SwipePager onSwipe={(delta) => setTab((current) => stepSection(current, delta))}>
+      <SwipePager onSwipe={(delta) => selectTab(stepSection(tab, delta))}>
         {/* Keyed on the tab, so switching roots remounts this and the arrival
             replays — the same panel never re-enters just because something inside
             it re-rendered. The flick gets the same entrance the tap does. See
@@ -1254,7 +1284,7 @@ export function AppShell() {
                  pushed route, and a day picked in it has to survive the screen
                  that picked it being unmounted. */
               day={taskDay}
-              onChangeDay={setTaskDay}
+              onChangeDay={setPinnedTaskDay}
             />
           ) : null}
 
@@ -1280,7 +1310,7 @@ export function AppShell() {
         </PanelEnter>
       </SwipePager>
 
-      <TabBar active={tab} onSelect={setTab} />
+      <TabBar active={tab} onSelect={selectTab} />
     </View>
   );
 }

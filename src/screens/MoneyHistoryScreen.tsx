@@ -67,7 +67,7 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
   const opensOn = useSettings((s) => s.moneyTrendRange);
   const [range, setRange] = useState<TrendRange>(opensOn);
   const [direction, setDirection] = useState<Direction>(
-    useSettings.getState().moneyDefaultDirection,
+    () => useSettings.getState().moneyDefaultDirection,
   );
 
   const today = dayKey(new Date());
