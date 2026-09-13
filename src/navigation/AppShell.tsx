@@ -48,6 +48,15 @@ import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SequenceScreen } from '../screens/SequenceScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { CategoryScreen } from '../screens/CategoryScreen';
+import { MoneyScreen } from '../screens/MoneyScreen';
+import { MoreScreen } from '../screens/MoreScreen';
+import { NewCategoryScreen } from '../screens/NewCategoryScreen';
+import { TaskDetailScreen } from '../screens/TaskDetailScreen';
+import { TaskEditorScreen } from '../screens/TaskEditorScreen';
+import { TasksScreen } from '../screens/TasksScreen';
+import { TransactionEditorScreen } from '../screens/TransactionEditorScreen';
+import { OptionSheet } from '../components/OptionSheet';
 import {
   historyByExerciseId,
   recentlyUsedExerciseIds,
@@ -72,10 +81,14 @@ import { searchExercises } from '../lib/search';
 import { useActiveWorkout } from '../state/activeWorkoutStore';
 import { routineUsageCount, useLibrary } from '../state/libraryStore';
 import { platesInForce, useSettings } from '../state/settingsStore';
+import { useFinance } from '../state/financeStore';
+import { useTasks } from '../state/taskStore';
+import { periodLabel, periodName, periodRange, toDayKey } from '../lib/money';
 import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore';
 import { seedUser } from '../data/seed';
 import type { CompletedWorkout } from '../lib/completedWorkout';
 import type { Exercise, ID, MuscleGroup, SetHistory, UnitSystem } from '../types/models';
+import type { MoneyKind, Period, PeriodKind } from '../types/finance';
 
 /** Screens pushed on top of a tab. `session` is pushed and owns the screen. */
 type Route =
@@ -112,7 +125,25 @@ type Route =
     }
   | { name: 'editExercise'; exerciseId: ID }
   | { name: 'exerciseHistory'; exerciseId: ID }
-  | { name: 'sequence' };
+  | { name: 'sequence' }
+  /*
+   * The three `More` destinations. They are pushed routes rather than tab roots
+   * because they stopped being tabs (see `TabBar`), and a pushed route gets the
+   * back gesture, the header chevron and the stack's own leave rule for free.
+   */
+  | { name: 'routines' }
+  | { name: 'library' }
+  | { name: 'settings' }
+  /** One money category, inside whatever window the Money tab is showing. */
+  | { name: 'category'; categoryId: ID }
+  /**
+   * One amount, new or existing. `txnId` null is a new one; `categoryId` is what it
+   * arrives pre-filled with when the trip started inside a category.
+   */
+  | { name: 'transaction'; txnId: ID | null; categoryId?: ID }
+  | { name: 'newCategory' }
+  | { name: 'task'; taskId: ID }
+  | { name: 'taskEditor'; taskId: ID | null };
 
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
@@ -129,6 +160,22 @@ export function AppShell() {
    */
   const [focusWorkoutId, setFocusWorkoutId] = useState<ID | null>(null);
   const [stack, setStack] = useState<Route[]>([]);
+  /*
+   * THE MONEY SECTION'S WINDOW, and the day the Tasks tab is on, both live here
+   * rather than in their screens. Opening a category and coming back must land on
+   * the month you were reading, and a screen that owns its own period loses it on
+   * every unmount — which is every navigation.
+   *
+   * `todayKey` is read once per render rather than stored: a launch that spans
+   * midnight should not leave the Tasks tab insisting it is yesterday.
+   */
+  const [period, setPeriod] = useState<Period>(() => ({
+    kind: 'month',
+    anchor: toDayKey(new Date()),
+  }));
+  const [moneyKind, setMoneyKind] = useState<MoneyKind>('expense');
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+  const [taskDay, setTaskDay] = useState(() => toDayKey(new Date()));
   const [query, setQuery] = useState('');
   /*
    * Which library sections are open. Held here rather than in the screen so a trip
@@ -166,6 +213,22 @@ export function AppShell() {
    * setting does. A primitive selector, so it is a stable snapshot.
    */
   const restSecondsBetweenSets = useSettings((s) => s.restSecondsBetweenSets);
+
+  /*
+   * The money and task stores, read here for the same reason the library is: the
+   * shell owns navigation, and navigation needs to resolve an id into the row it is
+   * about before it can push a screen for it. The screens subscribe to these stores
+   * themselves for everything else.
+   */
+  const categories = useFinance((s) => s.categories);
+  const transactions = useFinance((s) => s.transactions);
+  const addCategory = useFinance((s) => s.addCategory);
+  const addTransaction = useFinance((s) => s.addTransaction);
+  const updateTransaction = useFinance((s) => s.updateTransaction);
+  const deleteTransaction = useFinance((s) => s.deleteTransaction);
+  const tasks = useTasks((s) => s.tasks);
+  const addTask = useTasks((s) => s.addTask);
+  const updateTask = useTasks((s) => s.updateTask);
 
   const session = useActiveWorkout((s) => s.session);
   const startSession = useActiveWorkout((s) => s.startSession);
@@ -976,6 +1039,157 @@ export function AppShell() {
   }
 
   /* ------------------------------------------------------------------ */
+  /* The `More` destinations — routines, library, settings                */
+  /* ------------------------------------------------------------------ */
+
+  if (top?.name === 'routines') {
+    return (
+      <RoutineListScreen
+        routines={routines}
+        exercisesById={exercisesById}
+        sequence={sequence}
+        onOpen={(routineId) => push({ name: 'routineEditor', routineId })}
+        onStartWorkout={handleOpenWorkout}
+        onCreate={handleAddRoutine}
+        onOpenSequence={() => push({ name: 'sequence' })}
+        onBack={pop}
+      />
+    );
+  }
+
+  if (top?.name === 'library') {
+    return (
+      <LibraryTab
+        query={query}
+        exercises={exercises}
+        matches={matches}
+        recentlyUsed={recentlyUsed}
+        expanded={expanded}
+        onToggleExpanded={toggleExpanded}
+        onChangeQuery={setQuery}
+        onPick={(exerciseId) => push({ name: 'exerciseHistory', exerciseId })}
+        onCreate={handleCreate}
+        onDelete={setDeleting}
+        deleting={deleting}
+        onCancelDelete={() => setDeleting(null)}
+        onConfirmDelete={deleteExercise}
+        routineUses={(id) => routineUsageCount(routines, id)}
+        onBack={pop}
+      />
+    );
+  }
+
+  if (top?.name === 'settings') return <SettingsScreen onBack={pop} />;
+
+  /* ------------------------------------------------------------------ */
+  /* Money                                                               */
+  /* ------------------------------------------------------------------ */
+
+  if (top?.name === 'category') {
+    const category = categories.find((row) => row.id === top.categoryId);
+    // Archived-and-then-deleted, or a stale route after a restore: there is nothing
+    // to show and nothing to say about it, so the stack unwinds instead.
+    if (!category) return <MissingScreen onBack={pop} />;
+    return (
+      <CategoryScreen
+        category={category}
+        period={period}
+        onBack={pop}
+        onOpenTransaction={(txnId) => push({ name: 'transaction', txnId })}
+        onAddTransaction={() => push({ name: 'transaction', txnId: null, categoryId: category.id })}
+        onDeleted={pop}
+      />
+    );
+  }
+
+  if (top?.name === 'newCategory') {
+    return (
+      <NewCategoryScreen
+        initialKind={moneyKind}
+        onBack={pop}
+        onCreate={(input) => {
+          const created = addCategory(input);
+          /*
+           * Straight into the amount that prompted the category. Making a bucket is
+           * never the goal — recording what went into it is — and the two-step
+           * "add category, find it, add amount" is where that intent gets lost.
+           */
+          replaceTop({ name: 'transaction', txnId: null, categoryId: created.id });
+          setMoneyKind(created.kind);
+        }}
+      />
+    );
+  }
+
+  if (top?.name === 'transaction') {
+    const existing = top.txnId ? (transactions.find((txn) => txn.id === top.txnId) ?? null) : null;
+    if (top.txnId && !existing) return <MissingScreen onBack={pop} />;
+    return (
+      <TransactionEditorScreen
+        existing={existing}
+        initialKind={moneyKind}
+        /*
+         * A new amount lands on a day INSIDE the window being looked at: today when
+         * that window contains today, and otherwise the window's first day. Somebody
+         * reading March and tapping `Add expense` means March.
+         */
+        initialDate={defaultDateFor(period)}
+        initialCategoryId={top.categoryId}
+        onBack={pop}
+        onSave={(draft) => {
+          if (existing) updateTransaction(existing.id, draft);
+          else addTransaction(draft);
+          pop();
+        }}
+        onDelete={
+          existing
+            ? () => {
+                deleteTransaction(existing.id);
+                pop();
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Tasks                                                               */
+  /* ------------------------------------------------------------------ */
+
+  if (top?.name === 'task') {
+    const task = tasks.find((row) => row.id === top.taskId);
+    if (!task) return <MissingScreen onBack={pop} />;
+    return (
+      <TaskDetailScreen
+        task={task}
+        dayKey={taskDay}
+        onSelectDay={setTaskDay}
+        onEdit={() => push({ name: 'taskEditor', taskId: task.id })}
+        onBack={pop}
+        onDeleted={pop}
+      />
+    );
+  }
+
+  if (top?.name === 'taskEditor') {
+    const existing = top.taskId ? (tasks.find((row) => row.id === top.taskId) ?? null) : null;
+    if (top.taskId && !existing) return <MissingScreen onBack={pop} />;
+    return (
+      <TaskEditorScreen
+        existing={existing}
+        dayKey={taskDay}
+        onBack={pop}
+        onSave={(draft) => {
+          if (existing) updateTask(existing.id, draft);
+          else addTask(draft);
+          pop();
+        }}
+      />
+    );
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Tab roots                                                           */
   /* ------------------------------------------------------------------ */
 
@@ -1000,6 +1214,29 @@ export function AppShell() {
             // A past session opens where past sessions live. The History row is
             // the detail view — it expands in place — so there is nothing to push.
             onOpenSession={openWorkout}
+          />
+        ) : null}
+
+        {tab === 'Tasks' ? (
+          <TasksScreen
+            dayKey={taskDay}
+            todayKey={toDayKey(new Date())}
+            onChangeDay={setTaskDay}
+            onOpenTask={(taskId) => push({ name: 'task', taskId })}
+            onAddTask={() => push({ name: 'taskEditor', taskId: null })}
+          />
+        ) : null}
+
+        {tab === 'Money' ? (
+          <MoneyScreen
+            period={period}
+            onChangePeriod={setPeriod}
+            kind={moneyKind}
+            onChangeKind={setMoneyKind}
+            onOpenPeriodPicker={() => setPeriodPickerOpen(true)}
+            onOpenCategory={(categoryId) => push({ name: 'category', categoryId })}
+            onAddCategory={() => push({ name: 'newCategory' })}
+            onAddTransaction={() => push({ name: 'transaction', txnId: null })}
           />
         ) : null}
 
@@ -1032,41 +1269,41 @@ export function AppShell() {
           />
         ) : null}
 
-        {tab === 'Routines' ? (
-          <RoutineListScreen
-            routines={routines}
-            exercisesById={exercisesById}
-            sequence={sequence}
-            onOpen={(routineId) => push({ name: 'routineEditor', routineId })}
-            onStartWorkout={handleOpenWorkout}
-            onCreate={handleAddRoutine}
-            onOpenSequence={() => push({ name: 'sequence' })}
+        {tab === 'More' ? (
+          <MoreScreen
+            routineCount={routines.length}
+            exerciseCount={exercises.length}
+            taskCount={tasks.filter((task) => !task.isArchived).length}
+            categoryCount={categories.filter((category) => !category.isArchived).length}
+            onOpenRoutines={() => push({ name: 'routines' })}
+            onOpenLibrary={() => push({ name: 'library' })}
+            onOpenSettings={() => push({ name: 'settings' })}
           />
         ) : null}
-
-        {tab === 'Library' ? (
-          <LibraryTab
-            query={query}
-            exercises={exercises}
-            matches={matches}
-            recentlyUsed={recentlyUsed}
-            expanded={expanded}
-            onToggleExpanded={toggleExpanded}
-            onChangeQuery={setQuery}
-            onPick={(exerciseId) => push({ name: 'exerciseHistory', exerciseId })}
-            onCreate={handleCreate}
-            onDelete={setDeleting}
-            deleting={deleting}
-            onCancelDelete={() => setDeleting(null)}
-            onConfirmDelete={deleteExercise}
-            routineUses={(id) => routineUsageCount(routines, id)}
-          />
-        ) : null}
-
-        {tab === 'Settings' ? <SettingsScreen /> : null}
       </PanelEnter>
 
       <TabBar active={tab} onSelect={setTab} />
+
+      {/* Over the tab bar rather than inside the Money panel: it is a modal answer
+          to "which window", and a sheet that the tab bar sits on top of reads as a
+          part of the page instead. */}
+      {periodPickerOpen ? (
+        <OptionSheet
+          title="Time interval"
+          options={PERIOD_OPTIONS.map((kind) => ({
+            value: kind,
+            label: periodName(kind),
+            detail:
+              kind === 'all' ? 'Everything recorded' : periodLabel({ kind, anchor: period.anchor }),
+          }))}
+          value={period.kind}
+          onSelect={(kind) => {
+            setPeriod({ kind, anchor: period.anchor });
+            setPeriodPickerOpen(false);
+          }}
+          onCancel={() => setPeriodPickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -1266,6 +1503,48 @@ function Fallback({ onBack }: { onBack: () => void }) {
         This was deleted while you were looking at it.
       </Text>
       <View className="mt-xl w-full">
+        <PrimaryButton label="Back" variant="ghost" onPress={onBack} />
+      </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Small shell-level helpers                                           */
+/* ------------------------------------------------------------------ */
+
+/** The order the period sheet lists windows in: widest last, day first. */
+const PERIOD_OPTIONS: readonly PeriodKind[] = ['day', 'week', 'month', 'year', 'all'];
+
+/**
+ * The date a new amount starts on: today when today is inside the window being
+ * looked at, and otherwise the window's first day.
+ *
+ * Somebody reading `March 2026` and tapping `Add expense` means March — filing it
+ * under today would put it in a month they are not looking at and then hide it from
+ * the screen that prompted it. `All time` has no first day, so it means today.
+ */
+function defaultDateFor(period: Period): string {
+  const today = toDayKey(new Date());
+  const range = periodRange(period);
+  if (!range) return today;
+  if (today >= range.from && today <= range.to) return today;
+  return range.from;
+}
+
+/**
+ * A pushed screen whose subject is gone — a category archived away, a transaction
+ * deleted on another screen, a task removed by a restore.
+ *
+ * It exists rather than the shell popping silently, because popping during a render
+ * is a state update inside a render. One sentence and a way out is also the honest
+ * answer: something WAS here.
+ */
+function MissingScreen({ onBack }: { onBack: () => void }) {
+  return (
+    <View className="flex-1 items-center justify-center bg-bg px-xl">
+      <Text className="text-center text-body text-ink-muted">That isn&apos;t here any more.</Text>
+      <View className="mt-lg w-full">
         <PrimaryButton label="Back" variant="ghost" onPress={onBack} />
       </View>
     </View>

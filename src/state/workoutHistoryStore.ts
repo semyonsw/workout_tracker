@@ -92,6 +92,8 @@ import {
   writeWorkouts,
 } from './historyDb';
 import { currentSettings } from './settingsStore';
+import { markAutoTask } from './taskStore';
+import { toDayKey } from '../lib/money';
 import { bodyweightAt } from '../lib/bodyweightLog';
 import {
   addExerciseToWorkout,
@@ -396,6 +398,23 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
      * not.
      */
     writeWorkouts([workout]);
+
+    /*
+     * A DAY YOU TRAINED IS A DAY THE WORKOUT TASK WAS DONE.
+     *
+     * The one line that makes the training log and the task list the same app. It is
+     * here rather than in a screen because finishing is the event — the Finish sheet
+     * is one of two ways to reach it, and a tick that only happens when a particular
+     * component is mounted is a tick that goes missing the first time the flow
+     * changes. Ticked against the day the workout STARTED, which is the day it is
+     * filed under everywhere else in the app; a session that runs past midnight
+     * belongs to the day you walked into the gym.
+     *
+     * Deliberately after the database write and before the in-memory update: this
+     * must not happen for a workout that failed to persist, and it must not be
+     * something the screen waits on. `lib/taskSync.ts` has the rule it applies.
+     */
+    markAutoTask('workout', toDayKey(new Date(workout.startedAt)));
 
     const withoutDuplicate = get().workouts.filter((w) => w.id !== workout.id);
     set({

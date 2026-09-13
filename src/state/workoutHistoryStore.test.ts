@@ -22,6 +22,8 @@ import { historyByExerciseId, type CompletedWorkout } from '../lib/completedWork
 import { evaluateOverload } from '../lib/progressiveOverload';
 import { seedExercises, seedRoutine, seedUser } from '../data/seed';
 import { DEFAULT_SETTINGS, useSettings } from './settingsStore';
+import { useTasks } from './taskStore';
+import { toDayKey } from '../lib/money';
 import { fixtureHistoryByExerciseId } from '../../test/fixtures/history';
 import type { Exercise, ID } from '../types/models';
 
@@ -1445,5 +1447,50 @@ describe('editing a finished workout', () => {
     expect(useWorkoutHistory.getState().editWorkout('nope', { title: 'x' })).toBe(false);
     expect(useWorkoutHistory.getState().addWorkoutSet('nope', 'ex_x')).toBe(false);
     expect(useWorkoutHistory.getState().deleteWorkoutExercise('nope', 'ex_x')).toBe(false);
+  });
+});
+
+/**
+ * The seam between the training log and the task list. Finishing is the event that
+ * ticks the workout task, so it is tested where finishing happens rather than where
+ * the tick is written.
+ */
+describe('finishing a workout ticks the workout task', () => {
+  beforeEach(() => {
+    useTasks.setState({ tasks: [], log: {}, notes: {} });
+  });
+
+  it('ticks the day the workout STARTED, not the day it ended', () => {
+    const startedAt = '2026-08-17T12:00:00.000Z';
+    useWorkoutHistory
+      .getState()
+      .saveSession(loggedDraft(startedAt), new Date('2026-08-18T12:00:00.000Z'));
+
+    const task = useTasks.getState().tasks.find((t) => t.auto === 'workout');
+    expect(task).toBeTruthy();
+    /*
+     * Asserted through `toDayKey` rather than against a literal, because the day a
+     * workout belongs to is a LOCAL question and the suite runs in whatever zone the
+     * machine is in. What is being checked is which instant the key comes from: this
+     * session ended a day after it started, and the tick follows the start.
+     */
+    expect(Object.keys(useTasks.getState().log[task!.id])).toEqual([toDayKey(new Date(startedAt))]);
+  });
+
+  it('does not tick for a session with nothing logged in it', () => {
+    const empty = buildDraftSession({
+      routine: seedRoutine,
+      exercisesById,
+      historyByExerciseId: fixtureHistoryByExerciseId,
+      policy: seedUser.overloadPolicy,
+      unitSystem: 'metric',
+      defaultRestSeconds: 120,
+      defaultTransitionRestSeconds: 150,
+      startedAt: '2026-08-17T17:00:00.000Z',
+      now: new Date('2026-08-17T17:00:00.000Z'),
+    });
+
+    expect(useWorkoutHistory.getState().saveSession(empty)).toBeNull();
+    expect(useTasks.getState().tasks).toHaveLength(0);
   });
 });

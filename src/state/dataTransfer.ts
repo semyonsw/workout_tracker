@@ -42,7 +42,9 @@
 
 import { serializeBackup, type BackupCounts, type BackupPayload } from '../lib/backup';
 import type { CsvImportPlan } from '../lib/csvImport';
+import { useFinance } from './financeStore';
 import { useLibrary } from './libraryStore';
+import { useTasks } from './taskStore';
 import { sanitizeSettings, useSettings } from './settingsStore';
 import { useWorkoutHistory } from './workoutHistoryStore';
 
@@ -59,6 +61,18 @@ export function currentSnapshot(): BackupPayload {
     sequence: library.sequence,
     workouts: useWorkoutHistory.getState().workouts,
     numbering: useWorkoutHistory.getState().numbering,
+    /*
+     * The other two sections. Read the same way and written into the same file,
+     * because "back up my data" has meant all of it since the app stopped being
+     * only a training log — a backup that silently covers one section out of three
+     * is the worst kind, since it is trusted exactly as much as a complete one.
+     */
+    tasks: useTasks.getState().tasks,
+    taskLog: useTasks.getState().log,
+    taskNotes: useTasks.getState().notes,
+    categories: useFinance.getState().categories,
+    transactions: useFinance.getState().transactions,
+    currency: useFinance.getState().currency,
   };
 }
 
@@ -187,6 +201,21 @@ export function applyBackup(payload: BackupPayload): AppliedCounts {
   });
   const workouts = useWorkoutHistory.getState().importWorkouts(payload.workouts, payload.numbering);
 
+  /*
+   * ABSENT IS NOT EMPTY. A file written before the app had tasks or money carries
+   * neither key, and importing `undefined` as "no tasks" would let an old backup
+   * delete a section it never knew about. Only a file that actually says what the
+   * user's tasks are gets to replace them.
+   */
+  const tasks = payload.tasks
+    ? useTasks.getState().importTasks(payload.tasks, payload.taskLog, payload.taskNotes).tasks
+    : undefined;
+  const finance = payload.categories
+    ? useFinance
+        .getState()
+        .importFinance(payload.categories, payload.transactions, payload.currency)
+    : undefined;
+
   let sets = 0;
   for (const workout of useWorkoutHistory.getState().workouts) sets += workout.sets.length;
 
@@ -195,6 +224,8 @@ export function applyBackup(payload: BackupPayload): AppliedCounts {
     routines: library.routines,
     workouts,
     sets,
+    tasks,
+    transactions: finance?.transactions,
     settingsApplied,
   };
 }

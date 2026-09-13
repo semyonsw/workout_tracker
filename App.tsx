@@ -30,6 +30,11 @@
  *     key, and it stays quiet either way: a migration that could not run tries
  *     again next launch, and a dialog on launch about a storage system the user has
  *     never heard of is worse than a History tab that fills itself in tomorrow.
+ *   • the CARRY-OVER, which writes the training log this app was built around into
+ *     a phone that has never held it. Once, ever: the flag is written before the
+ *     import so that a failure cannot re-apply it over work the user has since
+ *     done, and so that deleting the carried log makes it stay deleted. See
+ *     `state/firstRun.ts`.
  *   • the AUTOMATIC BACKUP, which writes the whole log into a folder the user has
  *     granted, if the last copy is old enough. Here because launch is the only
  *     moment a sideloaded app can reliably run anything (see `lib/notify.ts` on
@@ -53,6 +58,7 @@ import { AppShell } from './src/navigation/AppShell';
 import { prepareAudio } from './src/lib/beeper';
 import { ensureTimerChannels, requestNotificationPermission } from './src/lib/notify';
 import { migrateHistoryIfNeeded, useWorkoutHistory } from './src/state/workoutHistoryStore';
+import { carryOverIfNeeded } from './src/state/firstRun';
 import { useAutoBackup } from './src/hooks/useAutoBackup';
 
 /*
@@ -122,6 +128,12 @@ export default function App() {
      * to place.
      */
     void migrateHistoryIfNeeded();
+    /*
+     * Also once, and after the migration is asked for rather than before: a phone
+     * upgrading from Workout Tracker has a log to bring across, and the carried
+     * copy must not be what it finds when it gets there. See `state/firstRun.ts`.
+     */
+    void carryOverIfNeeded();
   }, []);
 
   return (

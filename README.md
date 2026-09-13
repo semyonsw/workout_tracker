@@ -1,4 +1,4 @@
-# Workout Tracker
+# semyonsw
 
 [![Install](https://img.shields.io/badge/install-one%20double--click-2b8a3e)](INSTALL.md)
 [![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-3ddc84)](INSTALL.md)
@@ -6,8 +6,24 @@
 [![Tests](https://img.shields.io/badge/tests-700%2B-1f9d55)](#tests)
 [![Storage](https://img.shields.io/badge/storage-local--first-0b7285)](#what-it-does)
 
-A minimal, local-first Android workout tracker built around one rule: **logging a
-set that repeats last session costs one tap.**
+A minimal, local-first Android app for one person's three logs — **training,
+daily tasks and money** — built around one rule: **recording something that
+repeats costs one tap.**
+
+It started as a workout tracker, and that half is still the biggest half of it.
+What it gained is two more sections and one seam between them:
+
+| Tab | What it holds |
+|---|---|
+| **Today** · **History** | the training log — routines, sessions, sets, progressive overload |
+| **Tasks** | what each day asks for, and what was done. Ticks, misses and notes, back to February 2026 |
+| **Money** | expenses and income by category, in any window — a day, a week, a month, a year, all of it — including whole months typed in from memory |
+| **More** | routines, the exercise library, settings, backup and restore |
+
+**The seam:** finishing a workout ticks the day's workout task, and recording an
+amount ticks the expense one — on the date the thing happened, not the date the
+app noticed. If there is no such task yet, one is made. See
+[`src/lib/taskSync.ts`](src/lib/taskSync.ts).
 
 > ### Install it
 >

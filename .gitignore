@@ -29,7 +29,8 @@ node_modules/
 # history is a rewrite, which is the repo owner's call and not a side effect of a
 # release change.
 *.apk
-!workout-tracker-1.0.1.apk
+!semyonsw-0.0.0.apk
+!workout-tracker-1.4.0.apk
 *.aab
 dist/
 web-build/

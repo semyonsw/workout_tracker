@@ -1,6 +1,6 @@
 {
-  "name": "workout-tracker",
-  "version": "1.4.0",
+  "name": "semyonsw",
+  "version": "0.0.0",
   "main": "expo/AppEntry.js",
   "private": true,
   "scripts": {

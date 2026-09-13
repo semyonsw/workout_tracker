@@ -57,12 +57,21 @@ export const BACKUP_FORMAT = 'workout-tracker-backup';
  */
 export const BACKUP_VERSION = 1;
 
-/** Human-readable row counts. Written for the reader; never trusted on the way in. */
+/**
+ * Human-readable row counts. Written for the reader; never trusted on the way in.
+ *
+ * The last two are OPTIONAL, and that is what lets this format grow without every
+ * older file becoming a file with missing fields: a backup written before the app
+ * had tasks or money simply has neither key, and `describeCounts` says nothing about
+ * what was not in it rather than claiming zero.
+ */
 export interface BackupCounts {
   exercises: number;
   routines: number;
   workouts: number;
   sets: number;
+  tasks?: number;
+  transactions?: number;
 }
 
 /**
@@ -86,6 +95,23 @@ export interface BackupPayload {
    * fact in the app that cannot be recomputed from the sessions themselves.
    */
   numbering?: unknown;
+  /* ---- the other two sections of the app ---- */
+  /**
+   * The daily tasks, their log and their notes; the money categories, the amounts
+   * and the currency. All optional, all passed through as `unknown`, all validated
+   * by the store that owns them — rule 3 does not bend for a section being newer.
+   *
+   * OPTIONAL IS LOAD-BEARING ON THE WAY IN, not just on the way out: a file written
+   * before these existed must not read as "the user has no tasks", because a
+   * restore that empties the task list from an old backup is the format eating data
+   * it never carried. `applyBackup` leaves a section alone when the key is absent.
+   */
+  tasks?: unknown[];
+  taskLog?: unknown;
+  taskNotes?: unknown;
+  categories?: unknown[];
+  transactions?: unknown[];
+  currency?: unknown;
 }
 
 export interface BackupEnvelope extends BackupPayload {
@@ -116,6 +142,10 @@ export function countPayload(payload: BackupPayload): BackupCounts {
     routines: payload.routines.length,
     workouts: payload.workouts.length,
     sets,
+    // `undefined` rather than 0 for a payload that carries no tasks or money at
+    // all — see the note on `BackupCounts`.
+    tasks: payload.tasks?.length,
+    transactions: payload.transactions?.length,
   };
 }
 
@@ -220,6 +250,17 @@ export function parseBackup(text: string): ParseResult {
     // from before either existed simply has neither.
     sequence: source.sequence ?? null,
     numbering: source.numbering ?? null,
+    /*
+     * `undefined` when the key is missing, which is the difference between "this
+     * backup says you have no tasks" and "this backup is from before tasks". Only
+     * the first of those should empty anything.
+     */
+    tasks: Array.isArray(source.tasks) ? source.tasks : undefined,
+    taskLog: source.taskLog,
+    taskNotes: source.taskNotes,
+    categories: Array.isArray(source.categories) ? source.categories : undefined,
+    transactions: Array.isArray(source.transactions) ? source.transactions : undefined,
+    currency: source.currency,
   };
   const counts = countPayload(payload);
 
@@ -244,5 +285,11 @@ export function describeCounts(counts: BackupCounts): string {
     plural(counts.sets, 'set'),
     plural(counts.exercises, 'exercise'),
     plural(counts.routines, 'routine'),
-  ].join(' · ');
+    // Only when the file carried them. A backup from before the app had tasks
+    // should not be described as having lost them.
+    counts.tasks === undefined ? null : plural(counts.tasks, 'task'),
+    counts.transactions === undefined ? null : plural(counts.transactions, 'amount'),
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

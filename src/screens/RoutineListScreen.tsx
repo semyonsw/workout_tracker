@@ -1,15 +1,21 @@
 /**
- * RoutineListScreen — the `Routines` tab.
+ * RoutineListScreen — the routines, reached from `More`.
+ *
+ * It was the `Routines` TAB until the app grew a task list and a money section and
+ * the five roots were spent on things opened daily (see `components/TabBar.tsx`).
+ * Nothing about the screen changed with the move except the chevron at the top: a
+ * routine is edited once a month and trained from twice a week, and the training is
+ * already one tap away on Today.
  *
  * Not one of the fourteen designed frames: it is the landing surface the tab bar
- * needs in order to lead somewhere. Deliberately built from nothing but the
+ * needed in order to lead somewhere. Deliberately built from nothing but the
  * primitives the designed screens already establish — 64-high two-line rows, an
  * `Add routine` footer — so it inherits the system rather than inventing a
  * fifteenth layout to maintain.
  *
  * TWO TARGETS PER ROW, and they answer different questions. The row opens the
  * routine to EDIT it; the ▶ on the right OPENS THE WORKOUT (which then starts on
- * its own `Start` — see `ActiveWorkoutScreen`). This tab is where someone is
+ * its own `Start` — see `ActiveWorkoutScreen`). This screen is where someone is
  * already looking at their routines, so it can reach either without a detour.
  *
  * The `Training sequence` row at the top is the way in to the optional running
@@ -21,6 +27,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '../components/Icon';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { pressedStyle } from '../components/motion';
 import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
 import { describeItemsFocus } from '../lib/muscles';
@@ -36,6 +43,13 @@ interface RoutineListScreenProps {
   onStartWorkout: (routineId: ID) => void;
   onCreate: () => void;
   onOpenSequence: () => void;
+  /**
+   * Present when this screen is PUSHED from `More` rather than being a tab root.
+   * Routines stopped being a root when the app grew a money section and a task
+   * list (see `components/TabBar.tsx`), and a pushed screen with no way back is a
+   * screen you can only leave with the hardware key.
+   */
+  onBack?: () => void;
 }
 
 export function RoutineListScreen({
@@ -46,15 +60,17 @@ export function RoutineListScreen({
   onStartWorkout,
   onCreate,
   onOpenSequence,
+  onBack,
 }: RoutineListScreenProps) {
   const insets = useSafeAreaInsets();
   const stepCount = sequence.routineIds.length;
 
   return (
     <View className="flex-1 bg-bg">
+      {onBack ? <ScreenHeader kicker="Routines" onBack={onBack} bordered={false} /> : null}
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingTop: insets.top + 24, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: onBack ? 16 : insets.top + 24, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
         <Kicker className="mx-lg mb-sm">Sequence</Kicker>

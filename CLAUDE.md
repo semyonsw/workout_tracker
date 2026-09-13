@@ -1,5 +1,22 @@
 # Working on this repo
 
+## What this app is
+
+`semyonsw` — one local-first Android app holding three logs: **training** (the
+original Workout Tracker, unchanged below the tab bar), **daily tasks**, and
+**money**. Five tab roots: `Today`, `Tasks`, `Money`, `History`, `More`; routines,
+the library and settings moved behind `More` when the other two became roots.
+
+The three sections meet in exactly one place — `src/lib/taskSync.ts`: finishing a
+workout ticks the workout task, recording an amount ticks the expense one, on the
+date of the thing rather than the date the app noticed. Keep that the only seam.
+
+The money and task maths live in `src/lib/money.ts` and `src/lib/tasks.ts` as pure
+functions, for the same reason the training maths does: tested without a renderer
+and without a clock. `src/data/carriedTraining.ts` and `src/data/tasksSeed.ts` are
+GENERATED from the exports the app was seeded from — data, not code, and not worth
+hand-editing.
+
 ## Finish every change with a release
 
 A change that only exists in `src/` has not reached the phone. The app is
@@ -9,7 +26,7 @@ follow-up**. After every change, without being asked:
 1. **Bump the version.** `app.json` (`version` and `android.versionCode`, both) and
    `package.json`. Patch bump unless the change is bigger than that.
 2. **Build the APK** (below) and copy it to the repo root as
-   `workout-tracker-<version>.apk`.
+   `semyonsw-<version>.apk`.
 3. **Commit and push to `main`.** Short, plain commit message — one line, no essay.
 
 The point of step 2 is that the user copies that file to the phone and installs it
@@ -68,11 +85,17 @@ applies them:
   `android/gradle.properties` says `android.minSdkVersion=26` after a prebuild;
   Health Connect will not compile below it.
 
-`android/app/debug.keystore` IS THE ONLY COPY. `/android/` is gitignored, so that
-file exists nowhere else — not in the repo, not in CI. It is the key the phone's
-install is signed with (`FA:C6:17:45…`), and losing it means the only way to update
-the app is an uninstall that deletes the training log. Back it up before anything
-that regenerates `android/`, and check its checksum afterwards.
+`android/app/debug.keystore` IS THE ONLY COPY, and the one in the tree now is NOT the
+one Workout Tracker 1.4.0 was signed with — `/android/` is gitignored, the old
+keystore was never anywhere else, and the 0.0.0 build regenerated it. That is
+survivable only because the package name changed with it: `semyonsw` is
+`com.semyonsw.semyonsw`, a different app from `com.semyonsw.workouttracker`, so
+there is nothing on the phone for it to fail to update. It installs beside the old
+one, and the old one can be kept until the new one has been trusted for a while.
+
+From 0.0.0 onward the rule is back in force: losing this keystore means the only way
+to update the app is an uninstall that deletes everything it holds. Back it up before
+anything that regenerates `android/`, and check its checksum afterwards.
 
 ## Verify the artifact, never the source
 
@@ -110,7 +133,7 @@ other half of the proof.
 
 ## `.gitignore` has `*.apk`
 
-The committed APK is force-added. `git add -f workout-tracker-<version>.apk`, or the
+The committed APK is force-added. `git add -f semyonsw-<version>.apk`, or the
 release quietly contains no release.
 
 ## Before committing
