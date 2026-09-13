@@ -505,4 +505,8 @@ export interface RecentSessionSummary {
   title: string;
   performedAt: ISODateTime;
   durationMinutes: number;
+  setCount: number;
+  totalVolumeKg: number;
+  /** Some sets carried no weight, so the volume is a floor, not a total. */
+  volumeIsPartial: boolean;
 }

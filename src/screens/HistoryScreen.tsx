@@ -155,6 +155,7 @@ import {
   formatCount,
   formatDuration,
   formatShortDate,
+  formatVolumeKg,
   formatWeight,
   kgToLb,
   lbToKg,
@@ -387,7 +388,7 @@ export function HistoryScreen({
             totals.workouts > 0
               ? `${totals.workouts} ${totals.workouts === 1 ? 'workout' : 'workouts'} · ${totals.sets} sets${
                   totals.volumeKg > 0 && !totals.volumeIsPartial
-                    ? ` · ${formatKg(totals.volumeKg)}`
+                    ? ` · ${formatVolumeKg(totals.volumeKg)}`
                     : ''
                 }`
               : undefined
@@ -646,7 +647,7 @@ function WorkoutRow({
             {exerciseCount} {exerciseCount === 1 ? 'exercise' : 'exercises'} · {workout.setCount}{' '}
             {workout.setCount === 1 ? 'set' : 'sets'}
             {workout.totalVolumeKg > 0 && !workout.volumeIsPartial
-              ? ` · ${formatKg(workout.totalVolumeKg)}`
+              ? ` · ${formatVolumeKg(workout.totalVolumeKg)}`
               : ''}
             {/* HOW IT FELT, where the user said. Appended in `ink-faint` rather
                 than given a badge: it is one more fact on a line of facts, and a
@@ -1311,13 +1312,3 @@ function describeTotal(exercise: CompletedExercise): string | null {
  * silently loses its grouping on one build and not another is not worth the
  * dependency for one regex.
  */
-function formatKg(kg: number): string {
-  const digits = String(Math.max(0, Math.round(kg)));
-  let grouped = '';
-  for (let i = 0; i < digits.length; i += 1) {
-    const fromEnd = digits.length - i;
-    if (i > 0 && fromEnd % 3 === 0) grouped += ' ';
-    grouped += digits[i];
-  }
-  return `${grouped} kg`;
-}

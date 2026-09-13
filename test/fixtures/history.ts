@@ -117,8 +117,40 @@ export const fixtureHistoryByExerciseId: Record<string, SetHistory[]> = fixtureH
 
 /** Rolled-up session summaries — a session's duration is not in its sets. */
 export const fixtureRecentSessions: RecentSessionSummary[] = [
-  { id: 's87', title: 'Pull + swimming', performedAt: '2026-08-08T18:00:00.000Z', durationMinutes: 74 },
-  { id: 's86', title: 'Boxing (cardio)', performedAt: '2026-08-06T18:00:00.000Z', durationMinutes: 53 },
-  { id: 's85', title: 'Push', performedAt: '2026-08-04T18:00:00.000Z', durationMinutes: 51 },
-  { id: 's84', title: 'Pull + swimming', performedAt: '2026-07-30T18:00:00.000Z', durationMinutes: 69 },
+  {
+    id: 's87',
+    title: 'Pull + swimming',
+    performedAt: '2026-08-08T18:00:00.000Z',
+    durationMinutes: 74,
+    setCount: 25,
+    totalVolumeKg: 6240,
+    volumeIsPartial: false,
+  },
+  {
+    id: 's86',
+    title: 'Boxing (cardio)',
+    performedAt: '2026-08-06T18:00:00.000Z',
+    durationMinutes: 53,
+    setCount: 16,
+    totalVolumeKg: 0,
+    volumeIsPartial: true,
+  },
+  {
+    id: 's85',
+    title: 'Push',
+    performedAt: '2026-08-04T18:00:00.000Z',
+    durationMinutes: 51,
+    setCount: 8,
+    totalVolumeKg: 1900,
+    volumeIsPartial: false,
+  },
+  {
+    id: 's84',
+    title: 'Pull + swimming',
+    performedAt: '2026-07-30T18:00:00.000Z',
+    durationMinutes: 69,
+    setCount: 24,
+    totalVolumeKg: 5980,
+    volumeIsPartial: false,
+  },
 ];

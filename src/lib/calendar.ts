@@ -39,7 +39,13 @@
  * what makes a 23:40 session appear on the right square.
  */
 
+import { MONTH_NAMES, dayKey, weekdayIndex } from './days';
 import type { CompletedWorkout } from './completedWorkout';
+
+// `dayKey` and the weekday order live in `lib/days.ts` now — three logs hang off
+// the same calendar. Re-exported because this module's callers have always got
+// them from here.
+export { dayKey, WEEKDAY_INITIALS } from './days';
 
 /** One cell. `day` is null for the leading blanks before the 1st. */
 export interface CalendarCell {
@@ -63,34 +69,6 @@ export interface CalendarMonth {
   total: number;
   /** Days in this month with at least one workout. */
   daysTrained: number;
-}
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-/** Monday-first weekday index: Mon = 0 … Sun = 6. */
-function weekdayIndex(date: Date): number {
-  return (date.getDay() + 6) % 7;
-}
-
-/** `YYYY-MM-DD` in LOCAL time — the day the user was standing in. */
-export function dayKey(at: string | Date): string {
-  const date = at instanceof Date ? at : new Date(at);
-  if (!Number.isFinite(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 /**
@@ -211,6 +189,3 @@ export function describeMonth(month: CalendarMonth): string | null {
   if (month.daysTrained === month.total) return workouts;
   return `${workouts} · ${month.daysTrained} days`;
 }
-
-/** The column headings, Monday first. */
-export const WEEKDAY_INITIALS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;

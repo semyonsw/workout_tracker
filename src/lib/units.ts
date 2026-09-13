@@ -243,3 +243,22 @@ export function daysBetween(a: Date | string, b: Date | string): number {
   };
   return Math.round(Math.abs(startOfDayUTC(a) - startOfDayUTC(b)) / 86_400_000);
 }
+
+/**
+ * A session's total volume, grouped: `6 240 kg`.
+ *
+ * A SPACE rather than a comma, because this figure sits in a line beside dates
+ * and set counts and a comma there reads as a list separator. It lived in
+ * `HistoryScreen` until the Today screen started printing the same number, and
+ * two copies of a grouping rule is how two screens end up disagreeing about it.
+ */
+export function formatVolumeKg(kg: number): string {
+  const digits = String(Math.max(0, Math.round(kg)));
+  let grouped = '';
+  for (let i = 0; i < digits.length; i += 1) {
+    const fromEnd = digits.length - i;
+    if (i > 0 && fromEnd % 3 === 0) grouped += ' ';
+    grouped += digits[i];
+  }
+  return `${grouped} kg`;
+}

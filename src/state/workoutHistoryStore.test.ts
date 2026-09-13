@@ -430,7 +430,7 @@ describe('derived', () => {
     expect(totals.volumeKg).toBe(workouts.reduce((n, w) => n + w.totalVolumeKg, 0));
   });
 
-  it('recentSummaries takes the newest few, in four fields', () => {
+  it('recentSummaries takes the newest few, and no more of a workout than a row shows', () => {
     const { saveSession } = useWorkoutHistory.getState();
     for (let day = 1; day <= 6; day += 1) {
       saveSession(loggedDraft(`2026-08-0${day}T17:00:00.000Z`));
@@ -439,11 +439,17 @@ describe('derived', () => {
     const recent = recentSummaries(useWorkoutHistory.getState().workouts, 4);
     expect(recent).toHaveLength(4);
     expect(recent[0].performedAt).toBe('2026-08-06T17:00:00.000Z');
+    // The Today screen's row prints exactly these and a summary carries exactly
+    // these: a summary that dragged the whole `sets` array along would be a
+    // second copy of the log, one screen away from going stale.
     expect(Object.keys(recent[0]).sort()).toEqual([
       'durationMinutes',
       'id',
       'performedAt',
+      'setCount',
       'title',
+      'totalVolumeKg',
+      'volumeIsPartial',
     ]);
   });
 

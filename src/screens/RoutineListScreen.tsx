@@ -21,6 +21,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '../components/Icon';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { pressedStyle } from '../components/motion';
 import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
 import { describeItemsFocus } from '../lib/muscles';
@@ -36,6 +37,8 @@ interface RoutineListScreenProps {
   onStartWorkout: (routineId: ID) => void;
   onCreate: () => void;
   onOpenSequence: () => void;
+  /** Present since this screen moved out of the tab bar and under `More`. */
+  onBack?: () => void;
 }
 
 export function RoutineListScreen({
@@ -46,15 +49,17 @@ export function RoutineListScreen({
   onStartWorkout,
   onCreate,
   onOpenSequence,
+  onBack,
 }: RoutineListScreenProps) {
   const insets = useSafeAreaInsets();
   const stepCount = sequence.routineIds.length;
 
   return (
     <View className="flex-1 bg-bg">
+      {onBack ? <ScreenHeader kicker="Routines" onBack={onBack} bordered={false} /> : null}
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingTop: insets.top + 24, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: onBack ? 8 : insets.top + 24, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
         <Kicker className="mx-lg mb-sm">Sequence</Kicker>

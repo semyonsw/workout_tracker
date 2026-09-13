@@ -1,24 +1,33 @@
 /**
- * TabBar — Today / History / Routines / Library / Settings.
+ * TabBar — Today / Tasks / Money / History / More.
  *
  * This bar exists ONLY outside a session. During a workout the session owns the
  * whole screen: there is nothing else to do while you are mid-set, and a tab bar
- * would put "Library" one thumb-slip away from the ✓.
+ * would put another log one thumb-slip away from the ✓.
  *
  * Text only, no icons. Words are faster to read than glyphs you have to learn,
- * and the app's icon budget is spent on things that do something.
+ * and the app's icon budget is spent on things that do something. The icon set
+ * was drawn and compared; it cost the label two pixels and the app five glyphs,
+ * and bought nothing a word was not already saying.
  *
- * FIVE IS THE CEILING, and History is the fifth. It earns a root rather than a
- * corner of Today because it is the second reason to open the app at all — you
- * either train, or you look at what you have trained. The labels stay at 13px
- * (`History` is the second-shortest of the five, so nothing truncates); a sixth
- * root would not fit, so anything else that needs a home goes inside one of these.
+ * ── FIVE IS STILL THE CEILING ─────────────────────────────────────────────
+ *
+ * It used to be Today · History · Routines · Library · Settings. Two more logs
+ * arrived — the daily tasks and the money — and both are a reason to open the
+ * app on their own, which is the test a root has to pass. So three training
+ * screens that are NOT reasons to open the app gave up their roots: Routines,
+ * the Library and Settings are all things you go to in order to change something
+ * you set up once, and they now live one tap inside `More`.
+ *
+ * The labels stay at 13px. `History` is the longest of the five and still does
+ * not truncate at 360 dp; a sixth root would not fit, so anything else that
+ * needs a home goes inside one of these.
  */
 
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export const TABS = ['Today', 'History', 'Routines', 'Library', 'Settings'] as const;
+export const TABS = ['Today', 'Tasks', 'Money', 'History', 'More'] as const;
 export type TabName = (typeof TABS)[number];
 
 interface TabBarProps {

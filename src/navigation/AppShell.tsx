@@ -48,6 +48,12 @@ import { RoutineEditorScreen } from '../screens/RoutineEditorScreen';
 import { RoutineListScreen } from '../screens/RoutineListScreen';
 import { SequenceScreen } from '../screens/SequenceScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { AmountEditorScreen } from '../screens/AmountEditorScreen';
+import { CategoryDetailScreen } from '../screens/CategoryDetailScreen';
+import { MoneyScreen } from '../screens/MoneyScreen';
+import { MoreScreen } from '../screens/MoreScreen';
+import { TaskDetailScreen } from '../screens/TaskDetailScreen';
+import { TasksScreen } from '../screens/TasksScreen';
 import {
   historyByExerciseId,
   recentlyUsedExerciseIds,
@@ -73,6 +79,10 @@ import { useActiveWorkout } from '../state/activeWorkoutStore';
 import { routineUsageCount, useLibrary } from '../state/libraryStore';
 import { platesInForce, useSettings } from '../state/settingsStore';
 import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore';
+import { useMoney } from '../state/moneyStore';
+import { useTasks } from '../state/tasksStore';
+import { dayKey } from '../lib/days';
+import type { Interval } from '../lib/money';
 import { seedUser } from '../data/seed';
 import type { CompletedWorkout } from '../lib/completedWorkout';
 import type { Exercise, ID, MuscleGroup, SetHistory, UnitSystem } from '../types/models';
@@ -112,7 +122,17 @@ type Route =
     }
   | { name: 'editExercise'; exerciseId: ID }
   | { name: 'exerciseHistory'; exerciseId: ID }
-  | { name: 'sequence' };
+  | { name: 'sequence' }
+  /* The three training screens that gave up their tab roots to the tasks and the
+     money, and now live one tap inside `More`. See `components/TabBar.tsx`. */
+  | { name: 'routines' }
+  | { name: 'library' }
+  | { name: 'settings' }
+  | { name: 'taskDetail'; taskId: ID }
+  /* The window travels with the tap, so the category opens on the one the tile
+     was read through rather than resetting to this month. */
+  | { name: 'moneyCategory'; categoryId: ID; interval: Interval; anchor: string }
+  | { name: 'moneyAmount'; amountId: ID | null; categoryId: ID | null };
 
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
@@ -375,6 +395,13 @@ export function AppShell() {
   const historyById = useMemo(() => historyByExerciseId(workouts), [workouts]);
 
   const recent = useMemo(() => recentSummaries(workouts), [workouts]);
+
+  /* The two other logs. Read here rather than in the screens only where a
+     PUSHED route needs to resolve its subject — the tab roots read the stores
+     themselves, like `SettingsScreen` does. */
+  const tasks = useTasks((s) => s.tasks);
+  const categories = useMoney((s) => s.categories);
+  const amounts = useMoney((s) => s.amounts);
 
   /**
    * Every workout's ordinal — "workout 92" — from the one pinned pair.
@@ -687,6 +714,19 @@ export function AppShell() {
             if (saved) advanceSequence(saved.routineId);
 
             /*
+             * ...and the day's `Gym / Boxing` task answers itself.
+             *
+             * On the day the workout STARTED, not today: a session begun at
+             * 23:40 and finished after midnight is Tuesday's training, and the
+             * tick belongs on the square the calendar will draw it on.
+             *
+             * It never overrules a day already answered — see
+             * `tasksStore.tickAuto` — so a day marked "missed on purpose" that
+             * then turns into a workout keeps the mark the user chose.
+             */
+            if (saved) useTasks.getState().tickAuto('workout', dayKey(saved.startedAt));
+
+            /*
              * ...and the rest of the phone is told a workout happened, if the user
              * has switched that on and granted it.
              *
@@ -976,6 +1016,78 @@ export function AppShell() {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Pushed out of `More`, and the two logs' own detail screens          */
+  /* ------------------------------------------------------------------ */
+
+  if (top?.name === 'routines') {
+    return (
+      <RoutineListScreen
+        routines={routines}
+        exercisesById={exercisesById}
+        sequence={sequence}
+        onOpen={(routineId) => push({ name: 'routineEditor', routineId })}
+        onStartWorkout={handleOpenWorkout}
+        onCreate={handleAddRoutine}
+        onOpenSequence={() => push({ name: 'sequence' })}
+        onBack={pop}
+      />
+    );
+  }
+
+  if (top?.name === 'library') {
+    return (
+      <LibraryTab
+        query={query}
+        exercises={exercises}
+        matches={matches}
+        recentlyUsed={recentlyUsed}
+        expanded={expanded}
+        onToggleExpanded={toggleExpanded}
+        onChangeQuery={setQuery}
+        onBack={pop}
+        onPick={(exerciseId) => push({ name: 'exerciseHistory', exerciseId })}
+        onCreate={handleCreate}
+        onDelete={setDeleting}
+        deleting={deleting}
+        onCancelDelete={() => setDeleting(null)}
+        onConfirmDelete={deleteExercise}
+        routineUses={(id) => routineUsageCount(routines, id)}
+      />
+    );
+  }
+
+  if (top?.name === 'settings') {
+    return <SettingsScreen onBack={pop} />;
+  }
+
+  if (top?.name === 'taskDetail') {
+    const task = tasks.find((row) => row.id === top.taskId);
+    if (!task) return <Fallback onBack={pop} />;
+    return <TaskDetailScreen task={task} onBack={pop} />;
+  }
+
+  if (top?.name === 'moneyCategory') {
+    const category = categories.find((row) => row.id === top.categoryId);
+    if (!category) return <Fallback onBack={pop} />;
+    return (
+      <CategoryDetailScreen
+        category={category}
+        interval={top.interval}
+        anchor={top.anchor}
+        onBack={pop}
+        onOpenAmount={(amountId) => push({ name: 'moneyAmount', amountId, categoryId: null })}
+        onAddAmount={() => push({ name: 'moneyAmount', amountId: null, categoryId: category.id })}
+      />
+    );
+  }
+
+  if (top?.name === 'moneyAmount') {
+    const amount = top.amountId ? (amounts.find((row) => row.id === top.amountId) ?? null) : null;
+    if (top.amountId && !amount) return <Fallback onBack={pop} />;
+    return <AmountEditorScreen amount={amount} categoryId={top.categoryId} onBack={pop} />;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Tab roots                                                           */
   /* ------------------------------------------------------------------ */
 
@@ -1032,38 +1144,28 @@ export function AppShell() {
           />
         ) : null}
 
-        {tab === 'Routines' ? (
-          <RoutineListScreen
-            routines={routines}
-            exercisesById={exercisesById}
-            sequence={sequence}
-            onOpen={(routineId) => push({ name: 'routineEditor', routineId })}
-            onStartWorkout={handleOpenWorkout}
-            onCreate={handleAddRoutine}
-            onOpenSequence={() => push({ name: 'sequence' })}
+        {tab === 'Tasks' ? (
+          <TasksScreen onOpenTask={(taskId) => push({ name: 'taskDetail', taskId })} />
+        ) : null}
+
+        {tab === 'Money' ? (
+          <MoneyScreen
+            onOpenCategory={(categoryId, interval, anchor) =>
+              push({ name: 'moneyCategory', categoryId, interval, anchor })
+            }
+            onAddAmount={(categoryId) => push({ name: 'moneyAmount', amountId: null, categoryId })}
           />
         ) : null}
 
-        {tab === 'Library' ? (
-          <LibraryTab
-            query={query}
-            exercises={exercises}
-            matches={matches}
-            recentlyUsed={recentlyUsed}
-            expanded={expanded}
-            onToggleExpanded={toggleExpanded}
-            onChangeQuery={setQuery}
-            onPick={(exerciseId) => push({ name: 'exerciseHistory', exerciseId })}
-            onCreate={handleCreate}
-            onDelete={setDeleting}
-            deleting={deleting}
-            onCancelDelete={() => setDeleting(null)}
-            onConfirmDelete={deleteExercise}
-            routineUses={(id) => routineUsageCount(routines, id)}
+        {tab === 'More' ? (
+          <MoreScreen
+            routineCount={routines.length}
+            exerciseCount={exercises.length}
+            onOpenRoutines={() => push({ name: 'routines' })}
+            onOpenLibrary={() => push({ name: 'library' })}
+            onOpenSettings={() => push({ name: 'settings' })}
           />
         ) : null}
-
-        {tab === 'Settings' ? <SettingsScreen /> : null}
       </PanelEnter>
 
       <TabBar active={tab} onSelect={setTab} />

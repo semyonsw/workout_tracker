@@ -965,5 +965,8 @@ export function recentSummaries(
     title: workout.title,
     performedAt: workout.startedAt,
     durationMinutes: workout.durationMinutes,
+    setCount: workout.setCount,
+    totalVolumeKg: workout.totalVolumeKg,
+    volumeIsPartial: workout.volumeIsPartial,
   }));
 }

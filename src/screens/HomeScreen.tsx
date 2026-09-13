@@ -49,7 +49,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Icon } from '../components/Icon';
 import { pressedStyle } from '../components/motion';
 import { Kicker, ListCard, PrimaryButton, Separator } from '../components/primitives';
-import { formatShortDate } from '../lib/units';
+import { formatShortDate, formatVolumeKg } from '../lib/units';
 import { palette } from '../theme/tokens';
 import type { ID, RecentSessionSummary } from '../types/models';
 
@@ -159,12 +159,18 @@ export function HomeScreen({
         {sequence ? <SequenceStrip sequence={sequence} onPress={onOpenSequence} /> : null}
 
         {next ? (
-          <View className="mx-lg mt-xl rounded-surface border border-hairline bg-surface p-lg">
-            {/* `NEXT UP`, not `TODAY`: the sequence is a queue offering the next
-                thing, and the list below is the rest of the offer. */}
-            <Kicker>Next up{next.focus ? ` · ${next.focus}` : ''}</Kicker>
-            <Text className="mt-sm text-title font-medium text-ink">{next.name}</Text>
-            <Text className="mt-xs text-label tabular-nums text-ink-muted">
+          <View className="mx-lg mt-xl rounded-surface border border-hairline bg-green-wash p-lg">
+            {/* `TODAY`, and the tinted surface, because this card is now one of
+                three things the tab bar offers and it has to say which day it is
+                talking about. The queue is still a queue — the list under it is
+                the rest of the offer — but `NEXT UP` described the sequence,
+                and the sequence is a detail of how this routine got chosen. */}
+            <Kicker>Today</Kicker>
+            <Text className="mt-sm text-title font-semibold text-ink">{next.name}</Text>
+            {next.focus ? (
+              <Text className="mt-xs text-label text-ink-muted">{next.focus}</Text>
+            ) : null}
+            <Text className="mt-xs text-label tabular-nums text-green-bright">
               {next.exerciseCount} exercises · {next.setCount} sets
               {next.nudgeCount > 0
                 ? ` · ${next.nudgeCount} ${next.nudgeCount === 1 ? 'nudge' : 'nudges'} waiting`
@@ -179,7 +185,7 @@ export function HomeScreen({
         {others.length > 0 ? (
           <>
             <Kicker className="mx-lg mb-md mt-xxl">
-              {next ? 'Or start another' : 'Start a workout'}
+              {next ? 'Other routines' : 'Start a workout'}
             </Kicker>
             <ListCard className="mx-lg">
               {others.map((choice, index) => (
@@ -318,32 +324,51 @@ function RecentRow({
   onPress: () => void;
 }) {
   const numbered = number != null && number >= 1;
+  /*
+   * Two lines rather than one, and the ordinal moved INLINE with the title.
+   *
+   * The single line ran out of room once the set count and the volume joined it
+   * — and those two are the reason to look at a past session at all, since the
+   * date and the duration only say that it happened. The `#91` keeps its green
+   * and its tabular weight, but it is now a prefix on the title rather than a
+   * column, because there is no second column left to align it against.
+   */
+  const detail = [
+    formatShortDate(session.performedAt),
+    `${session.durationMinutes} min`,
+    `${session.setCount} sets`,
+    // A volume built from sets that carried no weight is a floor, not a total,
+    // so it is left off rather than stated wrongly.
+    session.totalVolumeKg > 0 && !session.volumeIsPartial
+      ? formatVolumeKg(session.totalVolumeKg)
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={[
-        numbered ? `Workout ${number},` : '',
-        session.title,
-        formatShortDate(session.performedAt),
-        `${session.durationMinutes} minutes`,
-      ]
+      accessibilityLabel={[numbered ? `Workout ${number},` : '', session.title, detail]
         .filter(Boolean)
         .join(' ')}
       style={pressedStyle}
-      className="h-row flex-row items-center px-lg"
+      className="h-row-lg flex-row items-center px-lg"
     >
-      {/* Same left column as the History rows, so the number reads the same in
-          both places. */}
-      <Text className="w-[38px] text-label font-semibold tabular-nums text-green-bright">
-        {numbered ? `#${number}` : ''}
-      </Text>
-      <Text numberOfLines={1} className="flex-1 text-body font-medium text-ink">
-        {session.title}
-      </Text>
-      <Text className="ml-md text-label tabular-nums text-ink-faint">
-        {formatShortDate(session.performedAt)} · {session.durationMinutes} min
-      </Text>
+      <View className="flex-1">
+        <Text numberOfLines={1} className="text-body text-ink">
+          {numbered ? (
+            <Text className="text-label font-semibold tabular-nums text-green-bright">
+              {`#${number}  `}
+            </Text>
+          ) : null}
+          {session.title}
+        </Text>
+        <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
+          {detail}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -354,8 +379,7 @@ function Empty() {
     <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
       <Kicker>Nothing to open</Kicker>
       <Text className="mt-sm text-body text-ink-muted">
-        Put some exercises in a routine — Routines, in the tab bar — and it shows up here, ready to
-        open.
+        Put some exercises in a routine — More, then Routines — and it shows up here, ready to open.
       </Text>
     </View>
   );

@@ -210,7 +210,7 @@ function onThisPhone(): BackupCounts {
   return countPayload(currentSnapshot());
 }
 
-export function SettingsScreen() {
+export function SettingsScreen({ onBack }: { onBack?: () => void }) {
   const settings = useSettings();
   /**
    * The bulk half of `Make every exercise a rep ladder`. The flag lives in
@@ -637,7 +637,7 @@ export function SettingsScreen() {
   return (
     <View className="flex-1 bg-bg">
       <View className="flex-1" style={asking ? { opacity: 0.28 } : undefined}>
-        <ScreenHeader kicker="Settings" bordered={false} />
+        <ScreenHeader kicker="Settings" onBack={onBack} bordered={false} />
 
         <ScrollView
           className="flex-1"
