@@ -7,8 +7,12 @@ import {
   dayProgress,
   describeSchedule,
   describeTaskRow,
+  reorderWithinVisible,
   streakOf,
+  summarizeTaskTrend,
   taskMonth,
+  taskTrendSeries,
+  tasksMonth,
   tasksOn,
 } from './tasks';
 
@@ -227,5 +231,168 @@ describe('the month grid', () => {
   it('tallies asked days up to today, excused ones excluded', () => {
     // Mon/Wed/Fri up to the 13th: 2, 4, 7, 9, 11 — the 4th was excused.
     expect(month).toMatchObject({ done: 2, asked: 4 });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Order                                                               */
+/* ------------------------------------------------------------------ */
+
+describe('reordering from a day that is showing a subset', () => {
+  it('moves a row to the position the finger stopped at', () => {
+    expect(reorderWithinVisible(['a', 'b', 'c'], ['a', 'b', 'c'], 'c', 0)).toEqual(['c', 'a', 'b']);
+    expect(reorderWithinVisible(['a', 'b', 'c'], ['a', 'b', 'c'], 'a', 2)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('dropping a row back where it came from is a no-op', () => {
+    expect(reorderWithinVisible(['a', 'b', 'c'], ['a', 'b', 'c'], 'b', 1)).toEqual(['a', 'b', 'c']);
+  });
+
+  /*
+   * THE ONE THAT MATTERS. On a Tuesday the Mon/Wed/Fri task is not on screen, so
+   * "third visible row to the top" must not be read as "index 2 to index 0" in a
+   * list the user cannot see. The hidden row keeps its slot; the visible ones are
+   * permuted among their own.
+   */
+  it('permutes only the VISIBLE rows, and leaves a hidden one in its slot', () => {
+    const all = ['daily1', 'mwf', 'daily2', 'daily3'];
+    const visible = ['daily1', 'daily2', 'daily3'];
+
+    // daily3 (third visible) to the top of the visible list.
+    expect(reorderWithinVisible(all, visible, 'daily3', 0)).toEqual([
+      'daily3',
+      'mwf',
+      'daily1',
+      'daily2',
+    ]);
+  });
+
+  it('clamps a drop past the end rather than refusing it', () => {
+    expect(reorderWithinVisible(['a', 'b'], ['a', 'b'], 'a', 99)).toEqual(['b', 'a']);
+  });
+
+  it('leaves the list alone when the moved row is not one of the visible ones', () => {
+    expect(reorderWithinVisible(['a', 'b', 'c'], ['a', 'b'], 'c', 0)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The trend                                                           */
+/* ------------------------------------------------------------------ */
+
+describe('the habit line', () => {
+  const daily = task({ id: 't1', startedOn: '2026-09-10' });
+
+  it('plots percent done, one point per day, oldest first', () => {
+    const points = taskTrendSeries(
+      [daily],
+      log('t1', { '2026-09-10': 'done', '2026-09-12': 'done' }),
+      'week',
+      '2026-09-13',
+    );
+
+    // The week is 7 days, but the task only started on the 10th — days before
+    // `startedOn` ask for nothing, so they are not points.
+    expect(points.map((p) => p.day)).toEqual([
+      '2026-09-10',
+      '2026-09-11',
+      '2026-09-12',
+      '2026-09-13',
+    ]);
+    expect(points.map((p) => p.value)).toEqual([100, 0, 100, 0]);
+  });
+
+  it('leaves out a day that asked for nothing rather than plotting it as a zero', () => {
+    const mwf = task({ id: 't1', schedule: { kind: 'weekdays', days: [0, 2, 4] } });
+    const points = taskTrendSeries([mwf], {}, 'week', '2026-09-13');
+    // Mon 7, Wed 9, Fri 11 in that window — Tuesday is not a day you failed.
+    expect(points.map((p) => p.day)).toEqual(['2026-09-07', '2026-09-09', '2026-09-11']);
+  });
+
+  it('a day excused on purpose leaves the denominator, exactly like the day bar', () => {
+    const a = task({ id: 't1', startedOn: '2026-09-12' });
+    const b = task({ id: 't2', startedOn: '2026-09-12' });
+    const marks: TaskLog = {
+      ...log('t1', { '2026-09-12': 'done' }),
+      ...log('t2', { '2026-09-12': 'missed' }),
+    };
+
+    const [point] = taskTrendSeries([a, b], marks, 'week', '2026-09-12');
+    expect(point.asked).toBe(1);
+    expect(point.value).toBe(100);
+  });
+
+  it('summarizes the range over the whole of it, not as an average of averages', () => {
+    const a = task({ id: 't1', startedOn: '2026-09-12' });
+    const b = task({ id: 't2', startedOn: '2026-09-12' });
+    const marks: TaskLog = {
+      ...log('t1', { '2026-09-12': 'done', '2026-09-13': 'done' }),
+      ...log('t2', { '2026-09-13': 'done' }),
+    };
+
+    const summary = summarizeTaskTrend(taskTrendSeries([a, b], marks, 'week', '2026-09-13'));
+    expect(summary.days).toBe(2);
+    expect(summary.asked).toBe(4);
+    expect(summary.done).toBe(3);
+    expect(summary.percent).toBe(75);
+    // Only the 13th had everything answered.
+    expect(summary.perfectDays).toBe(1);
+  });
+
+  it('`all time` starts on the day the log did, not on an arbitrary floor', () => {
+    const old = task({ id: 't1', startedOn: '2026-09-11' });
+    const points = taskTrendSeries([old], {}, 'all', '2026-09-13');
+    expect(points[0].day).toBe('2026-09-11');
+    expect(points).toHaveLength(3);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The month, across every task                                        */
+/* ------------------------------------------------------------------ */
+
+describe('a month of the whole list', () => {
+  const a = task({ id: 't1', startedOn: '2026-09-01' });
+  const b = task({ id: 't2', startedOn: '2026-09-01' });
+  const marks: TaskLog = {
+    ...log('t1', { '2026-09-01': 'done', '2026-09-02': 'done' }),
+    ...log('t2', { '2026-09-01': 'done' }),
+  };
+
+  it('fills each square by the share of that day that got done', () => {
+    const month = tasksMonth([a, b], marks, 2026, 8, '2026-09-03');
+    const cells = Object.fromEntries(
+      month.weeks
+        .flat()
+        .filter((cell) => cell.date)
+        .map((cell) => [cell.date, cell]),
+    );
+
+    expect(cells['2026-09-01'].fraction).toBe(1);
+    expect(cells['2026-09-02'].fraction).toBe(0.5);
+    expect(cells['2026-09-03'].fraction).toBe(0);
+  });
+
+  it('pads only at the START — a trailing blank would draw days that have not happened', () => {
+    const month = tasksMonth([a], {}, 2026, 8, '2026-09-30');
+    // 1 September 2026 is a Tuesday, so one lead cell in a Monday-first grid.
+    expect(month.weeks[0][0].day).toBeNull();
+    expect(month.weeks[0][1].day).toBe(1);
+    expect(month.weeks[month.weeks.length - 1].length).toBeLessThanOrEqual(7);
+  });
+
+  it('a day in the FUTURE is blank rather than a zero: it has not been missed', () => {
+    const month = tasksMonth([a], {}, 2026, 8, '2026-09-03');
+    const cells = month.weeks.flat();
+    expect(cells.find((cell) => cell.date === '2026-09-04')?.isBlank).toBe(true);
+    expect(cells.find((cell) => cell.date === '2026-09-03')?.isBlank).toBe(false);
+    // ...and it is not in the month's totals either.
+    expect(month.days).toBe(3);
+  });
+
+  it('counts the month up to today, excusals left out of the denominator', () => {
+    const month = tasksMonth([a, b], marks, 2026, 8, '2026-09-02');
+    expect(month.done).toBe(3);
+    expect(month.asked).toBe(4);
   });
 });

@@ -49,6 +49,8 @@ import {
   shiftDay,
   weekdayIndex,
 } from './days';
+import { moveToIndex } from './reorder';
+import { rangeLength, type TrendRange } from './trends';
 import type { ID } from '../types/models';
 
 /** Monday = 0 … Sunday = 6, matching the Monday-first grid the app draws. */
@@ -261,4 +263,249 @@ export function taskMonth(
 /** How many days apart two days are, for "since 4 January 2026" style copy. */
 export function ageInDays(from: string, to: string): number {
   return Math.max(0, daysBetween(from, to));
+}
+
+/* ------------------------------------------------------------------ */
+/* Order                                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Reorder the WHOLE list from a move made inside a VISIBLE SUBSET of it.
+ *
+ * The day screen only shows the tasks that asked for something today, so a
+ * Mon/Wed/Fri row is simply not on screen on a Tuesday — and dragging the third
+ * visible row to the top has to mean "third visible goes above first visible",
+ * not "index 2 goes to index 0" in a list the user cannot see. Those two are the
+ * same answer only on a day when everything is scheduled, which is exactly the
+ * day the bug hides.
+ *
+ * So: the visible rows are permuted among THEIR OWN SLOTS, and every task that
+ * was not on screen keeps the position it had. A task hidden between two visible
+ * ones stays between them, which is the only behaviour that makes a Tuesday drag
+ * and a Wednesday drag agree with each other.
+ *
+ * `toIndex` is a position in the visible list WITHOUT the moved row — what a drop
+ * position on screen is — so dropping a row back where it came from is a no-op.
+ * Shared with `moveToIndex` in `lib/reorder.ts`, which is the splice both
+ * reorderable lists in the app already use.
+ */
+export function reorderWithinVisible(
+  allIds: readonly ID[],
+  visibleIds: readonly ID[],
+  movedId: ID,
+  toIndex: number,
+): ID[] {
+  if (!visibleIds.includes(movedId)) return [...allIds];
+
+  const nextVisible = moveToIndex([...visibleIds], (id) => id === movedId, toIndex);
+  const visible = new Set(visibleIds);
+
+  let cursor = 0;
+  return allIds.map((id) => (visible.has(id) ? nextVisible[cursor++] : id));
+}
+
+/* ------------------------------------------------------------------ */
+/* Trend                                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The first day a range covers, ending at `today`.
+ *
+ * `all` walks back to the EARLIEST `startedOn` in the list rather than to some
+ * arbitrary floor: the chart's left edge is then the day the log began, which is
+ * the only honest answer to "all time" and stops a fresh install drawing a year
+ * of empty days.
+ */
+export function rangeStart(tasks: readonly Task[], range: TrendRange, today: string): string {
+  const length = rangeLength(range);
+  if (length != null) return shiftDay(today, -(length - 1));
+  let earliest = today;
+  for (const task of tasks) {
+    if (task.startedOn !== '' && task.startedOn < earliest) earliest = task.startedOn;
+  }
+  return earliest;
+}
+
+/** One day of the habit chart: the share of that day's tasks that were done. */
+export interface TaskTrendPoint {
+  day: string;
+  /** ISO instant at local noon, for `TrendChart`'s axis labels. */
+  at: string;
+  /** 0–100, rounded. */
+  value: number;
+  done: number;
+  asked: number;
+}
+
+/**
+ * Percent done, day by day, over a range.
+ *
+ * ── DAYS THAT ASKED FOR NOTHING ARE LEFT OUT, NOT PLOTTED AS ZERO ──────────
+ *
+ * The same rule `lib/trends.ts` applies to a swim day with no reps in it: a day
+ * that asked for nothing is not a day you failed, and a zero in the middle of a
+ * line reads as a collapse. A day where everything was excused on purpose has a
+ * denominator of nothing (see `dayProgress`) and falls out the same way.
+ *
+ * TODAY IS INCLUDED, unlike in `streakOf`, and for the opposite reason: a streak
+ * is a claim about a run that has to survive the evening, while the chart is a
+ * picture of what is answered so far. The last point moving up as the day goes on
+ * is the chart being live, not the chart being wrong.
+ *
+ * Percent rather than a count, because the denominator moves: a Monday asks for
+ * nine things and a Sunday for six, and a line of raw counts would show a weekly
+ * sawtooth that is about the schedule rather than about the person.
+ */
+export function taskTrendSeries(
+  tasks: readonly Task[],
+  log: TaskLog,
+  range: TrendRange,
+  today: string,
+): TaskTrendPoint[] {
+  const from = rangeStart(tasks, range, today);
+  const points: TaskTrendPoint[] = [];
+
+  for (let day = from; day <= today; day = shiftDay(day, 1)) {
+    const { done, total } = dayProgress(tasks, log, day);
+    if (total === 0) continue;
+    const at = parseDay(day);
+    if (!at) continue;
+    at.setHours(12, 0, 0, 0);
+    points.push({
+      day,
+      at: at.toISOString(),
+      value: Math.round((done / total) * 100),
+      done,
+      asked: total,
+    });
+    // A malformed `today` would otherwise make this loop run forever.
+    if (points.length > 3660) break;
+  }
+
+  return points;
+}
+
+/** What a range came to overall: the days, the ticks, and the share of them. */
+export interface TaskTrendSummary {
+  days: number;
+  done: number;
+  asked: number;
+  /** 0–100, rounded, over the whole range rather than an average of averages. */
+  percent: number;
+  /** Days in the range with every scheduled task answered `done`. */
+  perfectDays: number;
+}
+
+export function summarizeTaskTrend(points: readonly TaskTrendPoint[]): TaskTrendSummary {
+  let done = 0;
+  let asked = 0;
+  let perfectDays = 0;
+  for (const point of points) {
+    done += point.done;
+    asked += point.asked;
+    if (point.done === point.asked) perfectDays += 1;
+  }
+  return {
+    days: points.length,
+    done,
+    asked,
+    percent: asked === 0 ? 0 : Math.round((done / asked) * 100),
+    perfectDays,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* The month, across every task                                        */
+/* ------------------------------------------------------------------ */
+
+/** One square of the whole-list calendar. */
+export interface DayCell {
+  day: number | null;
+  date: string | null;
+  /** How many of that day's tasks were done, and how many it asked for. */
+  done: number;
+  asked: number;
+  /** 0–1. The square's fill is this, in five steps. */
+  fraction: number;
+  isToday: boolean;
+  /** In the future, or before anything started — nothing to draw and nothing to say. */
+  isBlank: boolean;
+}
+
+export interface DayMonth {
+  year: number;
+  month: number;
+  label: string;
+  weeks: DayCell[][];
+  /** Days in the month that asked for anything, up to today. */
+  days: number;
+  done: number;
+  asked: number;
+}
+
+/**
+ * A month of the WHOLE list, as a grid — one square per day, filled by how much
+ * of that day got done.
+ *
+ * `taskMonth` above answers "how is this one habit going". This answers the other
+ * question, the one the day screen cannot: WHICH DAY do I want to open. A month
+ * of squares is a shape, and a shape is what tells you that the second week of
+ * September went badly — which is the thing you then tap.
+ *
+ * Padded at the start only, like every other calendar in this app: a trailing pad
+ * draws squares for days that have not happened, and an empty square reads as a
+ * day you let go by.
+ */
+export function tasksMonth(
+  tasks: readonly Task[],
+  log: TaskLog,
+  year: number,
+  month: number,
+  today: string,
+): DayMonth {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const lead = weekdayIndex(new Date(year, month, 1));
+
+  const cells: DayCell[] = [];
+  for (let i = 0; i < lead; i += 1) {
+    cells.push({
+      day: null,
+      date: null,
+      done: 0,
+      asked: 0,
+      fraction: 0,
+      isToday: false,
+      isBlank: true,
+    });
+  }
+
+  let days = 0;
+  let done = 0;
+  let asked = 0;
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const date = dayKey(new Date(year, month, day));
+    const progress = dayProgress(tasks, log, date);
+    // A future day has not been missed, and a day that asked for nothing is not
+    // a day with a score — both are blank rather than empty.
+    const isBlank = date > today || progress.total === 0;
+    if (!isBlank) {
+      days += 1;
+      done += progress.done;
+      asked += progress.total;
+    }
+    cells.push({
+      day,
+      date,
+      done: progress.done,
+      asked: progress.total,
+      fraction: isBlank ? 0 : progress.fraction,
+      isToday: date === today,
+      isBlank,
+    });
+  }
+
+  const weeks: DayCell[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  return { year, month, label: formatMonth(year, month), weeks, days, done, asked };
 }

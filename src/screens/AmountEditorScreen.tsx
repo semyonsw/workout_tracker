@@ -67,10 +67,24 @@ interface AmountEditorScreenProps {
   amount: Amount | null;
   /** Which category a new amount lands in. Ignored when editing. */
   categoryId: ID | null;
+  /**
+   * Which way a NEW amount points, decided by whatever opened this screen.
+   *
+   * The money grid is already showing expenses or incomes when a tile is tapped,
+   * and arriving on the other one would mean the first field a user corrects is
+   * the one they had just told the app. Ignored when editing: an amount already
+   * knows its own direction, and the segmented control is right there.
+   */
+  direction?: Direction;
   onBack: () => void;
 }
 
-export function AmountEditorScreen({ amount, categoryId, onBack }: AmountEditorScreenProps) {
+export function AmountEditorScreen({
+  amount,
+  categoryId,
+  direction: initialDirection = 'expense',
+  onBack,
+}: AmountEditorScreenProps) {
   const categories = useMoney((s) => s.categories);
   const addAmount = useMoney((s) => s.addAmount);
   const updateAmount = useMoney((s) => s.updateAmount);
@@ -82,7 +96,7 @@ export function AmountEditorScreen({ amount, categoryId, onBack }: AmountEditorS
 
   const today = dayKey(new Date());
   const [digits, setDigits] = useState(amount ? String(amount.value) : '');
-  const [direction, setDirection] = useState<Direction>(amount?.direction ?? 'expense');
+  const [direction, setDirection] = useState<Direction>(amount?.direction ?? initialDirection);
   const [category, setCategory] = useState<ID | null>(
     amount?.categoryId ?? categoryId ?? live[0]?.id ?? null,
   );

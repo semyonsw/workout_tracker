@@ -1,6 +1,6 @@
 /**
- * The two directions a backup moves, and the only place all three stores are read
- * and written together.
+ * The two directions a backup moves, and the only place every store is read and
+ * written together.
  *
  *   stores ──currentSnapshot──► payload ──serializeBackup──► the file
  *   the file ──parseBackup──► envelope ──applyBackup──► stores
@@ -38,12 +38,28 @@
  * asymmetry is not a limitation to fix later; it is the reason merging the log is
  * safe: a workout carries the session's own id, so rule 3 of `workoutHistoryStore`
  * ("finishing twice is one workout") makes a union by id exact.
+ *
+ * ── AND ONE SECTION AT A TIME ──────────────────────────────────────────────
+ *
+ * `exportSectionText` / `applySection` are the same two directions with a smaller
+ * blast radius: the training log, the daily tasks or the money, alone. The app is
+ * three logs that fail and get rebuilt independently, and "put my expenses back,
+ * leave my training alone" is not something a whole-phone restore can express.
+ * The envelope those travel in is `lib/sectionBackup.ts`.
  */
 
 import { serializeBackup, type BackupCounts, type BackupPayload } from '../lib/backup';
 import type { CsvImportPlan } from '../lib/csvImport';
+import {
+  countSection,
+  serializeSection,
+  type SectionCounts,
+  type SectionName,
+} from '../lib/sectionBackup';
 import { useLibrary } from './libraryStore';
+import { sanitizeMoney, useMoney } from './moneyStore';
 import { sanitizeSettings, useSettings } from './settingsStore';
+import { sanitizeTasks, useTasks } from './tasksStore';
 import { useWorkoutHistory } from './workoutHistoryStore';
 
 /** Everything on this phone that a backup carries, straight out of the stores. */
@@ -59,7 +75,99 @@ export function currentSnapshot(): BackupPayload {
     sequence: library.sequence,
     workouts: useWorkoutHistory.getState().workouts,
     numbering: useWorkoutHistory.getState().numbering,
+    // Sanitized for the same reason `settings` is: the live stores carry their
+    // action functions beside their values, and a backup with `addTask: null` in
+    // it says something untrue about the format.
+    tasks: sanitizeTasks(useTasks.getState()),
+    money: sanitizeMoney(useMoney.getState()),
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* One section at a time                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One section's value, straight out of the store that owns it.
+ *
+ * The TRAINING section is the whole backup minus the settings — every duration
+ * and switch in the app is a preference about how the phone behaves, not part of
+ * the training log, and a file called `training` that silently reset somebody's
+ * rest timer would be the one surprise this feature cannot afford.
+ */
+export function sectionSnapshot(section: SectionName): unknown {
+  if (section === 'tasks') return sanitizeTasks(useTasks.getState());
+  if (section === 'money') return sanitizeMoney(useMoney.getState());
+
+  const library = useLibrary.getState();
+  const history = useWorkoutHistory.getState();
+  return {
+    exercises: library.exercises,
+    routines: library.routines,
+    sequence: library.sequence,
+    workouts: history.workouts,
+    numbering: history.numbering,
+  };
+}
+
+/**
+ * One section's file text, ready to write.
+ *
+ * Refuses a TRAINING export for exactly the reason `exportBackupText` does: an
+ * unreadable log would be written out as `"workouts": []`, and that file will
+ * later be restored over a database that was fine. The other two sections live in
+ * AsyncStorage and have no equivalent failure — a store that could not be read is
+ * a store that is still seeded, which the user can see on the screen they are
+ * standing on.
+ */
+export function exportSectionText(section: SectionName, now?: Date): string {
+  if (section === 'training' && useWorkoutHistory.getState().loadFailed) {
+    throw new UnreadableLogError();
+  }
+  return serializeSection(section, sectionSnapshot(section), now);
+}
+
+/**
+ * Replace ONE section from a parsed file, and report what landed.
+ *
+ * REPLACES, like `applyBackup` and unlike `mergeBackupWorkouts` — that asymmetry
+ * is argued in this file's header and none of it changes per section. What does
+ * change is the blast radius, which is the whole point: restoring the money
+ * cannot touch a single set.
+ *
+ * The counts come back from the STORES, after their own validators have run, so
+ * a file claiming forty amounts of which eleven are malformed reports twenty-nine.
+ */
+export function applySection(section: SectionName, data: unknown): SectionCounts {
+  if (section === 'tasks') {
+    useTasks.getState().importTasks(data);
+    return countSection('tasks', sanitizeTasks(useTasks.getState()));
+  }
+
+  if (section === 'money') {
+    useMoney.getState().importMoney(data);
+    return countSection('money', sanitizeMoney(useMoney.getState()));
+  }
+
+  const source = (data ?? {}) as Record<string, unknown>;
+  // Library first, then the log — `libraryStore` rule 1: the log must never refer
+  // to an exercise that does not exist, not even for one statement.
+  useLibrary.getState().importLibrary({
+    exercises: Array.isArray(source.exercises) ? source.exercises : [],
+    routines: Array.isArray(source.routines) ? source.routines : [],
+    sequence: source.sequence,
+  });
+  useWorkoutHistory
+    .getState()
+    .importWorkouts(Array.isArray(source.workouts) ? source.workouts : [], source.numbering);
+
+  const library = useLibrary.getState();
+  const history = useWorkoutHistory.getState();
+  return countSection('training', {
+    exercises: library.exercises,
+    routines: library.routines,
+    workouts: history.workouts,
+  });
 }
 
 /**
@@ -187,6 +295,17 @@ export function applyBackup(payload: BackupPayload): AppliedCounts {
   });
   const workouts = useWorkoutHistory.getState().importWorkouts(payload.workouts, payload.numbering);
 
+  /*
+   * ABSENT IS NOT EMPTY. A version-1 file carries neither log, and importing one
+   * must leave the tasks and the amounts exactly where they are — replacing them
+   * with nothing would turn "restore my training from last year's backup" into
+   * deleting a year of answered days, silently, in the same tap.
+   */
+  const tasksApplied = payload.tasks != null;
+  if (tasksApplied) useTasks.getState().importTasks(payload.tasks);
+  const moneyApplied = payload.money != null;
+  if (moneyApplied) useMoney.getState().importMoney(payload.money);
+
   let sets = 0;
   for (const workout of useWorkoutHistory.getState().workouts) sets += workout.sets.length;
 
@@ -195,6 +314,8 @@ export function applyBackup(payload: BackupPayload): AppliedCounts {
     routines: library.routines,
     workouts,
     sets,
+    tasks: tasksApplied ? useTasks.getState().tasks.length : undefined,
+    amounts: moneyApplied ? useMoney.getState().amounts.length : undefined,
     settingsApplied,
   };
 }

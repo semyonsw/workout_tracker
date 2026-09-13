@@ -90,7 +90,13 @@ describe('reading one back', () => {
   });
 
   it('refuses a file from a NEWER format rather than half-reading it', () => {
-    const text = serializeBackup(payload()).replace('"version": 1', '"version": 99');
+    // Written against BACKUP_VERSION rather than a literal: this assertion is
+    // about the RULE, and a hard-coded 1 turned into a silent no-op the moment
+    // the envelope was bumped to carry the tasks and the money.
+    const text = serializeBackup(payload()).replace(
+      `"version": ${BACKUP_VERSION}`,
+      '"version": 99',
+    );
     const result = parseBackup(text);
 
     expect(result.ok).toBe(false);

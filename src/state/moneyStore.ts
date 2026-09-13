@@ -26,6 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { dayKey } from '../lib/days';
 import type { Amount, AmountWhen, Direction, MoneyCategory } from '../lib/money';
 import type { ID } from '../types/models';
 import { tickTaskSource } from './tasksStore';
@@ -148,9 +149,19 @@ export const useMoney = create<MoneyState>()(
             { ...draft, id, value, note: draft.note.trim(), createdAt: new Date().toISOString() },
           ],
         }));
-        // Recording an amount is what the `Track expenses` task is asking about,
-        // so it answers itself. See `tasksStore.tickAuto`.
-        tickTaskSource('money');
+        /*
+         * Recording an amount is what the `Track expenses` task is asking about,
+         * so it answers itself — ON THE DAY THE AMOUNT IS FOR, not on the day it
+         * was typed. Writing up yesterday's taxi at breakfast should tick
+         * yesterday: the task asks whether the money got written down, and it did.
+         *
+         * A FUTURE day is clamped to today, because a task cannot be answered
+         * before it has been asked, and a whole-month amount has no day at all
+         * (see `lib/money.ts`) so it ticks the day you recorded it.
+         */
+        const today = dayKey(new Date());
+        const on = draft.when.kind === 'day' && draft.when.date <= today ? draft.when.date : today;
+        tickTaskSource('money', on);
         return id;
       },
 

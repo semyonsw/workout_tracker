@@ -32,7 +32,15 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { dayKey } from '../lib/days';
-import type { Task, TaskAutoSource, TaskLog, TaskMark, TaskSchedule, Weekday } from '../lib/tasks';
+import {
+  reorderWithinVisible,
+  type Task,
+  type TaskAutoSource,
+  type TaskLog,
+  type TaskMark,
+  type TaskSchedule,
+  type Weekday,
+} from '../lib/tasks';
 import type { ID } from '../types/models';
 
 export interface TasksValue {
@@ -137,6 +145,16 @@ interface TasksState extends TasksValue {
   addTask: (name: string, schedule: TaskSchedule) => ID | null;
   updateTask: (id: ID, patch: { name?: string; schedule?: TaskSchedule }) => void;
   archiveTask: (id: ID) => void;
+  /**
+   * Put `movedId` at `toIndex` within the rows the DAY SCREEN is showing.
+   *
+   * `visibleIds` rather than a bare index because the day screen shows a subset —
+   * a Mon/Wed/Fri task is simply not there on a Tuesday, and "third row to the
+   * top" has to mean third VISIBLE row. `reorderWithinVisible` in `lib/tasks.ts`
+   * has the whole argument; this only renumbers afterwards, because `order` is
+   * persisted and the list sorts by it, so it has to stay a dense 0..n.
+   */
+  reorderTasks: (visibleIds: readonly ID[], movedId: ID, toIndex: number) => void;
   setMark: (id: ID, day: string, mark: TaskMark | null) => void;
   /** The circle's tap: unanswered → done → missed on purpose → unanswered. */
   cycleMark: (id: ID, day: string) => void;
@@ -221,6 +239,24 @@ export const useTasks = create<TasksState>()(
             task.id === id ? { ...task, archivedAt: new Date().toISOString() } : task,
           ),
         })),
+
+      reorderTasks: (visibleIds, movedId, toIndex) =>
+        set((state) => {
+          const ordered = [...state.tasks].sort((a, b) => a.order - b.order);
+          const nextIds = reorderWithinVisible(
+            ordered.map((task) => task.id),
+            visibleIds,
+            movedId,
+            toIndex,
+          );
+          const byId = new Map(ordered.map((task) => [task.id, task]));
+          const tasks: Task[] = [];
+          nextIds.forEach((id, order) => {
+            const task = byId.get(id);
+            if (task) tasks.push({ ...task, order });
+          });
+          return { tasks };
+        }),
 
       setMark: (id, day, mark) =>
         set((state) => ({ log: writeEntry(state.log, id, day, { mark }) })),

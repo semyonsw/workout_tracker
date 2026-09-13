@@ -52,6 +52,7 @@ import { AmountEditorScreen } from '../screens/AmountEditorScreen';
 import { CategoryDetailScreen } from '../screens/CategoryDetailScreen';
 import { MoneyScreen } from '../screens/MoneyScreen';
 import { MoreScreen } from '../screens/MoreScreen';
+import { SectionDataScreen } from '../screens/SectionDataScreen';
 import { TaskDetailScreen } from '../screens/TaskDetailScreen';
 import { TasksScreen } from '../screens/TasksScreen';
 import {
@@ -82,7 +83,8 @@ import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore
 import { useMoney } from '../state/moneyStore';
 import { useTasks } from '../state/tasksStore';
 import { dayKey } from '../lib/days';
-import type { Interval } from '../lib/money';
+import type { Direction, Interval } from '../lib/money';
+import type { SectionName } from '../lib/sectionBackup';
 import { seedUser } from '../data/seed';
 import type { CompletedWorkout } from '../lib/completedWorkout';
 import type { Exercise, ID, MuscleGroup, SetHistory, UnitSystem } from '../types/models';
@@ -132,7 +134,10 @@ type Route =
   /* The window travels with the tap, so the category opens on the one the tile
      was read through rather than resetting to this month. */
   | { name: 'moneyCategory'; categoryId: ID; interval: Interval; anchor: string }
-  | { name: 'moneyAmount'; amountId: ID | null; categoryId: ID | null };
+  | { name: 'moneyAmount'; amountId: ID | null; categoryId: ID | null; direction?: Direction }
+  /* Export or import ONE section. Pushed from the section's own screen, and from
+     Settings for the training log. See `screens/SectionDataScreen.tsx`. */
+  | { name: 'sectionData'; section: SectionName };
 
 export function AppShell() {
   const [tab, setTab] = useState<TabName>('Today');
@@ -1057,7 +1062,12 @@ export function AppShell() {
   }
 
   if (top?.name === 'settings') {
-    return <SettingsScreen onBack={pop} />;
+    return (
+      <SettingsScreen
+        onBack={pop}
+        onOpenSection={(section) => push({ name: 'sectionData', section })}
+      />
+    );
   }
 
   if (top?.name === 'taskDetail') {
@@ -1084,7 +1094,18 @@ export function AppShell() {
   if (top?.name === 'moneyAmount') {
     const amount = top.amountId ? (amounts.find((row) => row.id === top.amountId) ?? null) : null;
     if (top.amountId && !amount) return <Fallback onBack={pop} />;
-    return <AmountEditorScreen amount={amount} categoryId={top.categoryId} onBack={pop} />;
+    return (
+      <AmountEditorScreen
+        amount={amount}
+        categoryId={top.categoryId}
+        direction={top.direction}
+        onBack={pop}
+      />
+    );
+  }
+
+  if (top?.name === 'sectionData') {
+    return <SectionDataScreen section={top.section} onBack={pop} />;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1145,7 +1166,10 @@ export function AppShell() {
         ) : null}
 
         {tab === 'Tasks' ? (
-          <TasksScreen onOpenTask={(taskId) => push({ name: 'taskDetail', taskId })} />
+          <TasksScreen
+            onOpenTask={(taskId) => push({ name: 'taskDetail', taskId })}
+            onOpenData={() => push({ name: 'sectionData', section: 'tasks' })}
+          />
         ) : null}
 
         {tab === 'Money' ? (
@@ -1153,7 +1177,10 @@ export function AppShell() {
             onOpenCategory={(categoryId, interval, anchor) =>
               push({ name: 'moneyCategory', categoryId, interval, anchor })
             }
-            onAddAmount={(categoryId) => push({ name: 'moneyAmount', amountId: null, categoryId })}
+            onAddAmount={(categoryId, direction) =>
+              push({ name: 'moneyAmount', amountId: null, categoryId, direction })
+            }
+            onOpenData={() => push({ name: 'sectionData', section: 'money' })}
           />
         ) : null}
 

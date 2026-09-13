@@ -3,7 +3,7 @@
  *
  *   {
  *     "format": "workout-tracker-backup",
- *     "version": 1,
+ *     "version": 2,
  *     "exportedAt": "2026-08-19T09:12:44.001Z",
  *     "counts": { "exercises": 88, "routines": 6, "workouts": 42, "sets": 512 },
  *     "settings": { ... },
@@ -11,10 +11,19 @@
  *     "routines":  [ ... ],
  *     "workouts":  [ ... ],
  *     "sequence":  { "isActive": false, "routineIds": [], "cursor": 0 },
- *     "numbering": { "workoutId": "d_session_x", "number": 91 }
+ *     "numbering": { "workoutId": "d_session_x", "number": 91 },
+ *     "tasks":     { "tasks": [ ... ], "log": { ... } },
+ *     "money":     { "categories": [ ... ], "amounts": [ ... ] }
  *   }
  *
- * WHY THIS EXISTS. Everything the user owns lives in three AsyncStorage keys on one
+ * ONE FILE, ALL THREE LOGS. Training, the daily tasks and the money — because
+ * "back up everything" has to mean everything, and a backup that silently omitted
+ * two of the three logs would be discovered on the day it was needed. A section
+ * that travels ALONE travels in `lib/sectionBackup.ts` instead; that is a
+ * different operation with a different confirmation, not a different format for
+ * the same job.
+ *
+ * WHY THIS EXISTS. Everything the user owns lives in a handful of AsyncStorage keys on one
  * phone. An uninstall, a wiped device, a new phone, or a debug build installed over
  * a release one takes all of it — and the app's whole value is a log that goes back
  * far enough to show a plateau. A backup is the only thing standing between a year
@@ -45,6 +54,8 @@
  *     second one that can disagree with it.
  */
 
+import { countSection } from './sectionBackup';
+
 /** The `format` field. A file without it is not ours; a file with it might be. */
 export const BACKUP_FORMAT = 'workout-tracker-backup';
 
@@ -54,8 +65,13 @@ export const BACKUP_FORMAT = 'workout-tracker-backup';
  * Bumped only when the shape around the collections changes. A file from a FUTURE
  * version is refused rather than half-read: the one thing worse than not restoring
  * a backup is restoring three quarters of it and reporting success.
+ *
+ * 2 — the daily tasks and the money joined the file. Both are OPTIONAL on the way
+ * in, so every version-1 file still restores; what it restores is a phone with its
+ * training replaced and its tasks and amounts left exactly where they were, which
+ * is the honest reading of a file that never carried them.
  */
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 /** Human-readable row counts. Written for the reader; never trusted on the way in. */
 export interface BackupCounts {
@@ -63,6 +79,15 @@ export interface BackupCounts {
   routines: number;
   workouts: number;
   sets: number;
+  /**
+   * The other two logs, ABSENT rather than zero when the file does not carry them.
+   *
+   * That distinction is the whole reason they are optional: a version-1 file has
+   * no tasks in it, and `0 tasks` in the confirmation sheet would read as "this
+   * restore will empty your task list" — which is precisely what it will not do.
+   */
+  tasks?: number;
+  amounts?: number;
 }
 
 /**
@@ -86,6 +111,16 @@ export interface BackupPayload {
    * fact in the app that cannot be recomputed from the sessions themselves.
    */
   numbering?: unknown;
+  /**
+   * The daily-task log and the money log, whole: `{ tasks, log }` and
+   * `{ categories, amounts }` exactly as their stores hold them.
+   *
+   * Optional, and absent means ABSENT. A backup written before version 2 carries
+   * neither, and `applyBackup` leaves both logs alone in that case rather than
+   * replacing them with nothing — see `state/dataTransfer.ts`.
+   */
+  tasks?: unknown;
+  money?: unknown;
 }
 
 export interface BackupEnvelope extends BackupPayload {
@@ -111,12 +146,17 @@ export function countPayload(payload: BackupPayload): BackupCounts {
     const rows = (workout as { sets?: unknown }).sets;
     if (Array.isArray(rows)) sets += rows.length;
   }
-  return {
+  const counts: BackupCounts = {
     exercises: payload.exercises.length,
     routines: payload.routines.length,
     workouts: payload.workouts.length,
     sets,
   };
+  // Counted through `countSection`, so the number a whole backup states about the
+  // tasks is the same number a tasks-only file states about itself.
+  if (payload.tasks != null) counts.tasks = countSection('tasks', payload.tasks).tasks;
+  if (payload.money != null) counts.amounts = countSection('money', payload.money).amounts;
+  return counts;
 }
 
 export function buildBackupEnvelope(
@@ -220,6 +260,10 @@ export function parseBackup(text: string): ParseResult {
     // from before either existed simply has neither.
     sequence: source.sequence ?? null,
     numbering: source.numbering ?? null,
+    // `?? undefined` rather than `?? null`, because absent has to stay absent:
+    // `applyBackup` reads the difference to decide whether to touch these logs.
+    tasks: source.tasks ?? undefined,
+    money: source.money ?? undefined,
   };
   const counts = countPayload(payload);
 
@@ -239,10 +283,14 @@ export function parseBackup(text: string): ParseResult {
 /** "42 workouts · 512 sets · 88 exercises · 6 routines" — one line for a sheet. */
 export function describeCounts(counts: BackupCounts): string {
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-  return [
+  const parts = [
     plural(counts.workouts, 'workout'),
     plural(counts.sets, 'set'),
     plural(counts.exercises, 'exercise'),
     plural(counts.routines, 'routine'),
-  ].join(' · ');
+  ];
+  // Only when the file actually carries them — see `BackupCounts`.
+  if (counts.tasks != null) parts.push(plural(counts.tasks, 'task'));
+  if (counts.amounts != null) parts.push(plural(counts.amounts, 'amount'));
+  return parts.join(' · ');
 }

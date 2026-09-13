@@ -118,6 +118,7 @@ import {
 import { MAX_GYMS } from '../lib/gyms';
 import { CLUSTERS, clusterLabel } from '../lib/muscles';
 import { describeBackupAge } from '../lib/autoBackup';
+import { SECTION_LABELS, type SectionName } from '../lib/sectionBackup';
 import {
   healthConnectState,
   requestHealthConnect,
@@ -210,7 +211,21 @@ function onThisPhone(): BackupCounts {
   return countPayload(currentSnapshot());
 }
 
-export function SettingsScreen({ onBack }: { onBack?: () => void }) {
+export function SettingsScreen({
+  onBack,
+  onOpenSection,
+}: {
+  onBack?: () => void;
+  /**
+   * Open the export/import screen for ONE section.
+   *
+   * The tasks and the money each carry their own row into it from their own tab,
+   * where somebody standing in that section will look for it. The TRAINING log has
+   * no such tab — Today, History and the library are all views of it — so its row
+   * lives here, beside the whole-phone backup it is the scoped version of.
+   */
+  onOpenSection?: (section: SectionName) => void;
+}) {
   const settings = useSettings();
   /**
    * The bulk half of `Make every exercise a rep ladder`. The flag lives in
@@ -1165,6 +1180,24 @@ export function SettingsScreen({ onBack }: { onBack?: () => void }) {
               tone="green"
               onPress={() => void importSetsCsv()}
             />
+            {/* ONE SECTION AT A TIME, under the four that move everything. The app
+                is three logs that fail and get rebuilt independently, and "put my
+                training back, leave my expenses alone" is not something a
+                whole-phone restore can express. The other two sections carry this
+                row on their own tabs. */}
+            {onOpenSection ? (
+              <>
+                <Separator inset={0} />
+                <TextButton
+                  label={`Export or import ${SECTION_LABELS.training.toLowerCase()} on its own`}
+                  tone="green"
+                  onPress={() => {
+                    tap();
+                    onOpenSection('training');
+                  }}
+                />
+              </>
+            ) : null}
             <Separator inset={0} />
             <TextButton label="Reset settings to defaults" onPress={() => setConfirming('reset')} />
             {/* Last, and only when there is something to lose. One workout at a
@@ -1193,13 +1226,15 @@ export function SettingsScreen({ onBack }: { onBack?: () => void }) {
 
           <Text className="mx-lg mt-md text-label text-ink-faint">
             A backup is plain JSON, so you can read it, keep it anywhere, and move it to another
-            phone. <Text className="text-ink-muted">Replace everything</Text> makes this phone look
-            like the file — exercises, routines, workouts and settings — so export first if there is
-            anything here you would miss. <Text className="text-ink-muted">Add workouts</Text> only
-            ever adds: workouts from the file that this phone does not already have, and nothing
-            else. Your exercises, routines and settings are never merged, because a merged library
-            brings back every exercise you have deleted. A workout in progress is not part of a
-            backup: it carries a running clock.
+            phone. It holds all three logs — training, the daily tasks and the money — and your
+            settings. <Text className="text-ink-muted">Replace everything</Text> makes this phone
+            look like the file, so export first if there is anything here you would miss. A backup
+            written by an older version carries no tasks and no amounts, and restoring one leaves
+            both of those exactly where they are rather than emptying them.{' '}
+            <Text className="text-ink-muted">Add workouts</Text> only ever adds: workouts from the
+            file that this phone does not already have, and nothing else. Your exercises, routines
+            and settings are never merged, because a merged library brings back every exercise you
+            have deleted. A workout in progress is not part of a backup: it carries a running clock.
           </Text>
 
           <Text className="mx-lg mt-md text-label text-ink-faint">
