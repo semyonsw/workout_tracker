@@ -345,7 +345,6 @@ const RU: Record<string, string> = {
   'Full days': 'Полные дни',
 
   /* --- the expenses ------------------------------------------------ */
-  'Overall balance': 'Общий баланс',
   Incomes: 'Доходы',
   'Time interval': 'Период',
   'Add expense': 'Добавить расход',
