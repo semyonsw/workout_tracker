@@ -72,7 +72,15 @@ export type IconName =
    * a verb; this is a promise of a surprise, and drawing it as anything else —
    * a shuffle arrow, a wand — would be describing the mechanism instead.
    */
-  | 'dice';
+  | 'dice'
+  /**
+   * The expenses section's own mark, and it exists for one row: the map at the
+   * top of Settings, where all three sections are listed and only two of them
+   * had a glyph. A banknote rather than a currency symbol — the app's currency is
+   * a LABEL the user types, so a ֏ or a $ here would be a guess about somebody
+   * else's money.
+   */
+  | 'money';
 
 interface IconProps {
   name: IconName;
@@ -101,6 +109,7 @@ const STROKE: Record<IconName, number> = {
   bell: 2,
   clock: 2,
   dice: 2,
+  money: 2,
 };
 
 /**
@@ -164,6 +173,9 @@ const PATHS: Record<IconName, string[]> = {
   // The same dial and the same 12-and-4 hands as `history`, WITHOUT the rewind
   // notch — which is the entire difference between "when" and "when it was".
   clock: ['M12 3.5a8.5 8.5 0 100 17 8.5 8.5 0 000-17z', 'M12 7.6V12l3.2 1.9'],
+  // A banknote, seen flat: the note's edge and the coin printed on it. It reads
+  // at 15px, which is the size the Settings map draws it at.
+  money: ['M3 6.5h18v11H3z', 'M12 9.6a2.4 2.4 0 100 4.8 2.4 2.4 0 000-4.8z'],
   // A die on its five face: a rounded square, and the pips come from `DOTS`.
   dice: [
     'M7.6 4h8.8A3.6 3.6 0 0120 7.6v8.8a3.6 3.6 0 01-3.6 3.6H7.6A3.6 3.6 0 014 16.4V7.6A3.6 3.6 0 017.6 4z',

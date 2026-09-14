@@ -35,7 +35,7 @@ import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TrendChart } from '../components/TrendChart';
 import { pressedStyle } from '../components/motion';
-import { Kicker, Segmented, SelectChip } from '../components/primitives';
+import { GlassCard, Kicker, Segmented, SelectChip, StatTile } from '../components/primitives';
 import { useLanguage, usePlural, useT, type Translate } from '../hooks/useT';
 import { WEEKDAY_INITIALS, dayKey, formatShortDay, parseDay } from '../lib/days';
 import { tap } from '../lib/feedback';
@@ -50,7 +50,7 @@ import {
 import { TREND_RANGES, TREND_RANGE_LABELS, type TrendRange } from '../lib/trends';
 import { useSettings } from '../state/settingsStore';
 import { useTasks } from '../state/tasksStore';
-import { palette } from '../theme/tokens';
+import { greenSteps, palette } from '../theme/tokens';
 
 /*
  * A function rather than a constant, because the labels are translated: a
@@ -222,9 +222,23 @@ function MonthView({
         ))}
       </View>
 
+      {/* LESS → MORE. The grid is one colour at four distances, which is only
+          readable if the scale itself is on screen once — drawn as the four fills
+          it is actually made of rather than as a gradient, which is both honest
+          and the only thing this renderer can draw without a native module. */}
+      <View className="mx-lg mt-lg flex-row items-center">
+        <Kicker>{t('Less')}</Kicker>
+        <View className="mx-sm h-[6px] flex-1 flex-row overflow-hidden rounded-pill">
+          {greenSteps.map((step) => (
+            <View key={step} className="h-[6px] flex-1" style={{ backgroundColor: step }} />
+          ))}
+        </View>
+        <Kicker>{t('More')}</Kicker>
+      </View>
+
       <Text className="mx-lg mt-md text-label text-ink-faint">
         {t(
-          'The fuller the square, the more of that day was done. Tap one to open it and answer its tasks.',
+          'The fuller the bubble, the more of that day was done. Tap one to open it and answer its tasks.',
         )}
       </Text>
     </>
@@ -235,13 +249,18 @@ function MonthView({
  * Five steps of fill, because a continuous opacity is a value nobody can read
  * back off a screen — and four states plus empty is what the eye can actually
  * count in a grid.
+ *
+ * The step is the BUBBLE's own alpha now rather than the cell's opacity. Dimming
+ * the whole cell took the date down with the fill, so a quarter-done day was a
+ * date you could not read; this leaves the numeral alone and only moves the
+ * light behind it.
  */
-function fillFor(fraction: number): { className: string; opacity?: number } {
-  if (fraction >= 1) return { className: 'bg-green' };
-  if (fraction >= 0.75) return { className: 'bg-green', opacity: 0.72 };
-  if (fraction >= 0.5) return { className: 'bg-green', opacity: 0.5 };
-  if (fraction > 0) return { className: 'bg-green', opacity: 0.3 };
-  return { className: 'border border-ink-faint/40' };
+function fillFor(fraction: number): string | null {
+  if (fraction >= 1) return greenSteps[3];
+  if (fraction >= 0.75) return greenSteps[2];
+  if (fraction >= 0.5) return greenSteps[1];
+  if (fraction > 0) return greenSteps[0];
+  return null;
 }
 
 function MonthCell({
@@ -256,7 +275,7 @@ function MonthCell({
   const t = useT();
   if (cell.day === null) return <View className="flex-1 p-[3px]" />;
 
-  const fill = cell.isBlank ? { className: '' } : fillFor(cell.fraction);
+  const fill = cell.isBlank ? null : fillFor(cell.fraction);
 
   return (
     <Pressable
@@ -273,11 +292,12 @@ function MonthCell({
       className="flex-1 p-[3px]"
     >
       <View
-        className={['aspect-square items-center justify-center rounded-[6px]', fill.className].join(
-          ' ',
-        )}
+        className={[
+          'aspect-square items-center justify-center rounded-pill',
+          fill === null && !cell.isBlank ? 'border border-ink-faint/30' : '',
+        ].join(' ')}
         style={{
-          opacity: fill.opacity,
+          backgroundColor: fill ?? undefined,
           // The app's one glow, spent here on the single square that is today.
           ...(cell.isToday
             ? {
@@ -348,13 +368,13 @@ function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog
       </View>
 
       <View className="mx-lg mt-md flex-row gap-md">
-        <Well
+        <StatTile
           label={t('Done')}
           value={`${summary.percent}%`}
           unit={t('of {asked}', { asked: summary.asked })}
-          green
+          tone="green"
         />
-        <Well
+        <StatTile
           label={t('Full days')}
           value={String(summary.perfectDays)}
           unit={t('of {asked}', { asked: summary.days })}
@@ -377,14 +397,14 @@ function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog
           </Text>
         </>
       ) : (
-        <View className="mx-lg mt-xl rounded-surface border border-hairline bg-surface p-lg">
+        <GlassCard className="mx-lg mt-xl p-lg">
           <Kicker>{t('Not enough yet')}</Kicker>
           <Text className="mt-sm text-body text-ink-muted">
             {t(
               'A line needs two days to have a direction. Answer today and tomorrow and it draws itself.',
             )}
           </Text>
-        </View>
+        </GlassCard>
       )}
 
       <Text className="mx-lg mt-md text-label text-ink-faint">
@@ -393,35 +413,5 @@ function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog
         )}
       </Text>
     </>
-  );
-}
-
-/** A 96-high well. The same fact-shaped box the task detail screen uses. */
-function Well({
-  label,
-  value,
-  unit,
-  green = false,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  green?: boolean;
-}) {
-  return (
-    <View className="h-well flex-1 justify-between rounded-surface bg-surface-alt p-lg">
-      <Kicker>{label}</Kicker>
-      <View className="flex-row items-baseline">
-        <Text
-          className={[
-            'text-title-lg font-semibold tabular-nums',
-            green ? 'text-green-bright' : 'text-ink',
-          ].join(' ')}
-        >
-          {value}
-        </Text>
-        <Text className="ml-xs text-label text-ink-muted">{unit}</Text>
-      </View>
-    </View>
   );
 }

@@ -39,7 +39,7 @@ import { ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { ScreenHeader } from '../components/ScreenHeader';
-import { Kicker, ListCard, SelectChip, SwitchRow } from '../components/primitives';
+import { GlassCard, Kicker, SelectChip, SwitchRow } from '../components/primitives';
 import { useT } from '../hooks/useT';
 import { tap } from '../lib/feedback';
 import { TREND_RANGES, TREND_RANGE_LABELS } from '../lib/trends';
@@ -63,7 +63,7 @@ export function TaskSettingsScreen({ onBack }: { onBack: () => void }) {
         showsVerticalScrollIndicator={false}
       >
         <Kicker className="mx-lg mb-sm mt-md">{t('Answering')}</Kicker>
-        <ListCard className="mx-lg">
+        <GlassCard className="mx-lg">
           <SwitchRow
             label={t('Let the app tick what it knows')}
             hint={t(
@@ -72,7 +72,7 @@ export function TaskSettingsScreen({ onBack }: { onBack: () => void }) {
             value={autoTickTasks}
             onChange={(value) => setFlag('autoTickTasks', value)}
           />
-        </ListCard>
+        </GlassCard>
         <Text className="mx-lg mt-sm text-label text-ink-faint">
           {autoTickTasks
             ? t(

@@ -354,6 +354,7 @@ const RU: Record<string, string> = {
   Month: 'Месяц',
   Year: 'Год',
   'All time': 'Всё время',
+  'Tap to set what you actually have here': 'Нажмите, чтобы указать, сколько здесь на самом деле',
   '3 months': '3 месяца',
   'Change the time interval.': 'Сменить период.',
   year: 'год',
@@ -1050,8 +1051,10 @@ const RU: Record<string, string> = {
     'Пока нет программ, которые можно поставить в последовательность. Сначала создайте программу в разделе «Программы», внизу экрана тренировки.',
   'Nothing recorded this month': 'В этом месяце ничего не записано',
   '{done} of {asked} done · {days} {dayWord}': '{done} из {asked} сделано · {days} {dayWord}',
-  'The fuller the square, the more of that day was done. Tap one to open it and answer its tasks.':
-    'Чем полнее квадрат, тем больше сделано в тот день. Нажмите, чтобы открыть день и ответить на его задачи.',
+  'The fuller the bubble, the more of that day was done. Tap one to open it and answer its tasks.':
+    'Чем полнее кружок, тем больше сделано в тот день. Нажмите, чтобы открыть день и ответить на его задачи.',
+  Less: 'Меньше',
+  More: 'Больше',
   '{day}, nothing asked': '{day}, ничего не спрашивалось',
   '{day}, {done} of {asked}': '{day}, {done} из {asked}',
   '{from} to {to} · {done} of {asked} answered done':

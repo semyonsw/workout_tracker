@@ -40,7 +40,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TrendChart } from '../components/TrendChart';
-import { Kicker, SelectChip, Separator } from '../components/primitives';
+import { GlassCard, Kicker, SelectChip, Separator } from '../components/primitives';
 import { dayKey } from '../lib/days';
 import { tap } from '../lib/feedback';
 import {
@@ -58,6 +58,7 @@ import {
   type MoneyAccount,
 } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
+import { palette } from '../theme/tokens';
 import { useSettings } from '../state/settingsStore';
 import { useLanguage, useT, type Translate } from '../hooks/useT';
 import { plural, t as translate, type Language } from '../lib/i18n';
@@ -202,7 +203,7 @@ export function MoneyHistoryScreen({
             {shares.length > 0 ? (
               <>
                 <Kicker className="mx-lg mb-sm mt-xl">{t('Where it went')}</Kicker>
-                <View className="mx-lg overflow-hidden rounded-surface border border-hairline bg-surface">
+                <GlassCard className="mx-lg">
                   {shares.slice(0, 5).map((share, index) => (
                     <View key={share.categoryId}>
                       {index > 0 ? <Separator /> : null}
@@ -215,17 +216,17 @@ export function MoneyHistoryScreen({
                       />
                     </View>
                   ))}
-                </View>
+                </GlassCard>
               </>
             ) : null}
           </>
         ) : (
-          <View className="mx-lg mt-md rounded-surface border border-hairline bg-surface p-lg">
+          <GlassCard className="mx-lg mt-md p-lg">
             <Kicker>{t('Not enough yet')}</Kicker>
             <Text className="mt-sm text-body text-ink-muted">
               {t('Nothing recorded in this range. Put something in and the line draws itself.')}
             </Text>
-          </View>
+          </GlassCard>
         )}
 
         <Text className="mx-lg mt-md text-label text-ink-faint">
@@ -289,8 +290,20 @@ function ShareRow({
           {percent}%
         </Text>
       </View>
-      <View className="mt-xs h-[4px] overflow-hidden rounded-pill bg-green-dim">
-        <View className="h-[4px] rounded-pill bg-green-bright" style={{ width: `${percent}%` }} />
+      <View className="mt-sm h-[4px] overflow-hidden rounded-pill bg-green-dim">
+        <View
+          className="h-[4px] rounded-pill bg-green-bright"
+          style={{
+            width: `${percent}%`,
+            // The bar is the one place a share is a length rather than a number,
+            // so it gets the glow: at 4px, a lit bar is legible where a flat one
+            // is a hairline in the same colour as the track.
+            shadowColor: palette.greenBright,
+            shadowOpacity: 0.6,
+            shadowRadius: 6,
+            elevation: 3,
+          }}
+        />
       </View>
     </View>
   );

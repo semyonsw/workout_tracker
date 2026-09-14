@@ -35,6 +35,35 @@ export const palette = {
   scrim: 'rgba(6,8,7,0.78)',
 } as const;
 
+/**
+ * GLASS — the raised translucent surfaces the sections are built from.
+ *
+ * The redesign stopped drawing cards as opaque `surface` steps and started
+ * drawing them as light lying ON the page: a few percent of ink over the
+ * near-black, with the same hairline holding the edge. A card is then legible
+ * over the two green glows the sections carry without punching a black hole in
+ * them.
+ *
+ * FLAT ALPHA, NOT A GRADIENT. The design draws each surface as a 180° ramp from
+ * 5% to 1.2%; React Native has no gradient without a native module, and adding
+ * a third one (`expo-linear-gradient`) to a build whose whole risk budget is two
+ * config plugins buys about four percent of alpha. These are the ramps' midpoints,
+ * and every surface is one value — which also means `bg-ink/5` in a className is
+ * the same decision as `glass.raised` here.
+ */
+export const glass = {
+  /** Cards, rows, tiles — the default raised surface. */
+  raised: 'rgba(236,241,238,0.05)',
+  /** Chips, wells and the second step down: present, but not a card. */
+  sunken: 'rgba(236,241,238,0.03)',
+  /** A dashed "add one" target — barely there until you look for it. */
+  ghost: 'rgba(236,241,238,0.015)',
+  /** The lit version: a surface that is currently the answer. */
+  green: 'rgba(63,169,108,0.12)',
+  /** Its edge. The hairline is invisible against a green fill. */
+  greenEdge: 'rgba(63,169,108,0.32)',
+} as const;
+
 /** 4pt grid. Layout only ever uses these. */
 export const space = {
   xs: 4,
@@ -69,9 +98,29 @@ export const size = {
    * a short pill from looking like a different instrument.
    */
   timer: 132,
-  /** Bottom tab bar — exists only outside a session. */
-  tabBar: 64,
+  /**
+   * Bottom tab bar — exists only outside a session. 56 of row inside a 6/4
+   * frame: the tab that is active is a pane now rather than a word, and a pane
+   * needs the padding around it to read as one.
+   */
+  tabBar: 56,
 } as const;
+
+/**
+ * THE FOUR STEPS OF FILL a month grid is drawn in, lightest first.
+ *
+ * `green-bright` at four alphas rather than four colours: it is one hue at four
+ * distances, which is what makes a grid of them read as a scale instead of as a
+ * legend you have to learn. They live here rather than in the screen because the
+ * legend under that grid draws the same four, and a scale whose key disagrees
+ * with the squares is worse than no key at all.
+ */
+export const greenSteps = [
+  'rgba(63,169,108,0.24)',
+  'rgba(63,169,108,0.42)',
+  'rgba(63,169,108,0.60)',
+  'rgba(63,169,108,0.82)',
+] as const;
 
 /**
  * The one GLOW, and the only thing in the app that is not a hairline or a surface

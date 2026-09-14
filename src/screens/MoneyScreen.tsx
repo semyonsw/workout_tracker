@@ -89,11 +89,21 @@ import { StatusBar } from 'expo-status-bar';
 
 import { BalanceSheet } from '../components/BalanceSheet';
 import { CategoryEditorSheet } from '../components/CategoryEditorSheet';
+import { BubblePressable } from '../components/bubbles';
 import { Icon } from '../components/Icon';
+import { SectionGlow } from '../components/SectionGlow';
 import { SectionTopBar } from '../components/SectionTopBar';
 import { Sheet } from '../components/Sheet';
 import { pressedStyle } from '../components/motion';
-import { Kicker, PrimaryButton, Separator, TextButton } from '../components/primitives';
+import {
+  DashedAdd,
+  GlassCard,
+  Kicker,
+  PrimaryButton,
+  Separator,
+  TextButton,
+} from '../components/primitives';
+import { ProgressRing } from '../components/ProgressRing';
 import { dayKey } from '../lib/days';
 import { tap } from '../lib/feedback';
 import { useLanguage, useT } from '../hooks/useT';
@@ -115,7 +125,7 @@ import {
 } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useSettings } from '../state/settingsStore';
-import { palette } from '../theme/tokens';
+import { glass, palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
 interface MoneyScreenProps {
@@ -197,12 +207,22 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
     [mine, direction, interval, anchor],
   );
   const live = categories.filter((category) => category.archivedAt === null);
+  /*
+   * What each tile's ring is a fraction OF. The direction's own total for the
+   * window — not the balance, and not both directions summed: a ring is only
+   * readable if every ring on the screen is a share of the same thing.
+   */
+  const directionTotal = useMemo(
+    () => Object.values(perCategory).reduce((sum, value) => sum + value, 0),
+    [perCategory],
+  );
   // `All time` has no next or previous window to step to.
   const steppable = interval !== 'all';
 
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
+      <SectionGlow />
 
       <SectionTopBar
         title={t('Expenses')}
@@ -246,22 +266,36 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
         </View>
 
         {/* The balance IS the editor — see the header. `button`, not text, and it
-            says so out loud for a screen reader. */}
-        <Pressable
-          onPress={() => setSettingBalance(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`${account.name}. ${formatMoney(balance, currency)}. ${t('Set what you have here.')}`}
-          style={pressedStyle}
-          className="mt-lg items-center"
-        >
-          <Kicker>{account.name}</Kicker>
-          <View className="mt-xs flex-row items-baseline">
+            says so out loud for a screen reader.
+
+            It sits on its own lit panel now rather than loose on the page: it is
+            the one number the screen is about, and the panel is what stops the
+            window picker under it from reading as the same kind of fact. The
+            currency is stated in the corner of that panel, as a label and not as
+            a control — it is a setting, and it is changed where settings are. */}
+        <GlassCard tone="green" radius="sheet" className="mx-lg mt-lg px-lg py-lg">
+          <View className="flex-row items-center">
+            <Kicker tone="green" className="flex-1">
+              {`${account.name} · ${t('All time')}`}
+            </Kicker>
+            <Kicker tone="green">{currency}</Kicker>
+          </View>
+          <Pressable
+            onPress={() => setSettingBalance(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`${account.name}. ${formatMoney(balance, currency)}. ${t('Set what you have here.')}`}
+            style={pressedStyle}
+            className="mt-sm flex-row items-baseline"
+          >
             <Text className="text-display font-semibold tabular-nums text-ink">
               {formatValue(balance)}
             </Text>
             <Text className="ml-sm text-title font-semibold text-ink-muted">{currency}</Text>
-          </View>
-        </Pressable>
+          </Pressable>
+          <Text className="mt-xs text-label text-ink-faint">
+            {t('Tap to set what you actually have here')}
+          </Text>
+        </GlassCard>
 
         <View className="mx-lg mt-lg flex-row items-center justify-center">
           <Pressable
@@ -302,7 +336,10 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
           </Pressable>
         </View>
 
-        <View className="mx-lg mt-md flex-row overflow-hidden rounded-surface border border-hairline bg-surface">
+        {/* Two tiles with air between them rather than one card split by a
+            hairline: the selected one is a lit surface, and a lit half of a
+            shared box reads as a highlight rather than as a choice. */}
+        <View className="mx-lg mt-md flex-row gap-sm">
           <DirectionTile
             label={t('Expenses')}
             value={totals.expenses}
@@ -310,7 +347,6 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             selected={direction === 'expense'}
             onPress={() => setDirection('expense')}
           />
-          <View className="w-hairline bg-hairline" />
           <DirectionTile
             label={t('Incomes')}
             value={totals.incomes}
@@ -322,10 +358,11 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
 
         <View className="mx-lg mt-xl flex-row flex-wrap">
           {live.map((category) => (
-            <View key={category.id} className="w-1/2 p-[6px]">
+            <View key={category.id} className="w-1/2 p-[5px]">
               <CategoryTile
                 category={category}
                 total={perCategory[category.id] ?? 0}
+                share={directionTotal > 0 ? (perCategory[category.id] ?? 0) / directionTotal : 0}
                 currency={currency}
                 onPress={() => onAddAmount(category.id, account.id, direction)}
                 onLongPress={() => {
@@ -335,19 +372,13 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
               />
             </View>
           ))}
-          <View className="w-1/2 p-[6px]">
-            <Pressable
+          <View className="w-1/2 p-[5px]">
+            <DashedAdd
+              label={t('Add category')}
+              height={150}
+              radius="card"
               onPress={() => setNaming(true)}
-              accessibilityRole="button"
-              accessibilityLabel={t('Add category')}
-              style={pressedStyle}
-              className="flex-row items-center rounded-surface border border-dashed border-hairline p-md"
-            >
-              <View className="h-hit w-hit items-center justify-center rounded-surface bg-surface">
-                <Icon name="plus" size={18} color={palette.inkMuted} />
-              </View>
-              <Text className="ml-md text-label font-medium text-ink-muted">{t('Add')}</Text>
-            </Pressable>
+            />
           </View>
         </View>
 
@@ -528,13 +559,20 @@ function DirectionTile({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
+      radius={14}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={`${label} ${formatMoney(value, currency)}`}
-      style={pressedStyle}
-      className={['flex-1 p-lg', selected ? 'bg-surface-alt' : ''].join(' ')}
+      style={(state) => [
+        pressedStyle(state),
+        {
+          backgroundColor: selected ? glass.green : glass.sunken,
+          borderColor: selected ? glass.greenEdge : palette.hairline,
+        },
+      ]}
+      className="flex-1 rounded-surface border p-lg"
     >
       <Text
         className={[
@@ -553,7 +591,7 @@ function DirectionTile({
       >
         {formatMoney(value, currency)}
       </Text>
-    </Pressable>
+    </BubblePressable>
   );
 }
 
@@ -586,10 +624,22 @@ function AccountChip({
       accessibilityState={{ selected }}
       accessibilityLabel={account.name}
       accessibilityHint={t('Long press to edit the subsection')}
-      style={pressedStyle}
+      style={(state) => [
+        pressedStyle(state),
+        selected
+          ? {
+              // The chip that is selected decides what every figure under it
+              // means, so it is the one lit control on the screen.
+              shadowColor: palette.green,
+              shadowOpacity: 0.35,
+              shadowRadius: 10,
+              elevation: 4,
+            }
+          : { backgroundColor: glass.sunken },
+      ]}
       className={[
-        'mb-sm mr-sm h-hit flex-row items-center rounded-pill px-md',
-        selected ? 'bg-green' : 'border border-hairline bg-surface',
+        'mb-sm mr-sm h-hit flex-row items-center rounded-pill px-lg',
+        selected ? 'border border-green-bright/50 bg-green' : 'border border-hairline',
       ].join(' ')}
     >
       <Text className="mr-sm text-label">{account.glyph}</Text>
@@ -605,15 +655,30 @@ function AccountChip({
   );
 }
 
+/**
+ * One category, as a tile with its share drawn round its glyph.
+ *
+ * The ring is what the row shape could never say: `10,300 AMD` is a number you
+ * have to compare with five other numbers to place, and a third of a ring is a
+ * third of the window at a glance. The figure stays, because "a third" is not
+ * what you tell somebody when they ask what you spent on transport.
+ *
+ * A zero keeps its tile and reads as an empty ring — see the header. Hiding it
+ * would rearrange the grid every time the window moved, and `Fun 0` this month is
+ * half the information on the screen.
+ */
 function CategoryTile({
   category,
   total,
+  share,
   currency,
   onPress,
   onLongPress,
 }: {
   category: MoneyCategory;
   total: number;
+  /** 0–1 of the direction's total for the window. */
+  share: number;
   currency: string;
   onPress: () => void;
   onLongPress: () => void;
@@ -628,26 +693,31 @@ function CategoryTile({
       accessibilityRole="button"
       accessibilityLabel={`${category.name}, ${formatMoney(total, currency)}`}
       accessibilityHint={t('Long press to edit the category')}
-      style={pressedStyle}
-      className="flex-row items-center rounded-surface border border-hairline bg-surface p-md"
+      style={(state) => [
+        pressedStyle(state),
+        {
+          backgroundColor: glass.raised,
+          borderColor: total > 0 ? glass.greenEdge : palette.hairline,
+        },
+      ]}
+      className="h-[150px] items-center justify-center rounded-card border px-md"
     >
-      <View className="h-hit w-hit items-center justify-center rounded-surface bg-surface-alt">
-        <Text className="text-[20px]">{category.glyph}</Text>
-      </View>
-      <View className="ml-md flex-1">
-        <Text numberOfLines={1} className="text-label font-medium text-ink">
-          {category.name}
-        </Text>
-        <Text
-          numberOfLines={1}
-          className={[
-            'text-label font-medium tabular-nums',
-            total > 0 ? 'text-green-bright' : 'text-ink-faint',
-          ].join(' ')}
-        >
-          {formatMoney(total, currency)}
-        </Text>
-      </View>
+      <ProgressRing fraction={share} size={56} stroke={3}>
+        <Text className="text-[22px]">{category.glyph}</Text>
+      </ProgressRing>
+      <Text numberOfLines={1} className="mt-md w-full text-center text-label font-medium text-ink">
+        {category.name}
+      </Text>
+      <Text
+        numberOfLines={1}
+        className={[
+          'mt-[2px] w-full text-center text-label font-medium tabular-nums',
+          total > 0 ? 'text-green-bright' : 'text-ink-faint',
+        ].join(' ')}
+      >
+        {formatMoney(total, currency)}
+      </Text>
+      <Kicker className="mt-[2px]">{total > 0 ? `${Math.round(share * 100)}%` : '—'}</Kicker>
     </Pressable>
   );
 }

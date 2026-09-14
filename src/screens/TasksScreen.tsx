@@ -2,20 +2,32 @@
  * TasksScreen — the day, and nothing but the day.
  *
  *   ┌──────────────────────────────────────────────┐
- *   │ DAILY TASKS                              ⟲   │
- *   │        ‹   13 September 2026   ›             │
+ *   │ DAILY TASKS                          ⟲       │
+ *   │              ╭───────╮                       │
+ *   │          ‹   │  13   │   ›                   │   the day dial: the date
+ *   │              │SEP 26 │                       │   inside the day's fraction
+ *   │              ╰───────╯                       │
  *   │                  TODAY                       │
- *   │ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔             │
- *   │ 6 of 8 done                                  │
- *   │ ┌──────────────────────────────────────────┐ │
- *   │ │ ✓  Morning Bible/Narek reading         › │ │
- *   │ │    Every day · 12 in a row               │ │
- *   │ │ ○  Evening Bible reading               › │ │
- *   │ │ ✕  Book reading before sleep           › │ │
- *   │ │    Every day · missed on purpose · …     │ │
- *   │ │ +  Add task                              │ │
- *   │ └──────────────────────────────────────────┘ │
+ *   │             6 of 8 done                      │
+ *   │ ╭────────────────────────────────────────╮   │
+ *   │ │ ✓  Morning Bible/Narek reading       › │   │  lit — this one is done
+ *   │ │    Every day · 12 in a row             │   │
+ *   │ ╰────────────────────────────────────────╯   │
+ *   │ ╭────────────────────────────────────────╮   │
+ *   │ │ ○  Evening Bible reading             › │   │
+ *   │ ╰────────────────────────────────────────╯   │
+ *   │ ┆ +  Add task                            ┆   │
  *   └──────────────────────────────────────────────┘
+ *
+ * ── THE DIAL IS THE DAY ───────────────────────────────────────────────────
+ *
+ * The date used to be a line of text with a pager either side of it, a 6px
+ * progress bar under that, and a count under THAT: three separate objects, in
+ * reading order, none of them the thing the app is opened for. They are one
+ * object now — `components/ProgressRing.tsx` — with the date drawn inside the
+ * fraction, so a glance answers "what day, and how did it go" without reading a
+ * word. The count stayed, as the line under it, because a ring cannot say
+ * `6 of 8` and that is what you tell somebody when they ask.
  *
  * ── THE CIRCLE IS THE SCREEN ──────────────────────────────────────────────
  *
@@ -65,13 +77,23 @@ import { StatusBar } from 'expo-status-bar';
 
 import { Icon } from '../components/Icon';
 import { ReorderRow } from '../components/ReorderRow';
+import { SectionGlow } from '../components/SectionGlow';
 import { SectionTopBar } from '../components/SectionTopBar';
 import { pressedStyle } from '../components/motion';
-import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
+import { DashedAdd, Kicker } from '../components/primitives';
+import { ProgressRing } from '../components/ProgressRing';
 import { TaskEditorSheet } from '../components/TaskEditorSheet';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
 import { useLanguage, useT } from '../hooks/useT';
-import { dayKey, formatLongDay, parseDay, shiftDay, weekdayIndex, weekdayNames } from '../lib/days';
+import {
+  dayKey,
+  formatLongDay,
+  monthNames,
+  parseDay,
+  shiftDay,
+  weekdayIndex,
+  weekdayNames,
+} from '../lib/days';
 import {
   type Task,
   type TaskMark,
@@ -83,7 +105,7 @@ import {
 } from '../lib/tasks';
 import type { Language } from '../lib/i18n';
 import { useTasks } from '../state/tasksStore';
-import { palette } from '../theme/tokens';
+import { glass, palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
 interface TasksScreenProps {
@@ -133,6 +155,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
+      <SectionGlow />
 
       {/* The ⟲ goes while a row is in the air: leaving the screen mid-drag would
           unmount the row under the finger, and there is one thing to do. */}
@@ -174,21 +197,43 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
               </View>
             ) : (
               <>
-                <View className="mx-lg flex-row items-center justify-center">
+                {/* THE DAY DIAL. The date is inside the fraction rather than
+                    above it: one object answering "what day, and how did it go"
+                    instead of a pager, a bar and a sentence stacked in reading
+                    order. The chevrons keep their own 44 either side of it. */}
+                <View className="mt-sm flex-row items-center justify-center px-lg">
                   <Pressable
                     onPress={() => onChangeDay(shiftDay(day, -1))}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel={t('The day before')}
                     style={pressedStyle}
-                    className="h-hit w-[32px] items-center justify-center"
+                    className="h-hit w-[36px] items-center justify-center"
                   >
                     <Icon name="chevron-left" size={20} color={palette.inkMuted} />
                   </Pressable>
 
-                  <Text className="mx-lg text-title font-semibold tabular-nums text-ink">
-                    {formatLongDay(day, lang)}
-                  </Text>
+                  <View
+                    accessibilityRole="progressbar"
+                    accessibilityLabel={`${formatLongDay(day, lang)}. ${
+                      progress.total === 0
+                        ? t('Nothing asked for today')
+                        : t('{done} of {total} done', {
+                            done: progress.done,
+                            total: progress.total,
+                          })
+                    }`}
+                    className="mx-sm"
+                  >
+                    <ProgressRing fraction={progress.fraction} size={150} stroke={9}>
+                      <View className="items-center">
+                        <Text className="text-[44px] font-semibold leading-[44px] tracking-[-1.4px] tabular-nums text-ink">
+                          {dayNumber(day)}
+                        </Text>
+                        <Kicker className="mt-[6px]">{monthLabel(day, lang)}</Kicker>
+                      </View>
+                    </ProgressRing>
+                  </View>
 
                   <Pressable
                     onPress={() => onChangeDay(shiftDay(day, 1))}
@@ -197,7 +242,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                     accessibilityRole="button"
                     accessibilityLabel={t('The day after')}
                     style={pressedStyle}
-                    className="h-hit w-[32px] items-center justify-center"
+                    className="h-hit w-[36px] items-center justify-center"
                   >
                     {isToday ? null : (
                       <Icon name="chevron-right" size={20} color={palette.inkMuted} />
@@ -205,57 +250,47 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                   </Pressable>
                 </View>
 
-                <View className="mx-lg items-center">
+                <View className="mt-md items-center px-lg">
                   <Kicker tone={isToday ? 'green' : 'faint'}>
                     {isToday ? t('Today') : weekdayName(day, lang)}
                   </Kicker>
+                  <Text className="mt-[6px] text-label tabular-nums text-ink-muted">
+                    {progress.total === 0
+                      ? t('Nothing asked for today')
+                      : t('{done} of {total} done', { done: progress.done, total: progress.total })}
+                  </Text>
                 </View>
-
-                {/* 6px of track, and the app's one progress bar. It is a ratio, not a
-                    target: a day that asked for nothing reads full rather than empty. */}
-                <View
-                  accessibilityRole="progressbar"
-                  accessibilityLabel={t('{done} of {total} done', {
-                    done: progress.done,
-                    total: progress.total,
-                  })}
-                  className="mx-lg mt-lg h-[6px] overflow-hidden rounded-pill bg-green-dim"
-                >
-                  <View
-                    className="h-[6px] rounded-pill bg-green-bright"
-                    style={{ width: `${Math.round(progress.fraction * 100)}%` }}
-                  />
-                </View>
-                <Text className="mx-lg mt-sm text-label tabular-nums text-ink-muted">
-                  {progress.total === 0
-                    ? t('Nothing asked for today')
-                    : t('{done} of {total} done', { done: progress.done, total: progress.total })}
-                </Text>
               </>
             )}
 
-            {/* The drag surface — its own View around the card rather than the card
-                itself, because `ListCard` takes props it understands and would drop
-                these on the floor. It claims a touch only while a row is lifted. */}
-            <View {...panHandlers}>
-              <ListCard className="mx-lg mt-lg" clip={lifted == null}>
-                {rows.map((task, index) => {
-                  const isLifted = task.id === lifted;
-                  return (
-                    <ReorderRow
-                      key={task.id}
-                      lifted={isLifted}
-                      dragging={lifted != null}
-                      dragY={dragY}
-                      // The row slides out of the way while the finger is still
-                      // over the gap, so the drop is something you can see coming.
-                      shift={shiftFor(task.id)}
-                      onLayout={(e) => {
-                        const { y, height } = e.nativeEvent.layout;
-                        rowLayouts.current[task.id] = { y, height };
-                      }}
-                    >
-                      {index > 0 ? <Separator /> : null}
+            {/* The drag surface — its own View around the rows rather than a row
+                itself, because a `ReorderRow` takes props it understands and
+                would drop these on the floor. It claims a touch only while a row
+                is lifted.
+
+                ONE CARD PER ROW, with 8px of air between them, rather than a
+                single card with hairlines. A done task is a lit surface now, and
+                a lit surface needs an edge of its own to be lit against. The gap
+                is padding INSIDE each row's measured box, so the reorder's
+                geometry still adds up. */}
+            <View {...panHandlers} className="mx-lg mt-xl">
+              {rows.map((task) => {
+                const isLifted = task.id === lifted;
+                return (
+                  <ReorderRow
+                    key={task.id}
+                    lifted={isLifted}
+                    dragging={lifted != null}
+                    dragY={dragY}
+                    // The row slides out of the way while the finger is still
+                    // over the gap, so the drop is something you can see coming.
+                    shift={shiftFor(task.id)}
+                    onLayout={(e) => {
+                      const { y, height } = e.nativeEvent.layout;
+                      rowLayouts.current[task.id] = { y, height };
+                    }}
+                  >
+                    <View className="pb-sm">
                       <TaskRow
                         task={task}
                         mark={entryOf(log, task.id, day).mark}
@@ -267,16 +302,11 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                         // ever end where it started.
                         onLongPress={rows.length > 1 ? () => lift(task.id) : undefined}
                       />
-                    </ReorderRow>
-                  );
-                })}
-                {lifted ? null : (
-                  <>
-                    {rows.length > 0 ? <Separator inset={0} /> : null}
-                    <AddRow label={t('Add task')} tone="faint" onPress={() => setAdding(true)} />
-                  </>
-                )}
-              </ListCard>
+                    </View>
+                  </ReorderRow>
+                );
+              })}
+              {lifted ? null : <DashedAdd label={t('Add task')} onPress={() => setAdding(true)} />}
             </View>
 
             {rows.length === 0 ? (
@@ -336,6 +366,19 @@ function weekdayName(day: string, lang: Language): string {
   return date ? weekdayNames(lang)[weekdayIndex(date)] : '';
 }
 
+/** The number in the middle of the dial. Bare — the month is the line under it. */
+function dayNumber(day: string): string {
+  const date = parseDay(day);
+  return date ? String(date.getDate()) : '';
+}
+
+/** `SEP 2026`, uppercased by the kicker it is drawn in. */
+function monthLabel(day: string, lang: Language): string {
+  const date = parseDay(day);
+  if (!date) return '';
+  return `${monthNames(lang)[date.getMonth()].slice(0, 3)} ${date.getFullYear()}`;
+}
+
 function TaskRow({
   task,
   mark,
@@ -354,14 +397,34 @@ function TaskRow({
   onLongPress?: () => void;
 }) {
   const t = useT();
+  const done = mark === 'done';
+  const missed = mark === 'missed';
   return (
-    <View className="h-row-lg flex-row items-center" style={dimmed ? { opacity: 0.4 } : undefined}>
+    <View
+      style={{
+        backgroundColor: done ? glass.green : glass.raised,
+        borderColor: done ? glass.greenEdge : palette.hairline,
+        // A done row is the one lit surface in the list. The glow is the app's
+        // one glow at a third of its strength: enough that a finished day reads
+        // as a block of light while scrolling, never enough to be a fill.
+        ...(done
+          ? {
+              shadowColor: palette.greenBright,
+              shadowOpacity: 0.18,
+              shadowRadius: 12,
+              elevation: 3,
+            }
+          : {}),
+        opacity: dimmed ? 0.4 : missed ? 0.62 : 1,
+      }}
+      className="h-row-lg flex-row items-center overflow-hidden rounded-card border"
+    >
       <Pressable
         onPress={onToggle}
         onLongPress={onLongPress}
         delayLongPress={280}
         accessibilityRole="checkbox"
-        accessibilityState={{ checked: mark === 'done' }}
+        accessibilityState={{ checked: done }}
         accessibilityLabel={`${task.name}. ${t(answerOf(mark))}. ${t('Tap to change.')}`}
         accessibilityHint={onLongPress ? t('Long press, then slide to reorder') : undefined}
         style={pressedStyle}
@@ -383,7 +446,7 @@ function TaskRow({
         <View className="flex-1 pr-md">
           <Text
             numberOfLines={1}
-            className={['text-body', mark === 'missed' ? 'text-ink-muted' : 'text-ink'].join(' ')}
+            className={['text-body', missed ? 'text-ink-muted' : 'text-ink'].join(' ')}
           >
             {task.name}
           </Text>
@@ -397,23 +460,37 @@ function TaskRow({
   );
 }
 
-/** The three answers, as three marks. Green fill is the only one that is filled. */
+/**
+ * The three answers, as three marks. Green fill is the only one that is filled,
+ * and it is the only one that carries the glow — the ring around a done task is
+ * what you are looking for when you scan the list.
+ */
 function Mark({ mark }: { mark: TaskMark | null }) {
   if (mark === 'done') {
     return (
-      <View className="h-[28px] w-[28px] items-center justify-center rounded-pill bg-green">
-        <Icon name="check" size={14} color={palette.ink} />
+      <View
+        style={{
+          backgroundColor: palette.green,
+          borderColor: palette.greenBright,
+          shadowColor: palette.greenBright,
+          shadowOpacity: 0.55,
+          shadowRadius: 8,
+          elevation: 4,
+        }}
+        className="h-[30px] w-[30px] items-center justify-center rounded-pill border"
+      >
+        <Icon name="check" size={15} color={palette.ink} />
       </View>
     );
   }
   if (mark === 'missed') {
     return (
-      <View className="h-[28px] w-[28px] items-center justify-center rounded-pill bg-surface-alt">
+      <View className="h-[30px] w-[30px] items-center justify-center rounded-pill border border-hairline bg-surface-alt">
         <Icon name="x" size={12} color={palette.inkFaint} />
       </View>
     );
   }
-  return <View className="h-[28px] w-[28px] rounded-pill border border-hairline" />;
+  return <View className="h-[30px] w-[30px] rounded-pill border-[1.5px] border-hairline" />;
 }
 
 function answerOf(mark: TaskMark | null): string {

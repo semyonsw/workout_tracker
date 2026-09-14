@@ -1,7 +1,7 @@
 /**
  * Tailwind / NativeWind configuration.
  *
- * The scale is deliberately amputated: no default colour palette, two radii,
+ * The scale is deliberately amputated: no default colour palette, four radii,
  * five spacing steps, five type sizes. A design system you cannot deviate from
  * is what keeps a minimal app minimal six months in.
  *
@@ -32,9 +32,17 @@ module.exports = {
       green: 'rgb(var(--green) / <alpha-value>)',
       'green-bright': 'rgb(var(--green-bright) / <alpha-value>)',
     },
+    // FOUR radii, 10 / 14 / 18 / 22, and each one names what it is for rather
+    // than how big it is. `surface` was the only one for a long time; the
+    // redesign draws a card that holds other cards (a section's glass panel) and
+    // a sheet that holds a whole screen, and those cannot be the same corner as
+    // the row inside them or the nesting stops reading.
     borderRadius: {
       none: '0',
-      surface: '14px',
+      cell: '10px', // a calendar square, a keypad key
+      surface: '14px', // rows, wells, the standard card
+      card: '18px', // a tile with its own contents — category tiles, task rows
+      sheet: '22px', // a bottom sheet, the balance panel
       pill: '9999px',
     },
     fontSize: {

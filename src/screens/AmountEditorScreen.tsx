@@ -60,7 +60,7 @@ import { type Amount, type AmountWhen, type Direction, formatValue } from '../li
 import { useMoney } from '../state/moneyStore';
 import { useLanguage, useT, type Translate } from '../hooks/useT';
 import { useSettings } from '../state/settingsStore';
-import { palette } from '../theme/tokens';
+import { glass, palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
 /*
@@ -238,10 +238,13 @@ export function AmountEditorScreen({
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
                 accessibilityLabel={option.name}
-                style={pressedStyle}
+                style={(state) => [
+                  pressedStyle(state),
+                  selected ? undefined : { backgroundColor: glass.sunken },
+                ]}
                 className={[
                   'mb-sm mr-sm h-[36px] flex-row items-center rounded-pill px-md',
-                  selected ? 'bg-green' : 'border border-hairline bg-surface',
+                  selected ? 'bg-green' : 'border border-hairline',
                 ].join(' ')}
               >
                 <Text className="mr-sm text-label">{option.glyph}</Text>
@@ -270,10 +273,13 @@ export function AmountEditorScreen({
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
                 accessibilityLabel={option.name}
-                style={pressedStyle}
+                style={(state) => [
+                  pressedStyle(state),
+                  selected ? undefined : { backgroundColor: glass.sunken },
+                ]}
                 className={[
                   'mb-sm mr-sm h-[36px] flex-row items-center rounded-pill px-md',
-                  selected ? 'bg-green' : 'border border-hairline bg-surface',
+                  selected ? 'bg-green' : 'border border-hairline',
                 ].join(' ')}
               >
                 <Text className="mr-sm text-label">{option.glyph}</Text>

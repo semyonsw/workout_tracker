@@ -58,7 +58,7 @@ import { Icon, type IconName } from './Icon';
 import { BubblePressable } from './bubbles';
 import { pressedStyle } from './motion';
 import { useT } from '../hooks/useT';
-import { palette } from '../theme/tokens';
+import { glass, palette } from '../theme/tokens';
 
 export interface TopBarAction {
   /** Stable across renders, so a row of three does not re-key on every tick. */
@@ -150,8 +150,8 @@ function TopBarButton({ action }: { action: TopBarAction }) {
       accessibilityRole="button"
       accessibilityState={{ selected: action.active }}
       accessibilityLabel={action.label}
-      style={pressedStyle}
-      className="ml-sm h-[36px] w-[36px] items-center justify-center rounded-pill border border-hairline bg-surface"
+      style={(state) => [pressedStyle(state), { backgroundColor: glass.sunken }]}
+      className="ml-sm h-[36px] w-[36px] items-center justify-center rounded-pill border border-hairline"
     >
       <Icon
         name={action.icon}
@@ -184,7 +184,8 @@ export function LanguageToggle({
     <View
       accessibilityRole="radiogroup"
       accessibilityLabel={t('Application language')}
-      className="h-[36px] flex-row items-center rounded-pill border border-hairline bg-surface p-[3px]"
+      style={{ backgroundColor: glass.sunken }}
+      className="h-[36px] flex-row items-center rounded-pill border border-hairline p-[3px]"
     >
       {options.map((option) => {
         const selected = option.value === active;

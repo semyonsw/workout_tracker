@@ -19,14 +19,25 @@
  * going up" — and a 75-to-80 kg climb against a zero baseline is a flat line. The
  * gridlines carry the actual numbers, so the scale is never a mystery.
  *
- * No fill gradient, no axes box, no second series. The gridlines are `green-dim`
- * because they are part of the same instrument as the line; the baseline is
- * `hairline` because it is structure, not data.
+ * No axes box, no second series. A WASH under the line — green fading to nothing
+ * by the baseline — and that is the only decoration: it gives the line a side, so
+ * "above" and "below" read at a glance on a near-black page. It carries no number
+ * the line is not already carrying. The gridlines are `green-dim` because they are
+ * part of the same instrument as the line; the baseline is `hairline` because it
+ * is structure, not data.
  */
 
 import { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, View } from 'react-native';
-import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Defs,
+  Line,
+  LinearGradient,
+  Polyline,
+  Stop,
+  Text as SvgText,
+} from 'react-native-svg';
 
 import { useLanguage } from '../hooks/useT';
 import { formatChartDate } from '../lib/units';
@@ -131,6 +142,13 @@ export function TrendChart({ points, formatValue = defaultFormat }: TrendChartPr
 
   const polyline = points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ');
   const lastIndex = points.length - 1;
+  /*
+   * The same polyline closed down to the baseline, for the wash under it. It is
+   * not a second series and it carries no number the line does not already
+   * carry — it is there so the line has a side, which is what makes "above" and
+   * "below" readable at a glance on a near-black page.
+   */
+  const area = `${x(0)},${PLOT_BOTTOM} ${polyline} ${x(lastIndex)},${PLOT_BOTTOM}`;
 
   // First, middle and last dates only — a label under every point would be a
   // wall of text, and the shape is what's being read, not the dates.
@@ -141,6 +159,13 @@ export function TrendChart({ points, formatValue = defaultFormat }: TrendChartPr
   return (
     <View>
       <Svg width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
+        <Defs>
+          <LinearGradient id="trendWash" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={palette.greenBright} stopOpacity={0.3} />
+            <Stop offset="100%" stopColor={palette.greenBright} stopOpacity={0} />
+          </LinearGradient>
+        </Defs>
+
         {gridlines.map((value) => (
           <Line
             key={`grid-${value}`}
@@ -175,6 +200,8 @@ export function TrendChart({ points, formatValue = defaultFormat }: TrendChartPr
             {formatValue(value)}
           </SvgText>
         ))}
+
+        <Polyline points={area} fill="url(#trendWash)" stroke="none" />
 
         <AnimatedPolyline
           points={polyline}

@@ -51,7 +51,7 @@ import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TaskEditorSheet } from '../components/TaskEditorSheet';
 import { pressedStyle } from '../components/motion';
-import { FieldWell, Kicker, PrimaryButton, TextButton } from '../components/primitives';
+import { FieldWell, Kicker, PrimaryButton, StatTile, TextButton } from '../components/primitives';
 import { useLanguage, usePlural, useT } from '../hooks/useT';
 import {
   dayKey,
@@ -134,14 +134,16 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
             .join(' · ')}
         </Text>
 
+        {/* The streak is what this screen is ABOUT, so it is the lit one; the
+            month beside it is the context that makes a streak mean something. */}
         <View className="mx-lg mt-lg flex-row gap-md">
-          <Well
+          <StatTile
             label={t('Streak')}
             value={String(streak)}
             unit={plural(streak, { one: t('day'), few: 'дня', many: t('days') })}
-            green
+            tone="green"
           />
-          <Well
+          <StatTile
             label={t('This month')}
             value={String(month.done)}
             unit={t('of {asked}', { asked: month.asked })}
@@ -270,36 +272,6 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
 
 /* ------------------------------------------------------------------ */
 
-/** A 96-high well. `NumericWell` is the ± version of this; these two are facts. */
-function Well({
-  label,
-  value,
-  unit,
-  green = false,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  green?: boolean;
-}) {
-  return (
-    <View className="h-well flex-1 justify-between rounded-surface bg-surface-alt p-lg">
-      <Kicker>{label}</Kicker>
-      <View className="flex-row items-baseline">
-        <Text
-          className={[
-            'text-title-lg font-semibold tabular-nums',
-            green ? 'text-green-bright' : 'text-ink',
-          ].join(' ')}
-        >
-          {value}
-        </Text>
-        <Text className="ml-xs text-label text-ink-muted">{unit}</Text>
-      </View>
-    </View>
-  );
-}
-
 function Cell({
   cell,
   selected,
@@ -313,13 +285,15 @@ function Cell({
 
   if (cell.day === null) return <View className="flex-1 p-[3px]" />;
 
+  /* Four states, four skins, and the dashes are the point: an unanswered day is
+     a box that was never closed, not a fainter version of a missed one. */
   const fill =
     cell.state === 'done'
-      ? 'bg-green'
+      ? 'border border-green-bright/50 bg-green'
       : cell.state === 'missed'
         ? 'border border-hairline'
         : cell.state === 'unanswered'
-          ? 'border border-ink-faint/40'
+          ? 'border border-dashed border-ink-faint/45'
           : '';
 
   return (
@@ -334,7 +308,7 @@ function Cell({
       className="flex-1 p-[3px]"
     >
       <View
-        className={['aspect-square items-center justify-center rounded-[6px]', fill].join(' ')}
+        className={['aspect-square items-center justify-center rounded-cell', fill].join(' ')}
         style={
           // The app's one glow, spent here on the single square that is today.
           cell.isToday

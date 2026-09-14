@@ -63,10 +63,11 @@ import { ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
+import { Icon } from '../components/Icon';
 import { LanguageToggle, SectionTopBar } from '../components/SectionTopBar';
 import {
+  GlassCard,
   Kicker,
-  ListCard,
   NavRow,
   Separator,
   SettingRow,
@@ -96,6 +97,7 @@ import { commit, tap } from '../lib/feedback';
 import { LANGUAGES, LANGUAGE_LABELS, LANGUAGE_NAMES, type Language } from '../lib/i18n';
 import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
 import { SETTING_LIMITS, useSettings } from '../state/settingsStore';
+import { palette } from '../theme/tokens';
 
 /** A file that has been read and understood, waiting for a yes. */
 interface PendingImport {
@@ -314,13 +316,28 @@ export function SettingsHomeScreen({
           scrollEnabled={!asking}
         >
           <Kicker className="mx-lg mb-sm mt-md">{t('Sections')}</Kicker>
-          <ListCard className="mx-lg">
-            <NavRow label={t('Workout settings')} onPress={onOpenWorkoutSettings} />
+          {/* The three rows that ARE the app, each behind its own section's
+              mark: the routine list, the tick, and the symbol amounts are counted
+              in. The badge is what makes this list read as a map. */}
+          <GlassCard className="mx-lg">
+            <NavRow
+              label={t('Workout settings')}
+              badge={<Icon name="routines" size={15} color={palette.greenBright} />}
+              onPress={onOpenWorkoutSettings}
+            />
             <Separator />
-            <NavRow label={t('Daily tasks settings')} onPress={onOpenTaskSettings} />
+            <NavRow
+              label={t('Daily tasks settings')}
+              badge={<Icon name="check" size={15} color={palette.greenBright} />}
+              onPress={onOpenTaskSettings}
+            />
             <Separator />
-            <NavRow label={t('Expenses settings')} onPress={onOpenMoneySettings} />
-          </ListCard>
+            <NavRow
+              label={t('Expenses settings')}
+              badge={<Icon name="money" size={15} color={palette.greenBright} />}
+              onPress={onOpenMoneySettings}
+            />
+          </GlassCard>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
             {t(
               'Each one holds only what its own section reads. Rest, plates and weekly targets are training; the automatic tick is the daily tasks; what amounts are counted in is the expenses.',
@@ -343,7 +360,7 @@ export function SettingsHomeScreen({
               which is one of the exact events a backup exists to survive. So the
               row states which of the two facts is missing. */}
           <Kicker className="mx-lg mb-sm mt-xxl">{t('Everything, in one file')}</Kicker>
-          <View className="mx-lg overflow-hidden rounded-surface border border-hairline bg-surface">
+          <GlassCard className="mx-lg">
             <SettingRow
               label={t('Last backup')}
               value={describeBackupAge(settings.lastBackupAt, undefined, language)}
@@ -419,7 +436,7 @@ export function SettingsHomeScreen({
               label={t('Reset every setting to its default')}
               onPress={() => setConfirmingReset(true)}
             />
-          </View>
+          </GlassCard>
 
           {status ? (
             <Text

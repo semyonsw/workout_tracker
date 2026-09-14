@@ -180,6 +180,15 @@ export function weekdayNames(lang: Language = 'en'): readonly string[] {
   return lang === 'ru' ? WEEKDAY_NAMES_RU : WEEKDAY_NAMES;
 }
 
+/**
+ * The months, nominative — "September", "Сентябрь". `formatMonth` is the one to
+ * reach for when a whole label is wanted; this exists for the day dial, which
+ * draws its own three-letter abbreviation and needs the array to slice.
+ */
+export function monthNames(lang: Language = 'en'): readonly string[] {
+  return lang === 'ru' ? MONTH_NAMES_RU : MONTH_NAMES;
+}
+
 /** "September 2026" / "Сентябрь 2026". `month` is 0-based, as `Date` uses it. */
 export function formatMonth(year: number, month: number, lang: Language = 'en'): string {
   const names = lang === 'ru' ? MONTH_NAMES_RU : MONTH_NAMES;

@@ -3,6 +3,9 @@
  *
  *   Kicker      an uppercase Micro section label
  *   ListCard    a `surface` card that clips its children's hairlines
+ *   GlassCard   the same card as translucent ink over the page
+ *   StatTile    a 96-high fact: kicker, one number, what it is out of
+ *   DashedAdd   a dashed slot that adds one of whatever the list holds
  *   Separator   a 1px rule, inset past whatever column it must clear
  *   SettingRow  56 high: label left, value right
  *   NavRow      the same row with a chevron — it goes somewhere
@@ -36,7 +39,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { useT } from '../hooks/useT';
 import { tap } from '../lib/feedback';
-import { palette } from '../theme/tokens';
+import { glass, palette } from '../theme/tokens';
 import { BubblePressable } from './bubbles';
 import { Icon } from './Icon';
 import { pressedStyle } from './motion';
@@ -107,6 +110,98 @@ export function ListCard({
 }
 
 /**
+ * A raised GLASS surface: a few percent of ink over the page, held by the same
+ * hairline every other edge in the app is drawn with.
+ *
+ * `ListCard` is the opaque one and still owns the training section. This is what
+ * the redesigned sections are built from, and the difference is not decoration:
+ * both tasks and expenses carry a green glow behind their content, and an opaque
+ * card sitting on one punches a black hole in it. Glass lets the glow through.
+ *
+ * `tone` is which of the three steps in `glass` it is — `raised` for a card,
+ * `sunken` for a well inside one, `green` for a surface that is currently the
+ * answer (the day's balance, a done task). `radius` is the card's own corner,
+ * which is also what a `BubblePressable` inside it has to clip its ring to.
+ */
+export function GlassCard({
+  children,
+  tone = 'raised',
+  radius = 'surface',
+  className = '',
+}: {
+  children: ReactNode;
+  tone?: 'raised' | 'sunken' | 'green';
+  radius?: 'surface' | 'card' | 'sheet';
+  className?: string;
+}) {
+  const green = tone === 'green';
+  return (
+    <View
+      style={{
+        backgroundColor: green ? glass.green : tone === 'sunken' ? glass.sunken : glass.raised,
+        borderColor: green ? glass.greenEdge : palette.hairline,
+      }}
+      className={[
+        'overflow-hidden border',
+        radius === 'sheet'
+          ? 'rounded-sheet'
+          : radius === 'card'
+            ? 'rounded-card'
+            : 'rounded-surface',
+        className,
+      ].join(' ')}
+    >
+      {children}
+    </View>
+  );
+}
+
+/**
+ * A 96-high fact: a kicker pinned to the top, one number pinned to the bottom,
+ * and the unit it is out of beside it.
+ *
+ * Two of these side by side are how every section states its summary — done and
+ * full days, streak and this month. `green` marks the one that is the ANSWER
+ * rather than the context: a streak is the fact the task detail screen is about,
+ * and the month beside it is what makes the streak mean something.
+ *
+ * It is `NumericWell`'s geometry with a second line and no affordance. The wells
+ * are inputs; these are never tappable, which is why they do not share a
+ * component — a well that can be pressed and one that cannot look identical, and
+ * that was already one bug.
+ */
+export function StatTile({
+  label,
+  value,
+  unit,
+  tone = 'plain',
+}: {
+  label: string;
+  value: string;
+  /** What the value is out of — "of 112", "days". */
+  unit?: string;
+  tone?: 'plain' | 'green';
+}) {
+  const green = tone === 'green';
+  return (
+    <GlassCard tone={green ? 'green' : 'raised'} className="h-well flex-1 justify-between p-lg">
+      <Kicker tone={green ? 'green' : 'faint'}>{label}</Kicker>
+      <View className="flex-row items-baseline">
+        <Text
+          className={[
+            'text-title-lg font-semibold tabular-nums',
+            green ? 'text-green-bright' : 'text-ink',
+          ].join(' ')}
+        >
+          {value}
+        </Text>
+        {unit ? <Text className="ml-xs text-label text-ink-muted">{unit}</Text> : null}
+      </View>
+    </GlassCard>
+  );
+}
+
+/**
  * A 1px rule. `inset` is how far past the left edge it starts — 16 to clear the
  * gutter, 40 to clear a drag handle, 0 to full-bleed under a footer row.
  */
@@ -172,11 +267,21 @@ export function SettingRow({
 export function NavRow({
   label,
   value,
+  badge,
   onPress,
 }: {
   label: string;
   /** A count, so the row answers its own question without being opened. */
   value?: string;
+  /**
+   * A section's own mark, in a tinted square before the label.
+   *
+   * Only the three rows at the top of Settings carry one, and only because those
+   * three ARE the sections — the badge is the same glyph the tab leads with, so
+   * the list reads as the app's own map rather than as three more rows. A door
+   * inside a section does not get one; there is nothing for it to be a mark of.
+   */
+  badge?: ReactNode;
   onPress: () => void;
 }) {
   return (
@@ -187,6 +292,14 @@ export function NavRow({
       style={pressedStyle}
       className="h-row flex-row items-center px-lg"
     >
+      {badge ? (
+        <View
+          style={{ backgroundColor: glass.green }}
+          className="mr-md h-[28px] w-[28px] items-center justify-center rounded-cell"
+        >
+          {badge}
+        </View>
+      ) : null}
       <Text className="flex-1 text-body font-medium text-ink">{label}</Text>
       {value ? (
         <Text className="mr-md text-body font-medium tabular-nums text-ink-muted">{value}</Text>
@@ -315,6 +428,46 @@ export function AddRow({
       >
         {label}
       </Text>
+    </BubblePressable>
+  );
+}
+
+/**
+ * The same verb as `AddRow`, as a target of its own rather than the last row of
+ * a card.
+ *
+ * The redesigned lists are separate cards with 8px of air between them, so there
+ * is no card footer left to put `AddRow` in. A dashed outline is what says "a
+ * slot, not a thing" without inventing a colour: it is the hairline, drawn as a
+ * line you can see through.
+ */
+export function DashedAdd({
+  label,
+  onPress,
+  height = 52,
+  radius = 'surface',
+}: {
+  label: string;
+  onPress: () => void;
+  /** 52 for a row at the foot of a list, 150 for a tile in a grid. */
+  height?: number;
+  /** The corner of whatever it is an empty slot FOR. */
+  radius?: 'surface' | 'card';
+}) {
+  return (
+    <BubblePressable
+      onPress={onPress}
+      radius={radius === 'card' ? 18 : 14}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={(state) => [pressedStyle(state), { height, backgroundColor: glass.ghost }]}
+      className={[
+        'flex-row items-center justify-center border border-dashed border-hairline',
+        radius === 'card' ? 'rounded-card' : 'rounded-surface',
+      ].join(' ')}
+    >
+      <Icon name="plus" size={14} color={palette.inkFaint} />
+      <Text className="ml-sm text-label font-medium text-ink-muted">{label}</Text>
     </BubblePressable>
   );
 }
@@ -515,7 +668,8 @@ export function Segmented<T extends string>({
     <View
       accessibilityRole="radiogroup"
       accessibilityLabel={accessibilityLabel}
-      className="h-hit flex-row items-center rounded-pill border border-hairline bg-surface p-xs"
+      style={{ backgroundColor: glass.sunken }}
+      className="h-hit flex-row items-center rounded-pill border border-hairline p-xs"
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -584,10 +738,13 @@ export function SelectChip({
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={label}
-      style={pressedStyle}
+      style={(state) => [
+        pressedStyle(state),
+        selected ? undefined : { backgroundColor: glass.sunken },
+      ]}
       className={[
         'mb-sm mr-sm h-[36px] items-center justify-center rounded-pill px-lg',
-        selected ? 'bg-green' : 'border border-hairline bg-surface',
+        selected ? 'bg-green' : 'border border-hairline',
       ].join(' ')}
     >
       <Text
