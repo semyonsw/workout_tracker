@@ -99,6 +99,22 @@ describe('the catalogue itself', () => {
     }
   });
 
+  it('answers in Russian, not in the English it was handed', () => {
+    /*
+     * The sweep that translated the rest of the app added ~400 entries by hand,
+     * and the way that goes wrong quietly is an entry copied across without
+     * being translated: `t(key, 'ru') === key` renders English on a Russian
+     * phone and looks, from the code, exactly like a finished translation.
+     *
+     * Anything genuinely the same in both languages is a proper noun and has no
+     * business in the catalogue at all, so an identical pair is always a
+     * mistake.
+     */
+    for (const key of translatedKeys()) {
+      expect(t(key, 'ru')).not.toBe(key);
+    }
+  });
+
   it('keeps every placeholder a key declares', () => {
     for (const key of translatedKeys()) {
       const holes = [...key.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();

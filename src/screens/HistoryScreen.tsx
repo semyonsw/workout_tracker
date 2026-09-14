@@ -163,6 +163,9 @@ import {
   weightSteps,
 } from '../lib/units';
 import { historyTotals } from '../state/workoutHistoryStore';
+import { useLanguage, usePlural, useT, type Translate } from '../hooks/useT';
+import { term, type Language } from '../lib/i18n';
+import { formatMonth } from '../lib/days';
 import { palette } from '../theme/tokens';
 import { useSettings } from '../state/settingsStore';
 import { DURATION_LIMITS, formatTimeOfDay } from '../lib/workoutEdit';
@@ -186,26 +189,17 @@ const MINUTES_PER_DAY = 1440;
  */
 const TIME_STEP_MINUTES = 15;
 
-const EFFORT_WORDS: Record<SessionEffort, string> = {
-  easy: 'easy',
-  right: 'right',
-  hard: 'brutal',
-};
-
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
+/*
+ * A function rather than a constant, because the words are translated: a
+ * module-level record would be frozen in whichever language the app started in.
+ */
+function effortWords(t: Translate): Record<SessionEffort, string> {
+  return {
+    easy: t('easy'),
+    right: t('right'),
+    hard: t('brutal'),
+  };
+}
 
 export interface HistoryScreenProps {
   workouts: CompletedWorkout[];
@@ -295,6 +289,9 @@ export function HistoryScreen({
   toolbar,
   onBack,
 }: HistoryScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
+  const counted = usePlural();
   /** The open workout, the one being deleted, the one being renumbered. */
   const [openId, setOpenId] = useState<ID | null>(null);
   const [deleting, setDeleting] = useState<CompletedWorkout | null>(null);
@@ -330,7 +327,7 @@ export function HistoryScreen({
   const weeklyTargets = useSettings((s) => s.weeklySetTargets);
 
   const totals = useMemo(() => historyTotals(workouts), [workouts]);
-  const months = useMemo(() => groupByMonth(workouts), [workouts]);
+  const months = useMemo(() => groupByMonth(workouts, lang), [lang, workouts]);
   const balance = useMemo(
     () => clusterBalance({ workouts, exercisesById, windowDays: balanceWindowDays(window) }),
     [workouts, exercisesById, window],
@@ -386,13 +383,21 @@ export function HistoryScreen({
     <View className="flex-1 bg-bg">
       <View className="flex-1" style={dimmed ? { opacity: 0.28 } : undefined}>
         <ScreenHeader
-          kicker="Training history"
+          kicker={t('Training history')}
           onBack={onBack}
           subtitle={
             totals.workouts > 0
-              ? `${totals.workouts} ${totals.workouts === 1 ? 'workout' : 'workouts'} · ${totals.sets} sets${
+              ? `${t('{count} {workouts}', {
+                  count: totals.workouts,
+                  // `few` is Russian's own third form, so it is the Russian word.
+                  workouts: counted(totals.workouts, {
+                    one: t('workout'),
+                    few: 'тренировки',
+                    many: t('workouts'),
+                  }),
+                })} · ${t('{count} sets', { count: totals.sets })}${
                   totals.volumeKg > 0 && !totals.volumeIsPartial
-                    ? ` · ${formatVolumeKg(totals.volumeKg)}`
+                    ? ` · ${formatVolumeKg(totals.volumeKg, lang)}`
                     : ''
                 }`
               : undefined
@@ -418,7 +423,7 @@ export function HistoryScreen({
             {balance.totalSets > 0 ? (
               <View className="mb-lg">
                 <View className="mx-lg mb-sm flex-row items-center">
-                  <Kicker className="flex-1">Sets per cluster</Kicker>
+                  <Kicker className="flex-1">{t('Sets per cluster')}</Kicker>
                 </View>
                 <View className="mx-lg mb-md">
                   <Segmented
@@ -428,7 +433,7 @@ export function HistoryScreen({
                       tap();
                       setWindow(next);
                     }}
-                    accessibilityLabel="How far back the cluster counts reach"
+                    accessibilityLabel={t('How far back the cluster counts reach')}
                   />
                 </View>
                 <ListCard className="mx-lg">
@@ -451,7 +456,7 @@ export function HistoryScreen({
                       <Separator />
                       <View className="min-h-[44px] flex-row items-center px-lg py-sm">
                         <Text className="flex-1 text-label text-ink-faint">
-                          Exercise since deleted
+                          {t('Exercise since deleted')}
                         </Text>
                         <Text className="text-label font-semibold tabular-nums text-ink-faint">
                           {balance.unfiled}
@@ -528,8 +533,10 @@ export function HistoryScreen({
 
       {numbering ? (
         <NumberSheet
-          title="Which workout was this?"
-          body="Every other workout renumbers from this one — the ones before it count down, the ones after it count up. Set it once on any session and the whole log lines up, including the sessions you did before this app existed."
+          title={t('Which workout was this?')}
+          body={t(
+            'Every other workout renumbers from this one — the ones before it count down, the ones after it count up. Set it once on any session and the whole log lines up, including the sessions you did before this app existed.',
+          )}
           initial={numbers[numbering.id] ?? null}
           onConfirm={(value) => {
             onSetNumber(numbering.id, value);
@@ -541,12 +548,16 @@ export function HistoryScreen({
 
       {deleting ? (
         <ConfirmSheet
-          title={`Delete “${deleting.title}”?`}
-          body={`${formatShortDate(deleting.startedAt)} · ${deleting.setCount} ${
-            deleting.setCount === 1 ? 'set' : 'sets'
-          }. This is the record of a workout you did — deleting it also removes those sets from what the overload suggestions read.`}
-          confirmLabel="Delete it"
-          cancelLabel="Keep it"
+          title={t('Delete “{title}”?', { title: deleting.title })}
+          body={t(
+            '{date} · {count} sets. This is the record of a workout you did — deleting it also removes those sets from what the overload suggestions read.',
+            {
+              date: formatShortDate(deleting.startedAt, lang),
+              count: deleting.setCount,
+            },
+          )}
+          confirmLabel={t('Delete it')}
+          cancelLabel={t('Keep it')}
           onConfirm={() => {
             onDelete(deleting.id);
             setDeleting(null);
@@ -599,6 +610,9 @@ function WorkoutRow({
   /** Open the library picker for this workout. Absent = no way to navigate there. */
   onAddExercise?: () => void;
 }) {
+  const t = useT();
+  const lang = useLanguage();
+  const counted = usePlural();
   const exerciseCount = workout.exercises.length;
   const numbered = number != null && number >= 1;
   /** The exercise whose logged sets are listed, and the set being corrected. */
@@ -624,11 +638,11 @@ function WorkoutRow({
         accessibilityRole="button"
         accessibilityState={{ expanded: isOpen }}
         accessibilityLabel={[
-          numbered ? `Workout ${number},` : '',
+          numbered ? `${t('Workout {number}', { number })},` : '',
           workout.title,
-          formatShortDate(workout.startedAt),
-          `${workout.setCount} sets`,
-          `${workout.durationMinutes} minutes`,
+          formatShortDate(workout.startedAt, lang),
+          t('{count} sets', { count: workout.setCount }),
+          t('{minutes} minutes', { minutes: workout.durationMinutes }),
         ]
           .filter(Boolean)
           .join(' ')}
@@ -648,10 +662,18 @@ function WorkoutRow({
             {workout.title}
           </Text>
           <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
-            {exerciseCount} {exerciseCount === 1 ? 'exercise' : 'exercises'} · {workout.setCount}{' '}
-            {workout.setCount === 1 ? 'set' : 'sets'}
+            {t('{count} {exercises}', {
+              count: exerciseCount,
+              // `few` is Russian's own third form, so it is the Russian word.
+              exercises: counted(exerciseCount, {
+                one: t('exercise'),
+                few: 'упражнения',
+                many: t('exercises'),
+              }),
+            })}{' '}
+            · {t('{count} sets', { count: workout.setCount })}
             {workout.totalVolumeKg > 0 && !workout.volumeIsPartial
-              ? ` · ${formatVolumeKg(workout.totalVolumeKg)}`
+              ? ` · ${formatVolumeKg(workout.totalVolumeKg, lang)}`
               : ''}
             {/* HOW IT FELT, where the user said. Appended in `ink-faint` rather
                 than given a badge: it is one more fact on a line of facts, and a
@@ -659,13 +681,14 @@ function WorkoutRow({
                 logged before the question existed, and on every one where it was
                 skipped — which are the same thing and read the same way. */}
             {workout.effort ? (
-              <Text className="text-label text-ink-faint"> · {EFFORT_WORDS[workout.effort]}</Text>
+              <Text className="text-label text-ink-faint"> · {effortWords(t)[workout.effort]}</Text>
             ) : null}
           </Text>
         </View>
 
         <Text className="mr-sm text-label tabular-nums text-ink-muted">
-          {formatShortDate(workout.startedAt)} · {workout.durationMinutes} min
+          {formatShortDate(workout.startedAt, lang)} ·{' '}
+          {t('{minutes} min', { minutes: workout.durationMinutes })}
         </Text>
         <Icon name={isOpen ? 'chevron-down' : 'chevron-right'} size={18} color={palette.inkFaint} />
       </Pressable>
@@ -674,7 +697,7 @@ function WorkoutRow({
         <Reveal>
           <View className="bg-surface-alt pb-sm">
             {workout.exercises.map((exercise) => {
-              const total = describeTotal(exercise);
+              const total = describeTotal(exercise, t, lang);
               const listing = openExerciseId === exercise.exerciseId;
               /* Bounded before it is rendered, so it can never take the name's
                half of the row. Open, the row shows the whole thing. */
@@ -698,8 +721,10 @@ function WorkoutRow({
                     accessibilityRole="button"
                     accessibilityState={{ expanded: listing }}
                     accessibilityLabel={`${exercise.name}, ${exercise.summary}. ${
-                      clamped.hidden > 0 && !listing ? `Show all ${exercise.setCount} sets. ` : ''
-                    }Correct a set.`}
+                      clamped.hidden > 0 && !listing
+                        ? `${t('Show all {count} sets.', { count: exercise.setCount })} `
+                        : ''
+                    }${t('Correct a set.')}`}
                     style={pressedStyle}
                     className="flex-row items-start px-lg py-sm"
                   >
@@ -816,7 +841,7 @@ function WorkoutRow({
                           className="h-hit justify-center"
                         >
                           <Text className="text-label font-medium text-ink-faint">
-                            Remove exercise
+                            {t('Remove exercise')}
                           </Text>
                         </Pressable>
                       ) : null}
@@ -836,7 +861,7 @@ function WorkoutRow({
                   onAddExercise();
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Add an exercise to this workout"
+                accessibilityLabel={t('Add an exercise to this workout')}
                 style={pressedStyle}
                 className="h-hit justify-center px-lg"
               >
@@ -872,10 +897,10 @@ function WorkoutRow({
 
             {editingWorkout ? (
               <View className="px-lg pb-sm">
-                <Kicker className="mb-sm">Name</Kicker>
+                <Kicker className="mb-sm">{t('Name')}</Kicker>
                 <FieldWell
                   value={draftTitle}
-                  placeholder="Workout name"
+                  placeholder={t('Workout name')}
                   onChangeText={setDraftTitle}
                   /*
                    * Committed on BLUR, not on every keystroke. Every write here
@@ -883,14 +908,14 @@ function WorkoutRow({
                    * per typed character would rebuild the list under the keyboard.
                    */
                   onBlur={() => onEditWorkout({ title: draftTitle })}
-                  accessibilityLabel="Workout name"
+                  accessibilityLabel={t('Workout name')}
                 />
 
                 <View className="mt-md overflow-hidden rounded-surface border border-hairline bg-surface">
                   <StepperRow
-                    label="Date"
-                    hint="Every set in this workout moves with it"
-                    value={formatShortDate(workout.startedAt)}
+                    label={t('Date')}
+                    hint={t('Every set in this workout moves with it')}
+                    value={formatShortDate(workout.startedAt, lang)}
                     onDecrease={() => {
                       tap();
                       onEditWorkout({ shiftMinutes: -MINUTES_PER_DAY });
@@ -902,7 +927,7 @@ function WorkoutRow({
                   />
                   <Separator />
                   <StepperRow
-                    label="Started"
+                    label={t('Started')}
                     value={formatTimeOfDay(workout.startedAt)}
                     onDecrease={() => {
                       tap();
@@ -915,7 +940,7 @@ function WorkoutRow({
                   />
                   <Separator />
                   <StepperRow
-                    label="Took"
+                    label={t('Took')}
                     value={`${workout.durationMinutes} min`}
                     onDecrease={() => {
                       tap();
@@ -959,7 +984,9 @@ function WorkoutRow({
               style={pressedStyle}
               className="h-hit justify-center px-lg"
             >
-              <Text className="text-label font-medium text-ink-faint">Delete this workout</Text>
+              <Text className="text-label font-medium text-ink-faint">
+                {t('Delete this workout')}
+              </Text>
             </Pressable>
           </View>
         </Reveal>
@@ -990,6 +1017,8 @@ function ClusterRow({
   /** The user's own weekly target for this cluster, or undefined. */
   target?: number;
 }) {
+  const t = useT();
+  const lang = useLanguage();
   const totals = describeClusterTotals(row.totals, formatDuration);
   /*
    * THE BAR IS MEASURED AGAINST THE TARGET WHERE THERE IS ONE, and against the
@@ -1012,11 +1041,13 @@ function ClusterRow({
   return (
     <View
       className="min-h-[44px] flex-row items-center px-lg py-sm"
-      accessibilityLabel={`${clusterLabel(row.cluster)}, ${row.sets} ${
-        row.sets === 1 ? 'set' : 'sets'
-      }${target != null ? ` of ${target}` : ''}${totals ? `, ${totals}` : ''}`}
+      accessibilityLabel={`${clusterLabel(row.cluster, lang)}, ${t('{count} sets', {
+        count: row.sets,
+      })}${target != null ? ` ${t('of {target}', { target })}` : ''}${totals ? `, ${totals}` : ''}`}
     >
-      <Text className="w-[64px] text-label font-medium text-ink">{clusterLabel(row.cluster)}</Text>
+      <Text className="w-[64px] text-label font-medium text-ink">
+        {clusterLabel(row.cluster, lang)}
+      </Text>
 
       {/* `14 / 16` where a target exists, `14` where it does not. The target is
           `ink-faint` because it is the thing the user typed, not the thing that
@@ -1086,6 +1117,8 @@ function LoggedSetRow({
   onRemove: () => void;
   onDone: () => void;
 }) {
+  const t = useT();
+  const lang = useLanguage();
   const weighted = row.weightKg != null;
   const steps = weightSteps(unitSystem);
   const countDelta = countStep(row.countUnit);
@@ -1114,7 +1147,10 @@ function LoggedSetRow({
             onPress={() => onFocusField('weight')}
             hitSlop={6}
             accessibilityRole="button"
-            accessibilityLabel={`Correct the weight, ${formatWeight(row.weightKg, unitSystem, row.loadMode)} ${unitLabel(unitSystem)}`}
+            accessibilityLabel={t('Correct the weight, {weight} {unit}', {
+              weight: formatWeight(row.weightKg, unitSystem, row.loadMode),
+              unit: unitLabel(unitSystem, lang),
+            })}
             style={pressedStyle}
             className={[
               'min-w-[76px] flex-row items-baseline',
@@ -1125,7 +1161,7 @@ function LoggedSetRow({
               {formatWeight(row.weightKg, unitSystem, row.loadMode)}
             </Text>
             <Text className="ml-xs text-micro uppercase text-ink-faint">
-              {unitLabel(unitSystem)}
+              {unitLabel(unitSystem, lang)}
             </Text>
           </Pressable>
         ) : null}
@@ -1134,7 +1170,10 @@ function LoggedSetRow({
           onPress={() => onFocusField('count')}
           hitSlop={6}
           accessibilityRole="button"
-          accessibilityLabel={`Correct the count, ${formatCount(row.count, row.countUnit)} ${countUnitLabel(row.countUnit)}`}
+          accessibilityLabel={t('Correct the count, {count} {unit}', {
+            count: formatCount(row.count, row.countUnit),
+            unit: countUnitLabel(row.countUnit, lang),
+          })}
           style={pressedStyle}
           className={[
             'ml-md min-w-[76px] flex-row items-baseline',
@@ -1145,7 +1184,7 @@ function LoggedSetRow({
             {formatCount(row.count, row.countUnit)}
           </Text>
           <Text className="ml-xs text-micro uppercase text-ink-faint">
-            {countUnitLabel(row.countUnit)}
+            {countUnitLabel(row.countUnit, lang)}
           </Text>
         </Pressable>
 
@@ -1188,25 +1227,27 @@ function LoggedSetRow({
                 onPress={onRemove}
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel="Remove this set from the workout"
+                accessibilityLabel={t('Remove this set from the workout')}
                 style={pressedStyle}
                 className="h-hit justify-center"
               >
-                <Text className="text-label font-medium text-ink-muted">Remove set</Text>
+                <Text className="text-label font-medium text-ink-muted">{t('Remove set')}</Text>
               </Pressable>
             ) : (
-              <Text className="text-label text-ink-faint">The only set — delete the workout</Text>
+              <Text className="text-label text-ink-faint">
+                {t('The only set — delete the workout')}
+              </Text>
             )}
 
             <Pressable
               onPress={onDone}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Done correcting"
+              accessibilityLabel={t('Done correcting')}
               style={pressedStyle}
               className="h-hit justify-center"
             >
-              <Text className="text-label font-semibold text-green-bright">Done</Text>
+              <Text className="text-label font-semibold text-green-bright">{t('Done')}</Text>
             </Pressable>
           </View>
         </View>
@@ -1226,14 +1267,16 @@ function LoggedSetRow({
  * workouts actually on disk is stated in Settings.
  */
 function Empty({ loadFailed = false }: { loadFailed?: boolean }) {
+  const t = useT();
+
   if (loadFailed) {
     return (
       <View className="flex-1 items-center justify-center px-xl">
-        <Text className="text-title font-medium text-ink">Couldn't open your log</Text>
+        <Text className="text-title font-medium text-ink">{t("Couldn't open your log")}</Text>
         <Text className="mt-sm text-center text-body text-ink-muted">
-          Your workouts are still on disk — this is a failure to READ them, not a loss. Close the
-          app and open it again. Settings states how many are down there, and `Export data` still
-          works.
+          {t(
+            'Your workouts are still on disk — this is a failure to READ them, not a loss. Close the app and open it again. Settings states how many are down there, and “Export data” still works.',
+          )}
         </Text>
       </View>
     );
@@ -1241,9 +1284,11 @@ function Empty({ loadFailed = false }: { loadFailed?: boolean }) {
 
   return (
     <View className="flex-1 items-center justify-center px-xl">
-      <Text className="text-title font-medium text-ink">Nothing finished yet</Text>
+      <Text className="text-title font-medium text-ink">{t('Nothing finished yet')}</Text>
       <Text className="mt-sm text-center text-body text-ink-muted">
-        Finish a workout and it lands here — every set, with what you lifted and how long it took.
+        {t(
+          'Finish a workout and it lands here — every set, with what you lifted and how long it took.',
+        )}
       </Text>
     </View>
   );
@@ -1263,7 +1308,11 @@ interface MonthGroup {
  * The input is already newest-first (the store keeps it that way), so insertion
  * order is the right order and nothing is re-sorted here.
  */
-function groupByMonth(workouts: readonly CompletedWorkout[], now: Date = new Date()): MonthGroup[] {
+function groupByMonth(
+  workouts: readonly CompletedWorkout[],
+  lang: Language,
+  now: Date = new Date(),
+): MonthGroup[] {
   const groups = new Map<string, MonthGroup>();
 
   for (const workout of workouts) {
@@ -1275,7 +1324,7 @@ function groupByMonth(workouts: readonly CompletedWorkout[], now: Date = new Dat
     }
     groups.set(key, {
       key,
-      label: monthLabel(workout.startedAt, now),
+      label: monthLabel(workout.startedAt, now, lang),
       workouts: [workout],
     });
   }
@@ -1284,10 +1333,14 @@ function groupByMonth(workouts: readonly CompletedWorkout[], now: Date = new Dat
 }
 
 /** "August", or "August 2025" once the year stops being obvious. */
-function monthLabel(iso: string, now: Date): string {
+function monthLabel(iso: string, now: Date, lang: Language): string {
   const date = new Date(iso);
-  const name = MONTHS[date.getMonth()] ?? '';
-  return date.getFullYear() === now.getFullYear() ? name : `${name} ${date.getFullYear()}`;
+  // The nominative month, because this is a heading naming the month itself —
+  // `formatMonth` owns that table, and the genitive one is for dates.
+  const full = formatMonth(date.getFullYear(), date.getMonth(), lang);
+  if (date.getFullYear() !== now.getFullYear()) return full;
+  // Same year, so the year is noise: drop it off whatever `formatMonth` built.
+  return full.replace(` ${date.getFullYear()}`, '');
 }
 
 /**
@@ -1297,14 +1350,17 @@ function monthLabel(iso: string, now: Date): string {
  * whose counts don't add to anything meaningful. Rounds state both numbers,
  * because "12 rounds" and "36:00" are two different facts about the same session.
  */
-function describeTotal(exercise: CompletedExercise): string | null {
+function describeTotal(exercise: CompletedExercise, t: Translate, lang: Language): string | null {
   const { totalCount, setCount, countUnit } = exercise;
   if (setCount <= 1 || totalCount <= 0) return null;
 
-  if (countUnit === 'seconds') return `${formatDuration(totalCount)} total`;
-  if (countUnit === 'rounds') return `${setCount} rounds · ${formatDuration(totalCount)}`;
-  if (countUnit === 'meters') return `${totalCount} m total`;
-  return `${totalCount} reps total`;
+  if (countUnit === 'seconds') return t('{what} total', { what: formatDuration(totalCount) });
+  if (countUnit === 'rounds') {
+    return `${t('{count} rounds', { count: setCount })} · ${formatDuration(totalCount)}`;
+  }
+  return t('{what} total', {
+    what: `${totalCount} ${term('unit', countUnit === 'meters' ? 'm' : 'reps', lang)}`,
+  });
 }
 
 /**

@@ -57,11 +57,12 @@ import { Kicker } from '../components/primitives';
 import {
   describeMonth,
   trainingMonths,
-  WEEKDAY_INITIALS,
   type CalendarCell,
   type CalendarMonth,
 } from '../lib/calendar';
 import type { CompletedWorkout } from '../lib/completedWorkout';
+import { formatMonth, weekdayInitials } from '../lib/days';
+import { useLanguage, usePlural, useT } from '../hooks/useT';
 
 interface CalendarScreenProps {
   workouts: CompletedWorkout[];
@@ -72,6 +73,8 @@ interface CalendarScreenProps {
 }
 
 export function CalendarScreen({ workouts, toolbar, onBack }: CalendarScreenProps) {
+  const t = useT();
+  const countedDays = usePlural();
   /*
    * One pass over the log, then one grid per month. Memoized on the log itself:
    * the index is a few thousand rows and the grids are pure arithmetic over it, so
@@ -111,12 +114,16 @@ export function CalendarScreen({ workouts, toolbar, onBack }: CalendarScreenProp
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
-        kicker="Training history"
+        kicker={t('Training history')}
         onBack={onBack}
         subtitle={
           workouts.length === 0
-            ? 'Nothing finished yet'
-            : `${totalDays} ${totalDays === 1 ? 'day' : 'days'} trained`
+            ? t('Nothing finished yet')
+            : t('{count} {days} trained', {
+                count: totalDays,
+                // `few` is Russian's own third form, so it is the Russian word.
+                days: countedDays(totalDays, { one: t('day'), few: 'дня', many: t('days') }),
+              })
         }
         bordered={false}
       >
@@ -132,7 +139,7 @@ export function CalendarScreen({ workouts, toolbar, onBack }: CalendarScreenProp
       >
         {months.length === 0 ? (
           <Text className="mx-lg mt-xl text-label text-ink-faint">
-            Finish a workout and the days you trained appear here.
+            {t('Finish a workout and the days you trained appear here.')}
           </Text>
         ) : (
           months.map((month) => <Month key={`${month.year}-${month.month}`} month={month} />)
@@ -145,14 +152,15 @@ export function CalendarScreen({ workouts, toolbar, onBack }: CalendarScreenProp
 /* ------------------------------------------------------------------ */
 
 function Month({ month }: { month: CalendarMonth }) {
-  const summary = describeMonth(month);
+  const lang = useLanguage();
+  const summary = describeMonth(month, lang);
 
   return (
     <View className="mt-xl">
       {/* Green only when there is something in the month — the same rule the
           create screen's kickers follow: the accent means "this has content". */}
       <Kicker tone={month.total > 0 ? 'green' : 'faint'} className="mx-lg mb-sm">
-        {month.label}
+        {formatMonth(month.year, month.month, lang)}
         {summary ? ` · ${summary}` : ''}
       </Kicker>
 
@@ -160,7 +168,7 @@ function Month({ month }: { month: CalendarMonth }) {
         {/* The column headings. `ink-faint` and micro, because they are a ruler
             rather than data — the same treatment the set index column gets. */}
         <View className="flex-row">
-          {WEEKDAY_INITIALS.map((initial, index) => (
+          {weekdayInitials(lang).map((initial, index) => (
             <View key={`${initial}-${index}`} className="flex-1 items-center py-xs">
               <Text className="text-micro font-semibold uppercase text-ink-faint">{initial}</Text>
             </View>
@@ -199,6 +207,9 @@ function Month({ month }: { month: CalendarMonth }) {
  * here" should look like when most of a month is nothing.
  */
 function Day({ cell }: { cell: CalendarCell }) {
+  const t = useT();
+  const countedWorkouts = usePlural();
+
   if (cell.day == null) return <View className="flex-1 py-xs" />;
 
   const trained = cell.workouts > 0;
@@ -209,8 +220,15 @@ function Day({ cell }: { cell: CalendarCell }) {
         accessible
         accessibilityLabel={
           trained
-            ? `${cell.date}: ${cell.workouts} ${cell.workouts === 1 ? 'workout' : 'workouts'}`
-            : `${cell.date}: no workout`
+            ? `${cell.date}: ${t('{count} {workouts}', {
+                count: cell.workouts,
+                workouts: countedWorkouts(cell.workouts, {
+                  one: t('workout'),
+                  few: 'тренировки',
+                  many: t('workouts'),
+                }),
+              })}`
+            : `${cell.date}: ${t('no workout')}`
         }
         className={[
           // Square-ish and pill-rounded rather than a circle: a 36 dp circle in a

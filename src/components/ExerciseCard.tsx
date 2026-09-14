@@ -91,6 +91,7 @@ import { formatClock } from '../lib/units';
 import type { ID, UnitSystem } from '../types/models';
 import { glow as GLOW, palette } from '../theme/tokens';
 import { Icon } from './Icon';
+import { useLanguage, useT } from '../hooks/useT';
 import { OverloadNudge } from './OverloadNudge';
 import { QuickAdjust } from './QuickAdjust';
 import { SetRow, type SetField } from './SetRow';
@@ -242,6 +243,8 @@ function ExerciseCardComponent({
   onEditExercise,
 }: ExerciseCardProps) {
   /** Which set row has the editor open, and on which field. Card-local state. */
+  const t = useT();
+  const lang = useLanguage();
   const [focus, setFocus] = useState<{ setId: ID; field: SetField } | null>(null);
 
   const completed = entry.sets.filter((s) => s.isCompleted).length;
@@ -258,9 +261,9 @@ function ExerciseCardComponent({
   const nudgeWaiting = entry.overload.shouldNudge && !entry.overloadAccepted;
   const isRounds = entry.exercise.countUnit === 'rounds';
   const isTimed = isTimedExercise(entry.exercise);
-  const unit = isRounds ? 'round' : 'set';
+  const unit = isRounds ? t('round') : t('set');
   /* The last row cannot be removed without the exercise going with it. Say so. */
-  const removeLabel = total <= 1 ? 'Remove exercise' : `Remove ${unit}`;
+  const removeLabel = total <= 1 ? t('Remove exercise') : t('Remove {unit}', { unit });
 
   /* ---------------------------------------------------------------- */
   /* Collapsed                                                         */
@@ -286,12 +289,14 @@ function ExerciseCardComponent({
         delayLongPress={280}
         accessibilityRole="button"
         accessibilityState={{ expanded: false }}
-        accessibilityLabel={`${entry.exercise.name}, ${completed} of ${total} sets done${
-          glowing ? ', your next set is in here' : ''
-        }${nudgeWaiting ? ', suggestion waiting' : ''}${
-          superset === 'none' ? '' : ', part of a superset'
-        }`}
-        accessibilityHint={onLift ? 'Long press, then slide to reorder' : undefined}
+        accessibilityLabel={`${t('{name}, {done} of {total} sets done', {
+          name: entry.exercise.name,
+          done: completed,
+          total,
+        })}${glowing ? `, ${t('your next set is in here')}` : ''}${
+          nudgeWaiting ? `, ${t('suggestion waiting')}` : ''
+        }${superset === 'none' ? '' : `, ${t('part of a superset')}`}`}
+        accessibilityHint={onLift ? t('Long press, then slide to reorder') : undefined}
         style={[
           dimmed ? { opacity: 0.4 } : null,
           glowing ? { boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 18, color: GLOW }] } : null,
@@ -372,8 +377,8 @@ function ExerciseCardComponent({
         accessibilityLabel={entry.exercise.name}
         accessibilityHint={
           onLift
-            ? 'Tap to close its sets. Long press, then slide to reorder'
-            : 'Tap to close its sets'
+            ? t('Tap to close its sets. Long press, then slide to reorder')
+            : t('Tap to close its sets')
         }
         className="mx-lg mb-md"
       >
@@ -393,12 +398,15 @@ function ExerciseCardComponent({
           </View>
         </View>
         <Text className="mt-xs text-label tabular-nums text-ink-muted">
-          {formatTarget(entry)}
+          {formatTarget(entry, lang)}
           {entry.exercise.isUnilateral ? (
-            <Text className="text-label text-ink-faint"> · each side</Text>
+            <Text className="text-label text-ink-faint"> · {t('each side')}</Text>
           ) : null}
           {entry.lastSessionShort ? (
-            <Text className="text-label text-ink-faint"> · last: {entry.lastSessionShort}</Text>
+            <Text className="text-label text-ink-faint">
+              {' '}
+              · {t('last: {what}', { what: entry.lastSessionShort })}
+            </Text>
           ) : null}
         </Text>
 
@@ -415,7 +423,7 @@ function ExerciseCardComponent({
         */}
         {bestLine ? (
           <Text className="mt-xs text-label tabular-nums text-green-bright">
-            New best · {bestLine}
+            {t('New best')} · {bestLine}
           </Text>
         ) : null}
 
@@ -541,11 +549,11 @@ function ExerciseCardComponent({
               onAddSet();
             }}
             accessibilityRole="button"
-            accessibilityLabel={`Add ${unit}`}
+            accessibilityLabel={t('Add {unit}', { unit })}
             className="h-row flex-1 flex-row items-center justify-center"
           >
             <Icon name="plus" size={14} color={palette.inkFaint} />
-            <Text className="ml-sm text-label text-ink-muted">Add {unit}</Text>
+            <Text className="ml-sm text-label text-ink-muted">{t('Add {unit}', { unit })}</Text>
           </Pressable>
 
           {/* The opposite mark in the opposite half: `−` is `+` with its vertical
@@ -582,11 +590,11 @@ function ExerciseCardComponent({
                 onAddWarmup();
               }}
               accessibilityRole="button"
-              accessibilityLabel={`Add warm-up sets: ${warmupSummary}`}
+              accessibilityLabel={t('Add warm-up sets: {what}', { what: warmupSummary })}
               className="min-h-row flex-row items-center justify-center px-lg py-sm"
             >
               <Icon name="plus" size={13} color={palette.greenBright} />
-              <Text className="ml-sm text-label font-medium text-green-bright">Warm-up</Text>
+              <Text className="ml-sm text-label font-medium text-green-bright">{t('Warm-up')}</Text>
               <Text
                 numberOfLines={1}
                 className="ml-sm flex-shrink text-label tabular-nums text-ink-faint"
@@ -607,12 +615,12 @@ function ExerciseCardComponent({
             <Pressable
               onPress={onStartRest}
               accessibilityRole="button"
-              accessibilityLabel={`Start a ${formatClock(restSeconds)} rest`}
+              accessibilityLabel={t('Start a {clock} rest', { clock: formatClock(restSeconds) })}
               className="h-row flex-row items-center justify-center"
             >
               <Icon name="pause" size={13} color={palette.inkFaint} />
               <Text className="ml-sm text-label tabular-nums text-ink-muted">
-                Rest {formatClock(restSeconds)}
+                {t('Rest {clock}', { clock: formatClock(restSeconds) })}
               </Text>
             </Pressable>
           </>
@@ -636,11 +644,11 @@ function ExerciseCardComponent({
                 onOpenFocus();
               }}
               accessibilityRole="button"
-              accessibilityLabel="Open focus mode on your next set"
+              accessibilityLabel={t('Open focus mode on your next set')}
               className="h-row flex-row items-center justify-center"
             >
               <Icon name="play" size={14} color={palette.greenBright} />
-              <Text className="ml-sm text-label font-medium text-green-bright">Focus</Text>
+              <Text className="ml-sm text-label font-medium text-green-bright">{t('Focus')}</Text>
             </Pressable>
           </>
         ) : null}
@@ -660,11 +668,13 @@ function ExerciseCardComponent({
                 onEditExercise();
               }}
               accessibilityRole="button"
-              accessibilityLabel={`Edit ${entry.exercise.name}: rest, defaults and targets`}
+              accessibilityLabel={t('Edit {name}: rest, defaults and targets', {
+                name: entry.exercise.name,
+              })}
               className="h-row flex-row items-center justify-center"
             >
               <Icon name="edit" size={13} color={palette.inkFaint} />
-              <Text className="ml-sm text-label text-ink-muted">Edit exercise</Text>
+              <Text className="ml-sm text-label text-ink-muted">{t('Edit exercise')}</Text>
             </Pressable>
           </>
         ) : null}
@@ -681,11 +691,13 @@ function ExerciseCardComponent({
                 onRemoveExercise();
               }}
               accessibilityRole="button"
-              accessibilityLabel={`Remove ${entry.exercise.name} from this workout`}
+              accessibilityLabel={t('Remove {name} from this workout', {
+                name: entry.exercise.name,
+              })}
               className="h-row flex-row items-center justify-center"
             >
               <Icon name="minus" size={13} color={palette.inkFaint} />
-              <Text className="ml-sm text-label text-ink-muted">Remove exercise</Text>
+              <Text className="ml-sm text-label text-ink-muted">{t('Remove exercise')}</Text>
             </Pressable>
           </>
         ) : null}

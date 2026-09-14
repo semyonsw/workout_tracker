@@ -39,6 +39,8 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 
 import { releaseBeeper } from '../lib/beeper';
+import { t as translate } from '../lib/i18n';
+import { useSettings } from '../state/settingsStore';
 import { useActiveWorkout } from '../state/activeWorkoutStore';
 import { Kicker, PrimaryButton } from './primitives';
 
@@ -107,6 +109,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       );
     }
 
+    /*
+     * The language is READ FROM THE STORE rather than through `useT`, because
+     * this is a class component — an error boundary has to be one — and hooks
+     * cannot be called here. Reading it at render is enough: this screen is
+     * mounted by a crash and torn down by `Try again`, so there is nothing to
+     * re-render against a language change while it is up.
+     */
+    const lang = useSettings.getState().language;
+    const t = (key: string) => translate(key, lang);
+
     const stack = (componentStack ?? error.stack ?? '')
       .split('\n')
       .map((line) => line.trim())
@@ -116,14 +128,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     return (
       <View className="flex-1 bg-bg px-lg pt-xxl">
-        <Kicker>Something broke</Kicker>
+        <Kicker>{t('Something broke')}</Kicker>
 
         <Text className="mt-md text-title font-medium text-ink">
-          The screen below this one crashed.
+          {t('The screen below this one crashed.')}
         </Text>
         <Text className="mt-sm text-body text-ink-muted">
-          Sets you already logged are saved. Try again first — discard the workout only if it
-          crashes straight back to here.
+          {t(
+            'Sets you already logged are saved. Try again first — discard the workout only if it crashes straight back to here.',
+          )}
         </Text>
 
         <ScrollView
@@ -137,10 +150,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         </ScrollView>
 
         <View className="mt-xl">
-          <PrimaryButton label="Try again" onPress={this.retry} />
+          <PrimaryButton label={t('Try again')} onPress={this.retry} />
           <View className="h-sm" />
           <PrimaryButton
-            label="Discard the workout and restart"
+            label={t('Discard the workout and restart')}
             variant="ghost"
             onPress={this.discardAndRetry}
           />

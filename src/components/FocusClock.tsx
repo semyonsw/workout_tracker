@@ -49,6 +49,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { describeSetPosition, type FocusTarget } from '../lib/focusPlan';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
+import { useLanguage, useT } from '../hooks/useT';
 import { glow as GLOW, palette, timerShadow } from '../theme/tokens';
 import type { PillTone } from './TimerPill';
 import type { UnitSystem } from '../types/models';
@@ -261,6 +262,8 @@ export function FocusUpNext({
    * the accessibility state. */
   isOpen?: boolean;
 }) {
+  const t = useT();
+  const lang = useLanguage();
   const { exercise } = target.entry;
 
   const body = (
@@ -272,7 +275,7 @@ export function FocusUpNext({
           isNewExercise ? 'text-green-bright' : 'text-ink-faint',
         ].join(' ')}
       >
-        {isNewExercise ? 'next exercise' : 'up next'}
+        {isNewExercise ? t('next exercise') : t('up next')}
       </Text>
 
       <Text
@@ -292,7 +295,7 @@ export function FocusUpNext({
               {formatWeight(target.set.weightKg, unitSystem, exercise.loadMode)}
             </Text>
             <Text className="ml-xs text-label font-semibold uppercase text-ink-muted">
-              {unitLabel(unitSystem)}
+              {unitLabel(unitSystem, lang)}
             </Text>
             <Text className="mx-sm text-label text-ink-faint">×</Text>
           </>
@@ -302,12 +305,12 @@ export function FocusUpNext({
           {formatCount(target.set.count, exercise.countUnit)}
         </Text>
         <Text className="ml-xs text-label font-semibold uppercase text-ink-muted">
-          {countUnitLabel(exercise.countUnit)}
+          {countUnitLabel(exercise.countUnit, lang)}
         </Text>
 
         <View className="flex-1" />
         <Text className="text-micro font-semibold uppercase tabular-nums text-ink-faint">
-          {describeSetPosition(target)}
+          {describeSetPosition(target, lang)}
         </Text>
         {/* The affordance, and only when there is one: `±` is the same mark the
             LIFT state uses for the same panel, so the gesture is learned once
@@ -320,7 +323,7 @@ export function FocusUpNext({
 
       {isNewExercise && previousName ? (
         <Text className="mt-sm text-micro font-semibold uppercase text-green-bright">
-          walk to a new machine · you were on {previousName}
+          {t('walk to a new machine · you were on {name}', { name: previousName })}
         </Text>
       ) : null}
     </>
@@ -345,7 +348,9 @@ export function FocusUpNext({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ expanded: isOpen }}
-      accessibilityLabel={`Up next: ${exercise.name}. Adjust the weight or the count.`}
+      accessibilityLabel={t('Up next: {name}. Adjust the weight or the count.', {
+        name: exercise.name,
+      })}
       style={style}
       className={`${className} mb-sm`}
     >

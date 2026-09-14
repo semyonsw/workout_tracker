@@ -14,6 +14,7 @@
  * any more. See `ladderOwnsReps`.
  */
 
+import { t, term, type Language } from './i18n';
 import type { CountUnit, Exercise, LoadMode, TimerMode } from '../types/models';
 import { resolveTimerMode } from './setTimer';
 
@@ -41,16 +42,16 @@ function ladderOwnsReps(exercise: ShapeInput): boolean {
 }
 
 /** The count axis as a noun: "reps" / "time" / "metres" / "rounds". */
-function countNoun(countUnit: CountUnit): string {
+function countNoun(countUnit: CountUnit, lang: Language): string {
   switch (countUnit) {
     case 'seconds':
-      return 'time';
+      return t('time', lang);
     case 'meters':
-      return 'metres';
+      return t('metres', lang);
     case 'rounds':
-      return 'rounds';
+      return t('rounds', lang);
     default:
-      return 'reps';
+      return t('reps', lang);
   }
 }
 
@@ -66,15 +67,18 @@ function countNoun(countUnit: CountUnit): string {
  * caller's style; uppercased here too so the string is correct in an
  * accessibility label.
  */
-export function describeShape(exercise: ShapeInput | Exercise): string {
-  const noun = countNoun(exercise.countUnit);
+export function describeShape(exercise: ShapeInput | Exercise, lang: Language = 'en'): string {
+  const noun = countNoun(exercise.countUnit, lang);
   if (!exercise.requiresWeight) {
     const timer = resolveTimerMode(exercise);
-    if (timer === 'countdown') return `${noun} · countdown`.toUpperCase();
-    if (timer === 'countup') return `${noun} · count up`.toUpperCase();
-    return `${noun} only`.toUpperCase();
+    if (timer === 'countdown') return `${noun} · ${t('countdown', lang)}`.toUpperCase();
+    if (timer === 'countup') return `${noun} · ${t('count up', lang)}`.toUpperCase();
+    return t('{noun} only', lang, { noun }).toUpperCase();
   }
-  return `kg · ${noun} · ${exercise.loadMode.replace(/_/g, ' ')}`.toUpperCase();
+  // The load mode is stored with an underscore in it (`added_bodyweight`), so it
+  // is looked up as the spaced phrase the catalogue actually carries.
+  const load = t(exercise.loadMode.replace(/_/g, ' '), lang);
+  return `${term('unit', 'kg', lang)} · ${noun} · ${load}`.toUpperCase();
 }
 
 /**
@@ -83,15 +87,17 @@ export function describeShape(exercise: ShapeInput | Exercise): string {
  * It sits directly above the wells it describes and goes `green-bright` because
  * flipping the toggle CHANGES it — the label is the receipt for the change.
  */
-export function describeSetInputs(exercise: ShapeInput): string {
-  const noun = countNoun(exercise.countUnit);
+export function describeSetInputs(exercise: ShapeInput, lang: Language = 'en'): string {
+  const noun = countNoun(exercise.countUnit, lang);
   // Named, not omitted: the reps well is gone from under this label and the label
   // is the receipt for that.
-  if (ladderOwnsReps(exercise)) return exercise.requiresWeight ? 'weight + ladder' : 'ladder reps';
-  if (exercise.requiresWeight) return `weight + ${noun}`;
-  if (exercise.countUnit === 'meters') return 'distance + duration';
-  if (exercise.countUnit === 'seconds') return 'duration only';
-  return `${noun} only`;
+  if (ladderOwnsReps(exercise)) {
+    return exercise.requiresWeight ? t('weight + ladder', lang) : t('ladder reps', lang);
+  }
+  if (exercise.requiresWeight) return t('weight + {noun}', lang, { noun });
+  if (exercise.countUnit === 'meters') return t('distance + duration', lang);
+  if (exercise.countUnit === 'seconds') return t('duration only', lang);
+  return t('{noun} only', lang, { noun });
 }
 
 export interface WellSpec {
@@ -109,39 +115,44 @@ export interface WellSpec {
  * The weight well is REMOVED when `requiresWeight` is false, never disabled — a
  * greyed-out input is a promise that it might come back, and this one won't.
  */
-export function wellsFor(exercise: ShapeInput): WellSpec[] {
+export function wellsFor(exercise: ShapeInput, lang: Language = 'en'): WellSpec[] {
+  const kg = term('unit', 'kg', lang);
+  const m = term('unit', 'm', lang);
+  const reps = term('unit', 'reps', lang);
   // A ladder prescribes every rep of every set from its max, so there is no rep
   // target to well — the max's own ± is the control. An unweighted laddered
   // exercise therefore has no wells at all, which is correct: one number, and it is
   // in the ladder card.
   if (ladderOwnsReps(exercise)) {
-    return exercise.requiresWeight ? [{ label: 'default kg', field: 'weight', unit: 'kg' }] : [];
+    return exercise.requiresWeight
+      ? [{ label: t('default {unit}', lang, { unit: kg }), field: 'weight', unit: kg }]
+      : [];
   }
 
   if (exercise.requiresWeight) {
     const second: WellSpec =
       exercise.countUnit === 'reps'
-        ? { label: 'target reps', field: 'count', unit: 'reps' }
+        ? { label: t('target reps', lang), field: 'count', unit: reps }
         : exercise.countUnit === 'meters'
-          ? { label: 'target distance', field: 'count', unit: 'm' }
-          : { label: 'target time', field: 'count' };
-    return [{ label: 'default kg', field: 'weight', unit: 'kg' }, second];
+          ? { label: t('target distance', lang), field: 'count', unit: m }
+          : { label: t('target time', lang), field: 'count' };
+    return [{ label: t('default {unit}', lang, { unit: kg }), field: 'weight', unit: kg }, second];
   }
 
   switch (exercise.countUnit) {
     case 'rounds':
       return [
-        { label: 'rounds', field: 'count', unit: '×' },
-        { label: 'round length', field: 'duration' },
+        { label: t('rounds', lang), field: 'count', unit: '×' },
+        { label: t('round length', lang), field: 'duration' },
       ];
     case 'seconds':
-      return [{ label: 'duration', field: 'duration' }];
+      return [{ label: t('duration', lang), field: 'duration' }];
     case 'meters':
       return [
-        { label: 'distance', field: 'count', unit: 'm' },
-        { label: 'duration', field: 'duration' },
+        { label: t('distance', lang), field: 'count', unit: m },
+        { label: t('duration', lang), field: 'duration' },
       ];
     default:
-      return [{ label: 'target reps', field: 'count', unit: 'reps' }];
+      return [{ label: t('target reps', lang), field: 'count', unit: reps }];
   }
 }

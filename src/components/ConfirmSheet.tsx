@@ -24,6 +24,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 import { PrimaryButton } from './primitives';
 
@@ -36,6 +37,7 @@ interface ConfirmSheetProps {
   /** What will happen, and what won't. States consequences, never scolds. */
   body?: string;
   confirmLabel: string;
+  /** Defaults to the translated `Cancel`, so a caller only names an unusual one. */
   cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
@@ -45,11 +47,13 @@ export function ConfirmSheet({
   title,
   body,
   confirmLabel,
-  cancelLabel = 'Cancel',
+  cancelLabel,
   onConfirm,
   onCancel,
 }: ConfirmSheetProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
+  const keep = cancelLabel ?? t('Cancel');
 
   /* Scrim fades in; the sheet fades and rises the last 24dp under it — the same
      `EASING` as everything else that arrives, at the design's own 260ms. Both
@@ -81,7 +85,7 @@ export function ConfirmSheet({
       <AnimatedPressable
         onPress={onCancel}
         accessibilityRole="button"
-        accessibilityLabel={cancelLabel}
+        accessibilityLabel={keep}
         style={{ flex: 1, backgroundColor: palette.scrim, opacity: scrim }}
       />
 
@@ -106,7 +110,7 @@ export function ConfirmSheet({
           <View className="mt-xl">
             <PrimaryButton label={confirmLabel} onPress={onConfirm} />
             <View className="h-sm" />
-            <PrimaryButton label={cancelLabel} variant="ghost" onPress={onCancel} />
+            <PrimaryButton label={keep} variant="ghost" onPress={onCancel} />
           </View>
         </View>
       </Animated.View>

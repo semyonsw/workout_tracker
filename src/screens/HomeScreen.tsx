@@ -50,7 +50,7 @@ import { SectionTopBar } from '../components/SectionTopBar';
 import { GlowPulse } from '../components/bubbles';
 import { pressedStyle } from '../components/motion';
 import { Kicker, ListCard, PrimaryButton, Separator } from '../components/primitives';
-import { usePlural, useT } from '../hooks/useT';
+import { useLanguage, usePlural, useT } from '../hooks/useT';
 import { formatShortDate, formatVolumeKg } from '../lib/units';
 import { palette } from '../theme/tokens';
 import type { ID, RecentSessionSummary } from '../types/models';
@@ -398,6 +398,8 @@ function RecentRow({
   number?: number;
   onPress: () => void;
 }) {
+  const t = useT();
+  const lang = useLanguage();
   const numbered = number != null && number >= 1;
   /*
    * Two lines rather than one, and the ordinal moved INLINE with the title.
@@ -409,13 +411,13 @@ function RecentRow({
    * column, because there is no second column left to align it against.
    */
   const detail = [
-    formatShortDate(session.performedAt),
-    `${session.durationMinutes} min`,
-    `${session.setCount} sets`,
+    formatShortDate(session.performedAt, lang),
+    t('{minutes} min', { minutes: session.durationMinutes }),
+    t('{count} sets', { count: session.setCount }),
     // A volume built from sets that carried no weight is a floor, not a total,
     // so it is left off rather than stated wrongly.
     session.totalVolumeKg > 0 && !session.volumeIsPartial
-      ? formatVolumeKg(session.totalVolumeKg)
+      ? formatVolumeKg(session.totalVolumeKg, lang)
       : null,
   ]
     .filter(Boolean)
@@ -425,7 +427,11 @@ function RecentRow({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={[numbered ? `Workout ${number},` : '', session.title, detail]
+      accessibilityLabel={[
+        numbered ? `${t('Workout {number}', { number })},` : '',
+        session.title,
+        detail,
+      ]
         .filter(Boolean)
         .join(' ')}
       style={pressedStyle}

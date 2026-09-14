@@ -169,6 +169,21 @@ export interface Settings {
    */
   language: Language;
 
+  /**
+   * Whether the language above was CHOSEN, or is just the default sitting there.
+   *
+   * The two are indistinguishable in `language` itself and they mean opposite
+   * things: `ru` because the app ships in Russian is a guess, and `ru` because
+   * somebody picked РУ on the first screen is an answer. Only the guess earns a
+   * question, and the flag is what lets it be asked exactly once — a launch
+   * screen that reappears after it has been answered is worse than never asking.
+   *
+   * False for everyone upgrading from a build that had no picker, which is
+   * correct: they were never asked either, and the app they have been using is
+   * one tap away on that screen.
+   */
+  languageChosen: boolean;
+
   /* --- the workout reminder: see `screens/WorkoutSettingsScreen.tsx` --- */
   /**
    * Have the phone say "time to train" on the days you train.
@@ -285,6 +300,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activeGymId: DEFAULT_GYM_ID,
   weeklySetTargets: {},
   language: 'ru',
+  languageChosen: false,
   workoutReminderEnabled: false,
   workoutReminderDays: [0, 2, 4],
   workoutReminderTime: '18:00',
@@ -426,6 +442,7 @@ export function sanitizeSettings(input: Partial<Settings> | undefined | null): S
     activeGymId: resolveActiveGymId(gyms, raw.activeGymId),
     weeklySetTargets: sanitizeWeeklyTargets(raw.weeklySetTargets),
     language: usableLanguage(raw.language),
+    languageChosen: raw.languageChosen === true,
     workoutReminderEnabled: raw.workoutReminderEnabled === true,
     workoutReminderDays: sanitizeWeekdays(raw.workoutReminderDays),
     workoutReminderTime: usableClockTime(raw.workoutReminderTime),
@@ -563,7 +580,14 @@ interface SettingsState extends Settings {
     value: boolean,
   ) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;
-  /** The one write behind the РУ / EN toggle in the corner of Settings. */
+  /**
+   * The one write behind the РУ / EN toggle in the corner of Settings, and
+   * behind the first-launch picker.
+   *
+   * Writing a language ALWAYS answers the question, whichever control did it:
+   * somebody who reaches the toggle in Settings has plainly made a choice, and
+   * asking them again on the next launch would be the app not listening.
+   */
   setLanguage: (language: Language) => void;
   /** The workout reminder, as three writes because they are three questions. */
   setWorkoutReminderEnabled: (enabled: boolean) => void;
@@ -642,7 +666,7 @@ export const useSettings = create<SettingsState>()(
 
       setUnitSystem: (unitSystem) => set({ unitSystem }),
 
-      setLanguage: (language) => set({ language: usableLanguage(language) }),
+      setLanguage: (language) => set({ language: usableLanguage(language), languageChosen: true }),
 
       /*
        * Turning it on with no days picked would arm a reminder that can never
@@ -762,9 +786,19 @@ export const useSettings = create<SettingsState>()(
          * three buildings, a year of weigh-ins, or a folder permission the user
          * would then have to grant again. `Delete all workout history` is the
          * button that destroys data, and it says so.
+         *
+         * THE LANGUAGE IS THE SAME KIND OF EXCEPTION, and it is the sharpest one.
+         * Defaulting it would flip the app to Russian under somebody who just
+         * pressed a button in English — and defaulting `languageChosen` with it
+         * would drop them onto the first-launch picker, which is a launch screen
+         * arriving in the middle of a session. The reset is about the durations
+         * and the toggles inside the three sections; which language those words
+         * are in is not one of them, and the РУ / EN toggle is right there.
          */
         set({
           ...DEFAULT_SETTINGS,
+          language: get().language,
+          languageChosen: get().languageChosen,
           bodyweightKg: get().bodyweightKg,
           bodyweightLog: get().bodyweightLog,
           gyms: get().gyms,

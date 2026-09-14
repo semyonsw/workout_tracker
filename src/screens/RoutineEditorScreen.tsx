@@ -151,7 +151,7 @@ import {
   Toggle,
 } from '../components/primitives';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
-import { useT } from '../hooks/useT';
+import { useLanguage, useT, type Translate } from '../hooks/useT';
 import { tap, undo } from '../lib/feedback';
 import {
   DEFAULT_RANDOM_SPEC,
@@ -554,7 +554,7 @@ export function RoutineEditorScreen({
                       isLifted={isLifted}
                       isOpen={openId === item.id}
                       superset={supersetRunPosition(items, index)}
-                      summary={summarizeItem(item, exercise, defaultRestSeconds)}
+                      summary={summarizeItem(item, exercise, defaultRestSeconds, t)}
                       onPress={() => {
                         tap();
                         setOpenId((current) => (current === item.id ? null : item.id));
@@ -609,7 +609,10 @@ export function RoutineEditorScreen({
                   the screen, and a mis-tap between them is not symmetrical. */}
               {onDuplicate && items.length > 0 ? (
                 <View className="mb-lg">
-                  <TextButton label="Duplicate this routine" onPress={() => onDuplicate(draft())} />
+                  <TextButton
+                    label={t('Duplicate this routine')}
+                    onPress={() => onDuplicate(draft())}
+                  />
                 </View>
               ) : null}
               <TextButton label={t('Delete routine')} onPress={onDelete} />
@@ -629,8 +632,12 @@ export function RoutineEditorScreen({
 
       {removing ? (
         <ConfirmSheet
-          title={`Remove “${exercisesById[removing.exerciseId]?.name ?? 'this exercise'}”?`}
-          body="It comes out of this routine only. The exercise stays in your library with every set you have ever logged against it."
+          title={t('Remove “{name}”?', {
+            name: exercisesById[removing.exerciseId]?.name ?? t('this exercise'),
+          })}
+          body={t(
+            'It comes out of this routine only. The exercise stays in your library with every set you have ever logged against it.',
+          )}
           confirmLabel="Remove it"
           cancelLabel="Keep it"
           onConfirm={() => removeItem(removing.id)}
@@ -669,6 +676,8 @@ function RoutineRow({
   onLongPress?: () => void;
   onRemove?: () => void;
 }) {
+  const t = useT();
+
   return (
     <View
       className={[
@@ -696,11 +705,11 @@ function RoutineRow({
         accessibilityLabel={[
           exercise.name,
           summary,
-          superset === 'continue' ? 'supersetted with the exercise above' : '',
+          superset === 'continue' ? t('supersetted with the exercise above') : '',
         ]
           .filter(Boolean)
           .join(', ')}
-        accessibilityHint={onLongPress ? 'Long press, then slide to reorder' : undefined}
+        accessibilityHint={onLongPress ? t('Long press, then slide to reorder') : undefined}
         className="h-row-lg flex-1 flex-row items-center pl-md"
       >
         <DragHandle color={isLifted ? palette.greenBright : palette.inkFaint} />
@@ -738,7 +747,7 @@ function RoutineRow({
           onPress={onRemove}
           hitSlop={6}
           accessibilityRole="button"
-          accessibilityLabel={`Remove ${exercise.name} from this routine`}
+          accessibilityLabel={t('Remove {name} from this routine', { name: exercise.name })}
           className="h-row-lg w-[44px] items-center justify-center"
         >
           <Icon name="x" size={15} color={palette.inkMuted} />
@@ -784,6 +793,8 @@ function ItemEditor({
   onToggleSuperset: () => void;
   onOpenHistory: () => void;
 }) {
+  const t = useT();
+  const lang = useLanguage();
   const { countUnit } = exercise;
   const timed = countUnit === 'seconds' || countUnit === 'rounds';
   const countDelta = targetCountStep(countUnit);
@@ -805,12 +816,12 @@ function ItemEditor({
    * countdown somebody is watching ("3:00") — the same distinction the rest row
    * below makes in the other direction.
    */
-  const showCount = timed ? formatDuration(target) : `${target} ${countUnitLabel(countUnit)}`;
+  const showCount = timed ? formatDuration(target) : `${target} ${countUnitLabel(countUnit, lang)}`;
 
   return (
     <View className="border-t border-t-hairline bg-surface-alt">
       <ItemStepper
-        label={timed ? (countUnit === 'rounds' ? 'Rounds' : 'Holds') : 'Sets'}
+        label={timed ? (countUnit === 'rounds' ? t('Rounds') : t('Holds')) : t('Sets')}
         value={String(item.targetSets)}
         onDecrease={() => onPatch((i) => bumpTargetSets(i, -1))}
         onIncrease={() => onPatch((i) => bumpTargetSets(i, 1))}
@@ -839,7 +850,7 @@ function ItemEditor({
         <>
           <Separator inset={40} />
           <ItemStepper
-            label={timed ? 'Each one' : 'Reps'}
+            label={timed ? t('Each one') : t('Reps')}
             value={showCount}
             onDecrease={() => onPatch((i) => bumpTargetCount(i, countUnit, -countDelta))}
             onIncrease={() => onPatch((i) => bumpTargetCount(i, countUnit, countDelta))}
@@ -851,8 +862,8 @@ function ItemEditor({
             <>
               <Separator inset={40} />
               <ItemStepper
-                label="Down to"
-                hint={item.targetRepsMin == null ? 'Off — the plan is one number' : undefined}
+                label={t('Down to')}
+                hint={item.targetRepsMin == null ? t('Off — the plan is one number') : undefined}
                 value={item.targetRepsMin == null ? '—' : String(item.targetRepsMin)}
                 onDecrease={() => onPatch((i) => bumpTargetMin(i, countUnit, -1))}
                 onIncrease={() => onPatch((i) => bumpTargetMin(i, countUnit, 1))}
@@ -870,13 +881,13 @@ function ItemEditor({
         broken.
       */}
       <ItemStepper
-        label="Rest"
+        label={t('Rest')}
         hint={
           rest.source === 'exercise'
-            ? 'This movement, in every routine that has it'
-            : 'Following your setting — it moves when you change it'
+            ? t('This movement, in every routine that has it')
+            : t('Following your setting — it moves when you change it')
         }
-        value={rest.seconds > 0 ? formatClock(rest.seconds) : 'None'}
+        value={rest.seconds > 0 ? formatClock(rest.seconds) : t('None')}
         tone={rest.source === 'exercise' ? 'own' : 'inherited'}
         onDecrease={() =>
           onPatchExercise((e) => bumpExerciseRest(e, -REST_LIMITS.step, rest.seconds))
@@ -892,7 +903,7 @@ function ItemEditor({
           <Pressable
             onPress={() => onPatchExercise(clearExerciseRest)}
             accessibilityRole="button"
-            accessibilityLabel="Follow the rest setting instead of this exercise's own"
+            accessibilityLabel={t("Follow the rest setting instead of this exercise's own")}
             className="h-hit justify-center pl-xxl pr-lg"
           >
             <Text className="text-label font-medium text-ink-muted">
@@ -912,14 +923,14 @@ function ItemEditor({
               <Text className="text-label font-medium text-ink">Superset with the one above</Text>
               <Text className="mt-[2px] text-micro text-ink-faint">
                 {supersetWithAbove
-                  ? 'No rest between them — rest comes after the pair'
-                  : 'Rest after every set, as normal'}
+                  ? t('No rest between them — rest comes after the pair')
+                  : t('Rest after every set, as normal')}
               </Text>
             </View>
             <Toggle
               value={supersetWithAbove}
               onChange={onToggleSuperset}
-              accessibilityLabel="Superset with the exercise above"
+              accessibilityLabel={t('Superset with the exercise above')}
             />
           </View>
         </>
@@ -931,7 +942,7 @@ function ItemEditor({
       <Pressable
         onPress={onOpenHistory}
         accessibilityRole="button"
-        accessibilityLabel={`Open the history for ${exercise.name}`}
+        accessibilityLabel={t('Open the history for {name}', { name: exercise.name })}
         className="h-hit flex-row items-center pl-xxl pr-lg"
       >
         <Text className="flex-1 text-label font-medium text-ink-muted">Open its history</Text>
@@ -969,6 +980,8 @@ function ItemStepper({
   onDecrease: () => void;
   onIncrease: () => void;
 }) {
+  const t = useT();
+
   return (
     <View className="min-h-[56px] flex-row items-center py-sm pl-xxl pr-sm">
       <View className="flex-1 pr-md">
@@ -985,9 +998,9 @@ function ItemStepper({
         {value}
       </Text>
 
-      <StepChip icon="minus" label={`Decrease ${label}`} onPress={onDecrease} />
+      <StepChip icon="minus" label={t('Decrease {label}', { label })} onPress={onDecrease} />
       <View className="w-xs" />
-      <StepChip icon="plus" label={`Increase ${label}`} onPress={onIncrease} />
+      <StepChip icon="plus" label={t('Increase {label}', { label })} onPress={onIncrease} />
     </View>
   );
 }
@@ -1024,7 +1037,12 @@ function StepChip({
  * starts one, so the summary and the countdown agree by construction — and it
  * reads the EXERCISE, because that is where a rest lives now (`lib/rest.ts`).
  */
-function summarizeItem(item: RoutineItem, exercise: Exercise, settingsRestSeconds: number): string {
+function summarizeItem(
+  item: RoutineItem,
+  exercise: Exercise,
+  settingsRestSeconds: number,
+  t: Translate,
+): string {
   const parts: string[] = [];
 
   const ladder = ladderOf(exercise);
@@ -1043,11 +1061,13 @@ function summarizeItem(item: RoutineItem, exercise: Exercise, settingsRestSecond
   // Rest is a clock ("3:00") — it is a stopwatch value you watch tick down.
   // A target duration is prose ("3 min") — it is a plan, not a countdown.
   const rest = resolveRest(exercise, settingsRestSeconds);
-  parts.push(rest.seconds > 0 ? `rest ${formatClock(rest.seconds)}` : 'no rest');
+  parts.push(
+    rest.seconds > 0 ? t('rest {clock}', { clock: formatClock(rest.seconds) }) : t('no rest'),
+  );
   // Which of the two it is, in one word, so the collapsed line carries the same
   // fact the open editor states in a sentence.
-  if (rest.source === 'settings' && rest.seconds > 0) parts.push('setting');
+  if (rest.source === 'settings' && rest.seconds > 0) parts.push(t('setting'));
 
-  if (exercise.isUnilateral) parts.push('each side');
+  if (exercise.isUnilateral) parts.push(t('each side'));
   return parts.join(' · ');
 }

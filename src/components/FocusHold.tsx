@@ -50,6 +50,7 @@ import { formatClock, formatCount } from '../lib/units';
 import { FocusClockBlock } from './FocusClock';
 import { FocusAction, FocusBottom, FocusDone, FocusQuietAction } from './FocusControls';
 import { FINAL_SECONDS, pillTone } from './TimerPill';
+import { useLanguage, useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 
 export function FocusHold({
@@ -68,6 +69,8 @@ export function FocusHold({
   onDone: () => void;
   onUndo: (() => void) | null;
 }) {
+  const t = useT();
+  const lang = useLanguage();
   const { reading, stepSeconds, add, startNow, stop, cancel } = timer;
   const { exercise } = target.entry;
 
@@ -91,27 +94,29 @@ export function FocusHold({
 
   if (preparing) {
     value = String(reading?.display ?? 0);
-    label = 'get ready';
+    label = t('get ready');
     labelColor = palette.greenBright;
-    note = 'counting out loud · lands on a long tone';
+    note = t('counting out loud · lands on a long tone');
   } else if (running && isCountdown) {
     value = formatClock(reading?.display ?? 0);
     // The exercise's OWN NAME, because a bare 1:14 could be a rest.
     label = exercise.name;
     labelColor = finalTen ? undefined : palette.greenBright;
-    note = 'logs itself at the bell';
+    note = t('logs itself at the bell');
     remainingFraction = reading?.remainingFraction ?? null;
   } else if (running) {
     value = formatClock(reading?.display ?? 0);
-    label = 'holding';
+    label = t('holding');
     labelColor = palette.greenBright;
     // No drain line at all: `remainingFraction` is null on a count-up, and a
     // track with no fill would read as a clock that has already finished.
-    note = 'no target, no drain line, no bell';
+    note = t('no target, no drain line, no bell');
   } else {
     value = formatCount(target.set.count, exercise.countUnit);
-    label = 'hold · not running';
-    note = target.entry.lastSessionShort ? `last: ${target.entry.lastSessionShort}` : undefined;
+    label = t('hold · not running');
+    note = target.entry.lastSessionShort
+      ? t('last: {what}', { what: target.entry.lastSessionShort })
+      : undefined;
   }
 
   return (
@@ -119,7 +124,7 @@ export function FocusHold({
       <View className="flex-1 justify-center">
         <View className="px-lg">
           <Text className="text-micro font-semibold uppercase text-green-bright">
-            {describeSetPosition(target)}
+            {describeSetPosition(target, lang)}
           </Text>
           <Text numberOfLines={2} className="mt-xs text-title-lg font-medium text-ink">
             {exercise.name}
@@ -141,10 +146,14 @@ export function FocusHold({
             note={note}
             accessibilityLabel={
               preparing
-                ? `Starting in ${reading?.display ?? 0}`
+                ? t('Starting in {seconds}', { seconds: reading?.display ?? 0 })
                 : running
-                  ? `${reading?.display ?? 0} seconds ${isCountdown ? 'left' : 'held'}`
-                  : `${formatCount(target.set.count, exercise.countUnit)} to hold`
+                  ? isCountdown
+                    ? t('{seconds} seconds left', { seconds: reading?.display ?? 0 })
+                    : t('{seconds} seconds held', { seconds: reading?.display ?? 0 })
+                  : t('{count} to hold', {
+                      count: formatCount(target.set.count, exercise.countUnit),
+                    })
             }
           />
         </View>
@@ -157,16 +166,16 @@ export function FocusHold({
           {preparing ? (
             <>
               <FocusAction
-                label="Start now"
+                label={t('Start now')}
                 onPress={startNow}
-                accessibilityLabel="Start the hold now, without the count-in"
+                accessibilityLabel={t('Start the hold now, without the count-in')}
               />
               <View className="w-sm" />
               <FocusQuietAction
                 icon="x"
                 width="w-[56px]"
                 onPress={cancel}
-                accessibilityLabel="Cancel the timer without logging"
+                accessibilityLabel={t('Cancel the timer without logging')}
               />
             </>
           ) : running ? (
@@ -177,37 +186,41 @@ export function FocusHold({
                     label={`+${stepSeconds}`}
                     width="w-[72px]"
                     onPress={() => add(stepSeconds)}
-                    accessibilityLabel={`Hold ${stepSeconds} seconds longer`}
+                    accessibilityLabel={t('Hold {seconds} seconds longer', {
+                      seconds: stepSeconds,
+                    })}
                   />
                   <View className="w-sm" />
                 </>
               ) : null}
               <FocusAction
-                label="Stop"
+                label={t('Stop')}
                 icon="pause"
                 tone="filled"
                 onPress={stop}
-                accessibilityLabel="Stop the clock and log what it read"
+                accessibilityLabel={t('Stop the clock and log what it read')}
               />
               <View className="w-sm" />
               <FocusQuietAction
                 icon="x"
                 width="w-[56px]"
                 onPress={cancel}
-                accessibilityLabel="Abandon the hold without logging"
+                accessibilityLabel={t('Abandon the hold without logging')}
               />
             </>
           ) : (
             <FocusAction
-              label="Start"
+              label={t('Start')}
               icon="play"
               onPress={onStart}
-              accessibilityLabel={`Start the ${formatCount(target.set.count, exercise.countUnit)} clock`}
+              accessibilityLabel={t('Start the {count} clock', {
+                count: formatCount(target.set.count, exercise.countUnit),
+              })}
             />
           )}
         </View>
 
-        <FocusDone onPress={onDone} label="done" />
+        <FocusDone onPress={onDone} label={t('done')} />
       </FocusBottom>
     </>
   );

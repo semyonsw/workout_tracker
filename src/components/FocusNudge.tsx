@@ -28,6 +28,7 @@
 import { Pressable, Text, View } from 'react-native';
 
 import type { DraftSet } from '../lib/draft';
+import { useLanguage } from '../hooks/useT';
 import { tap } from '../lib/feedback';
 import { nudgeSet, nudgeSteps, type NudgeField } from '../lib/setNudge';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
@@ -44,6 +45,8 @@ export function FocusNudge({
   unitSystem: UnitSystem;
   onChange: (patch: Partial<DraftSet>) => void;
 }) {
+  const lang = useLanguage();
+
   return (
     <View className="mt-md px-lg">
       {/* The weight pill is ABSENT, not disabled, on bodyweight work — the same
@@ -55,7 +58,7 @@ export function FocusNudge({
           exercise={exercise}
           unitSystem={unitSystem}
           value={formatWeight(set.weightKg, unitSystem, exercise.loadMode)}
-          unit={unitLabel(unitSystem)}
+          unit={unitLabel(unitSystem, lang)}
           onChange={onChange}
         />
       ) : null}
@@ -67,7 +70,7 @@ export function FocusNudge({
           exercise={exercise}
           unitSystem={unitSystem}
           value={formatCount(set.count, exercise.countUnit)}
-          unit={countUnitLabel(exercise.countUnit)}
+          unit={countUnitLabel(exercise.countUnit, lang)}
           onChange={onChange}
         />
       </View>

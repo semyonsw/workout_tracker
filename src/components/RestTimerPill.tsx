@@ -60,6 +60,7 @@ import {
   type PillTone,
 } from './TimerPill';
 import { Icon } from './Icon';
+import { useT, type Translate } from '../hooks/useT';
 
 /**
  * What kind of rest is running, in the fewest words that distinguish them.
@@ -69,14 +70,15 @@ import { Icon } from './Icon';
  * lengths the user sets separately, and this label is how you check, mid-workout,
  * that the two numbers in Settings are doing what they say.
  */
-export function restLabel(source: RestSource | null, isPaused: boolean): string {
-  if (isPaused) return 'paused';
-  if (source === 'transition') return 'next exercise';
-  if (source === 'set') return 'between sets';
-  return 'rest';
+export function restLabel(source: RestSource | null, isPaused: boolean, t: Translate): string {
+  if (isPaused) return t('paused');
+  if (source === 'transition') return t('next exercise');
+  if (source === 'set') return t('between sets');
+  return t('rest');
 }
 
 export function RestTimerPill() {
+  const t = useT();
   const {
     remaining,
     isActive,
@@ -111,12 +113,12 @@ export function RestTimerPill() {
           tone={tone}
           accessibilityLabel={
             isPaused
-              ? `Rest paused with ${secondsLeft} seconds left`
-              : `${secondsLeft} seconds of rest left`
+              ? t('Rest paused with {seconds} seconds left', { seconds: secondsLeft })
+              : t('{seconds} seconds of rest left', { seconds: secondsLeft })
           }
         />
         <PillLabel tone={tone} inline={false}>
-          {restLabel(source, isPaused)}
+          {restLabel(source, isPaused, t)}
         </PillLabel>
       </View>
 
@@ -129,13 +131,13 @@ export function RestTimerPill() {
         <StepChip
           seconds={-stepSeconds}
           tone={tone}
-          what={restLabel(source, false)}
+          what={restLabel(source, false, t)}
           onPress={() => add(-stepSeconds)}
         />
         <StepChip
           seconds={stepSeconds}
           tone={tone}
-          what={restLabel(source, false)}
+          what={restLabel(source, false, t)}
           onPress={() => add(stepSeconds)}
         />
 
@@ -145,7 +147,7 @@ export function RestTimerPill() {
           onPress={isPaused ? resume : pause}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel={isPaused ? 'Resume rest' : 'Pause rest'}
+          accessibilityLabel={isPaused ? t('Resume rest') : t('Pause rest')}
           className="h-hit w-[32px] items-center justify-center"
         >
           <Icon name={isPaused ? 'play' : 'pause'} size={16} color={tone.primary} />
@@ -155,7 +157,7 @@ export function RestTimerPill() {
           onPress={skip}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel="Skip rest"
+          accessibilityLabel={t('Skip rest')}
           className="h-hit justify-center pl-sm pr-xs"
         >
           <Text
@@ -163,7 +165,7 @@ export function RestTimerPill() {
             style={{ color: tone.primary }}
             className="text-label font-semibold"
           >
-            Skip
+            {t('Skip')}
           </Text>
         </Pressable>
       </View>
@@ -195,6 +197,7 @@ function StepChip({
   what: string;
   onPress: () => void;
 }) {
+  const t = useT();
   const shorter = seconds < 0;
   const size = Math.abs(seconds);
 
@@ -203,7 +206,11 @@ function StepChip({
       onPress={onPress}
       hitSlop={10}
       accessibilityRole="button"
-      accessibilityLabel={`Rest ${what} ${size} seconds ${shorter ? 'shorter' : 'longer'}`}
+      accessibilityLabel={
+        shorter
+          ? t('Rest {what} {size} seconds shorter', { what, size })
+          : t('Rest {what} {size} seconds longer', { what, size })
+      }
       className="h-hit justify-center px-sm"
     >
       <Text

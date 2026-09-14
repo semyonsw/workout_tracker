@@ -49,19 +49,28 @@ import { Kicker, PrimaryButton, Segmented, TextButton } from '../components/prim
 import { dayKey, formatLongDay, formatMonth, parseDay, shiftDay } from '../lib/days';
 import { type Amount, type AmountWhen, type Direction, formatValue } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
+import { useLanguage, useT, type Translate } from '../hooks/useT';
 import { useSettings } from '../state/settingsStore';
 import { palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
-const DIRECTIONS = [
-  { value: 'expense' as const, label: 'Expense' },
-  { value: 'income' as const, label: 'Income' },
-];
+/*
+ * Functions rather than constants, because the labels are translated: a
+ * module-level array would be frozen in whichever language the app started in.
+ */
+function directions(t: Translate) {
+  return [
+    { value: 'expense' as const, label: t('Expense') },
+    { value: 'income' as const, label: t('Income') },
+  ];
+}
 
-const SPANS = [
-  { value: 'day' as const, label: 'A day' },
-  { value: 'month' as const, label: 'Whole month' },
-];
+function spans(t: Translate) {
+  return [
+    { value: 'day' as const, label: t('A day') },
+    { value: 'month' as const, label: t('Whole month') },
+  ];
+}
 
 interface AmountEditorScreenProps {
   /** The amount being edited, or null for a new one. */
@@ -86,6 +95,8 @@ export function AmountEditorScreen({
   direction: initialDirection = 'expense',
   onBack,
 }: AmountEditorScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
   const categories = useMoney((s) => s.categories);
   const currency = useSettings((s) => s.currencyCode);
   const addAmount = useMoney((s) => s.addAmount);
@@ -114,7 +125,7 @@ export function AmountEditorScreen({
 
   const value = Number(digits.replace(/\D/g, '')) || 0;
   const savable = value > 0 && category !== null;
-  const noun = direction === 'expense' ? 'expense' : 'income';
+  const noun = direction === 'expense' ? t('expense') : t('income');
 
   const whenOf = (): AmountWhen => {
     if (span === 'day') return { kind: 'day', date: day };
@@ -140,19 +151,19 @@ export function AmountEditorScreen({
     setMonthAnchor(dayKey(new Date(at.getFullYear(), at.getMonth() + delta, 1)));
   };
   const whenLabel = (() => {
-    if (span === 'day') return formatLongDay(day);
+    if (span === 'day') return formatLongDay(day, lang);
     const at = parseDay(monthAnchor) ?? new Date();
-    return formatMonth(at.getFullYear(), at.getMonth());
+    return formatMonth(at.getFullYear(), at.getMonth(), lang);
   })();
 
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
       <ScreenHeader
-        kicker={amount ? `Edit ${noun}` : `New ${noun}`}
+        kicker={amount ? t('Edit {noun}', { noun }) : t('New {noun}', { noun })}
         onBack={onBack}
         bordered={false}
-        action={{ label: 'Save', onPress: save, tone: savable ? 'primary' : 'muted' }}
+        action={{ label: t('Save'), onPress: save, tone: savable ? 'primary' : 'muted' }}
       />
 
       <ScrollView
@@ -172,22 +183,22 @@ export function AmountEditorScreen({
             selectionColor={palette.greenBright}
             keyboardType="number-pad"
             autoFocus={amount === null}
-            accessibilityLabel={`Amount in ${currency}`}
+            accessibilityLabel={t('Amount in {currency}', { currency })}
             className="flex-1 text-title-xl font-semibold tabular-nums text-ink"
           />
         </View>
 
-        <Kicker className="mx-lg mb-sm mt-xl">Direction</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xl">{t('Direction')}</Kicker>
         <View className="mx-lg">
           <Segmented
-            options={DIRECTIONS}
+            options={directions(t)}
             value={direction}
             onChange={setDirection}
-            accessibilityLabel="Money out, or money in"
+            accessibilityLabel={t('Money out, or money in')}
           />
         </View>
 
-        <Kicker className="mx-lg mb-sm mt-xl">Category</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xl">{t('Category')}</Kicker>
         <View className="mx-lg flex-row flex-wrap">
           {live.map((option) => {
             const selected = option.id === category;
@@ -219,13 +230,13 @@ export function AmountEditorScreen({
           })}
         </View>
 
-        <Kicker className="mx-lg mb-sm mt-xl">When</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xl">{t('When')}</Kicker>
         <View className="mx-lg">
           <Segmented
-            options={SPANS}
+            options={spans(t)}
             value={span}
             onChange={setSpan}
-            accessibilityLabel="A single day, or a whole month"
+            accessibilityLabel={t('A single day, or a whole month')}
           />
         </View>
 
@@ -234,7 +245,7 @@ export function AmountEditorScreen({
             onPress={() => stepWhen(-1)}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Earlier"
+            accessibilityLabel={t('Earlier')}
             style={pressedStyle}
           >
             <Icon name="chevron-left" size={18} color={palette.inkMuted} />
@@ -244,7 +255,7 @@ export function AmountEditorScreen({
             onPress={() => stepWhen(1)}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Later"
+            accessibilityLabel={t('Later')}
             style={pressedStyle}
           >
             <Icon name="chevron-right" size={18} color={palette.inkMuted} />
@@ -253,42 +264,45 @@ export function AmountEditorScreen({
 
         {span === 'month' ? (
           <Text className="mx-lg mt-sm text-label text-ink-faint">
-            A whole month counts towards the month, the year and the balance, and towards no single
-            day.
+            {t(
+              'A whole month counts towards the month, the year and the balance, and towards no single day.',
+            )}
           </Text>
         ) : null}
 
-        <Kicker className="mx-lg mb-sm mt-xl">Note</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xl">{t('Note')}</Kicker>
         <View className="mx-lg h-row flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg">
           <TextInput
             value={note}
             onChangeText={setNote}
-            placeholder="What it was for"
+            placeholder={t('What it was for')}
             placeholderTextColor={palette.inkFaint}
             cursorColor={palette.greenBright}
             selectionColor={palette.greenBright}
-            accessibilityLabel="Note"
+            accessibilityLabel={t('Note')}
             returnKeyType="done"
             className="flex-1 text-body text-ink"
           />
         </View>
 
         <View className="mx-lg mt-xl">
-          <PrimaryButton label={`Save ${noun}`} onPress={save} />
+          <PrimaryButton label={t('Save {noun}', { noun })} onPress={save} />
         </View>
         {amount ? (
           <View className="mx-lg">
-            <TextButton label="Delete this amount" onPress={() => setDeleting(true)} />
+            <TextButton label={t('Delete this amount')} onPress={() => setDeleting(true)} />
           </View>
         ) : null}
       </ScrollView>
 
       {deleting && amount ? (
         <ConfirmSheet
-          title="Delete this amount?"
-          body="It leaves the category, the month, the year and the balance. Nothing else changes."
-          confirmLabel="Delete it"
-          cancelLabel="Keep it"
+          title={t('Delete this amount?')}
+          body={t(
+            'It leaves the category, the month, the year and the balance. Nothing else changes.',
+          )}
+          confirmLabel={t('Delete it')}
+          cancelLabel={t('Keep it')}
           onConfirm={() => {
             deleteAmount(amount.id);
             setDeleting(false);

@@ -148,7 +148,7 @@ import { ReorderRow } from '../components/ReorderRow';
 import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
-import { useT } from '../hooks/useT';
+import { useLanguage, useT } from '../hooks/useT';
 import type { DraftEntry, DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
 import { useAutoRounds } from '../hooks/useAutoRounds';
@@ -241,6 +241,7 @@ export function ActiveWorkoutScreen({
   onEditExercise,
 }: ActiveWorkoutScreenProps) {
   const t = useT();
+  const lang = useLanguage();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   /**
@@ -412,11 +413,11 @@ export function ActiveWorkoutScreen({
       if (!best) continue;
 
       lines[entry.localId] = entry.exercise.requiresWeight
-        ? `${formatWeight(best.weightKg, unitSystem, entry.exercise.loadMode)} ${unitLabel(unitSystem)} × ${formatCount(best.count, entry.exercise.countUnit)}`
+        ? `${formatWeight(best.weightKg, unitSystem, entry.exercise.loadMode)} ${unitLabel(unitSystem, lang)} × ${formatCount(best.count, entry.exercise.countUnit)}`
         : formatCount(best.count, entry.exercise.countUnit);
     }
     return lines;
-  }, [bodyweightKg, session?.entries, unitSystem]);
+  }, [bodyweightKg, lang, session?.entries, unitSystem]);
 
   /**
    * Stalled lifts, keyed by entry.
@@ -701,18 +702,24 @@ export function ActiveWorkoutScreen({
           kickerTone={lifted ? 'green' : 'faint'}
           subtitle={
             lifted
-              ? `Slide to move it · position ${reorder.targetIndex + 1} of ${entryIds.length}`
+              ? t('Slide to move it · position {position} of {total}', {
+                  position: reorder.targetIndex + 1,
+                  total: entryIds.length,
+                })
               : isStarted
-                ? `${progress.done} of ${progress.total} sets · ${elapsedMinutes} min`
-                : `${progress.total} sets planned · not started`
+                ? `${t('{done} of {total} sets', {
+                    done: progress.done,
+                    total: progress.total,
+                  })} · ${t('{minutes} min', { minutes: elapsedMinutes })}`
+                : t('{total} sets planned · not started', { total: progress.total })
           }
           onBack={lifted ? undefined : onExit}
           action={
             lifted
-              ? { label: 'Drop', onPress: drop }
+              ? { label: t('Drop'), onPress: drop }
               : isStarted
-                ? { label: 'Finish', onPress: handleFinish }
-                : { label: 'Start', onPress: handleStart }
+                ? { label: t('Finish'), onPress: handleFinish }
+                : { label: t('Start'), onPress: handleStart }
           }
         >
           {/* The session's own controls. Hidden mid-move — none of them is about
@@ -869,7 +876,7 @@ export function ActiveWorkoutScreen({
                   onAddExercise();
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Add an exercise to this workout"
+                accessibilityLabel={t('Add an exercise to this workout')}
                 className="mx-lg mt-sm h-row flex-row items-center justify-center rounded-surface border border-hairline bg-surface-alt"
               >
                 <Icon name="plus" size={14} color={palette.greenBright} />
@@ -915,9 +922,12 @@ export function ActiveWorkoutScreen({
       {confirming === 'clock' ? (
         <ConfirmSheet
           title={t('Restart the clock?')}
-          body={`This workout reads ${elapsedMinutes} min. Restarting the clock makes it 0, and history will record it from this moment — the sets you already logged stay exactly as they are.`}
+          body={t(
+            'This workout reads {minutes} min. Restarting the clock makes it 0, and history will record it from this moment — the sets you already logged stay exactly as they are.',
+            { minutes: elapsedMinutes },
+          )}
           confirmLabel={t('Restart it')}
-          cancelLabel={`Keep ${elapsedMinutes} min`}
+          cancelLabel={t('Keep {minutes} min', { minutes: elapsedMinutes })}
           onConfirm={() => {
             commit();
             startWorkout();
@@ -929,10 +939,11 @@ export function ActiveWorkoutScreen({
 
       {removingEntry ? (
         <ConfirmSheet
-          title={`Remove ${removingEntry.exercise.name}?`}
-          body={`${removingEntry.sets.filter((set) => set.isCompleted).length} logged ${
-            removingEntry.sets.filter((set) => set.isCompleted).length === 1 ? 'set' : 'sets'
-          } will go with it, and nothing about them reaches your history. The exercise itself stays in your library.`}
+          title={t('Remove {name}?', { name: removingEntry.exercise.name })}
+          body={t(
+            '{count} logged sets will go with it, and nothing about them reaches your history. The exercise itself stays in your library.',
+            { count: removingEntry.sets.filter((set) => set.isCompleted).length },
+          )}
           confirmLabel={t('Remove it')}
           cancelLabel={t('Keep it')}
           onConfirm={() => {
@@ -947,7 +958,10 @@ export function ActiveWorkoutScreen({
       {confirming === 'discard' ? (
         <ConfirmSheet
           title={t('Stop and exit without saving?')}
-          body={`${progress.done} ${progress.done === 1 ? 'set' : 'sets'} logged in this workout will be thrown away, and nothing will reach your history. Use Finish instead if you want to keep ${progress.done === 1 ? 'it' : 'them'}.`}
+          body={t(
+            '{count} sets logged in this workout will be thrown away, and nothing will reach your history. Use Finish instead if you want to keep them.',
+            { count: progress.done },
+          )}
           confirmLabel={t('Throw it away')}
           cancelLabel={t('Keep logging')}
           onConfirm={() => {

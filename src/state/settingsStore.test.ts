@@ -503,6 +503,49 @@ describe('the language and the workout reminder', () => {
     expect(sanitizeSettings({}).language).toBe('ru');
   });
 
+  /*
+   * `languageChosen` is what stops the first-launch picker asking twice, and it
+   * has to be false for somebody upgrading from a build that never asked — they
+   * were not asked either, so the question is still open for them.
+   */
+  it('treats an unanswered language as unanswered, however it arrives', () => {
+    expect(DEFAULT_SETTINGS.languageChosen).toBe(false);
+    expect(sanitizeSettings({}).languageChosen).toBe(false);
+    // A build before the picker stored a language and no flag. Still unanswered.
+    expect(sanitizeSettings({ language: 'ru' }).languageChosen).toBe(false);
+    expect(sanitizeSettings({ languageChosen: true }).languageChosen).toBe(true);
+  });
+
+  it('counts any write of the language as the answer', () => {
+    useSettings.setState({ language: 'ru', languageChosen: false });
+    // The РУ / EN toggle in Settings goes through this too — somebody who used
+    // it has plainly chosen, and must not meet the picker on the next launch.
+    useSettings.getState().setLanguage('en');
+    expect(useSettings.getState()).toMatchObject({ language: 'en', languageChosen: true });
+  });
+
+  /*
+   * A reset that defaulted these would flip the app to Russian under somebody
+   * who pressed an English button, and then drop them onto the first-launch
+   * picker mid-session. Same carve-out as the gyms and the bodyweight log.
+   */
+  it('keeps the language, and the answer, across a reset to defaults', () => {
+    useSettings.setState({ language: 'en', languageChosen: true, restSecondsBetweenSets: 45 });
+    useSettings.getState().resetToDefaults();
+    expect(useSettings.getState()).toMatchObject({ language: 'en', languageChosen: true });
+    // And it really did reset the things it is for.
+    expect(useSettings.getState().restSecondsBetweenSets).toBe(
+      DEFAULT_SETTINGS.restSecondsBetweenSets,
+    );
+  });
+
+  // Even picking the language it already shows: the tap is still an answer.
+  it('counts choosing the default as the answer', () => {
+    useSettings.setState({ language: 'ru', languageChosen: false });
+    useSettings.getState().setLanguage('ru');
+    expect(useSettings.getState().languageChosen).toBe(true);
+  });
+
   // `=== true`, not `!== false`: a device upgrading from a build with no such
   // key must not wake up notifying somebody who never asked to be notified.
   it('keeps the reminder off unless it was explicitly on', () => {

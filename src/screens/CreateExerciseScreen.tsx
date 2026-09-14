@@ -151,28 +151,48 @@ import {
   sessionsToNextMax,
   supportsLadder,
 } from '../lib/repLadder';
-import { CLUSTERS, CLUSTER_MUSCLES, clusterLabel, clusterOf, MUSCLE_CLUSTER } from '../lib/muscles';
+import {
+  CLUSTERS,
+  CLUSTER_MUSCLES,
+  clusterLabel,
+  clusterOf,
+  muscleLabel,
+  MUSCLE_CLUSTER,
+} from '../lib/muscles';
 import { formatClock, weightSteps } from '../lib/units';
+import { useLanguage, useT, type Translate } from '../hooks/useT';
+import { term, type Language } from '../lib/i18n';
 import type { CountUnit, LoadMode, MuscleCluster, MuscleGroup, TimerMode } from '../types/models';
 
-const LOAD_MODES: readonly { value: LoadMode; label: string }[] = [
-  { value: 'external', label: 'External' },
-  { value: 'added_bodyweight', label: 'Added' },
-  { value: 'assisted', label: 'Assisted' },
-];
+/*
+ * The three segmented controls' options, as functions rather than constants:
+ * the labels are translated, and a module-level array would be frozen in
+ * whichever language the app started in.
+ */
+function loadModes(t: Translate): readonly { value: LoadMode; label: string }[] {
+  return [
+    { value: 'external', label: t('External') },
+    { value: 'added_bodyweight', label: t('Added') },
+    { value: 'assisted', label: t('Assisted') },
+  ];
+}
 
-const COUNT_UNITS: readonly { value: CountUnit; label: string }[] = [
-  { value: 'reps', label: 'Reps' },
-  { value: 'seconds', label: 'Time' },
-  { value: 'meters', label: 'Metres' },
-  { value: 'rounds', label: 'Rounds' },
-];
+function countUnits(t: Translate): readonly { value: CountUnit; label: string }[] {
+  return [
+    { value: 'reps', label: t('Reps') },
+    { value: 'seconds', label: t('Time') },
+    { value: 'meters', label: t('Metres') },
+    { value: 'rounds', label: t('Rounds') },
+  ];
+}
 
-const TIMER_MODES: readonly { value: TimerMode; label: string }[] = [
-  { value: 'manual', label: 'Manual' },
-  { value: 'countdown', label: 'Countdown' },
-  { value: 'countup', label: 'Count up' },
-];
+function timerModes(t: Translate): readonly { value: TimerMode; label: string }[] {
+  return [
+    { value: 'manual', label: t('Manual') },
+    { value: 'countdown', label: t('Countdown') },
+    { value: 'countup', label: t('Count up') },
+  ];
+}
 
 /**
  * Get-ready lengths, cycled by tapping the row.
@@ -223,6 +243,8 @@ export function CreateExerciseScreen({
   onBack,
   onSubmit,
 }: CreateExerciseScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
   const [draft, setDraft] = useState<ExerciseDraft>(initial);
   /** Which cluster's muscles are on show. A lens, never part of the draft. */
   const [pickerCluster, setPickerCluster] = useState<MuscleCluster>(
@@ -234,7 +256,7 @@ export function CreateExerciseScreen({
 
   // `ladderOn` is part of the SHAPE: a ladder owns the rep target, so the well that
   // would set one is not rendered. See `lib/exerciseShape.ts`.
-  const wells = wellsFor(draft);
+  const wells = wellsFor(draft, lang);
   /*
    * Derived, not stored: flipping `Requires weight` or the count unit changes WHICH
    * wells exist, and an editor pointing at a well that is no longer on screen would
@@ -256,10 +278,10 @@ export function CreateExerciseScreen({
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
-        kicker={mode === 'edit' ? 'Edit exercise' : 'New exercise'}
+        kicker={mode === 'edit' ? t('Edit exercise') : t('New exercise')}
         onBack={onBack}
         action={{
-          label: mode === 'edit' ? 'Save' : 'Create',
+          label: mode === 'edit' ? t('Save') : t('Create'),
           // Demoted while the name is empty: an exercise with no name is a row you
           // cannot find again.
           tone: draft.name.trim() === '' ? 'muted' : 'primary',
@@ -275,13 +297,13 @@ export function CreateExerciseScreen({
         contentContainerStyle={{ paddingTop: 24, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
-        <Kicker className="mx-lg mb-sm">Name</Kicker>
+        <Kicker className="mx-lg mb-sm">{t('Name')}</Kicker>
         <View className="mx-lg">
           <FieldWell
             value={draft.name}
-            placeholder="Exercise name"
+            placeholder={t('Exercise name')}
             onChangeText={(name) => patch({ name })}
-            accessibilityLabel="Exercise name"
+            accessibilityLabel={t('Exercise name')}
           />
         </View>
 
@@ -290,13 +312,13 @@ export function CreateExerciseScreen({
             about identifying and performing this movement, and because a lifter
             filling this screen in is thinking about the exercise, not about its
             numbers yet. Optional and usually empty. */}
-        <Kicker className="mx-lg mb-sm mt-xl">Cue</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xl">{t('Cue')}</Kicker>
         <View className="mx-lg">
           <FieldWell
             value={draft.cue}
-            placeholder="Elbows in, pause at the chest"
+            placeholder={t('Elbows in, pause at the chest')}
             onChangeText={(cue) => patch({ cue })}
-            accessibilityLabel="Form cue"
+            accessibilityLabel={t('Form cue')}
           />
         </View>
         <Text className="mx-lg mt-sm text-label text-ink-faint">
@@ -311,7 +333,8 @@ export function CreateExerciseScreen({
           tone={draft.muscleGroups.length > 0 ? 'green' : 'faint'}
           className="mx-lg mb-sm mt-xl"
         >
-          Muscles{describeMuscles(draft.muscleGroups)}
+          {t('Muscles')}
+          {describeMuscles(draft.muscleGroups, lang)}
         </Kicker>
 
         <View className="mx-lg flex-row flex-wrap">
@@ -338,19 +361,19 @@ export function CreateExerciseScreen({
 
         <Text className="mx-lg text-label text-ink-faint">
           {draft.muscleGroups.length > 0
-            ? 'First pick is the primary — it decides which section this files under.'
-            : 'Pick at least one, or it lands in the library’s Unfiled section.'}
+            ? t('First pick is the primary — it decides which section this files under.')
+            : t('Pick at least one, or it lands in the library’s Unfiled section.')}
         </Text>
 
         {/* THE control. 64 high because it carries a helper line, and the helper
             line changes with it — that's how the user learns what it does. */}
         <View className="mx-lg mt-xl h-row-lg flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg">
           <View className="flex-1">
-            <Text className="text-body font-medium text-ink">Requires weight</Text>
+            <Text className="text-body font-medium text-ink">{t('Requires weight')}</Text>
             <Text className="mt-[2px] text-label text-ink-faint">
               {draft.requiresWeight
-                ? 'A weight cell renders on every set'
-                : 'No weight cell renders at all'}
+                ? t('A weight cell renders on every set')
+                : t('No weight cell renders at all')}
             </Text>
           </View>
           <View className="ml-lg">
@@ -369,7 +392,7 @@ export function CreateExerciseScreen({
                   timerMode: requiresWeight ? 'manual' : draft.timerMode,
                 })
               }
-              accessibilityLabel="Requires weight"
+              accessibilityLabel={t('Requires weight')}
             />
           </View>
         </View>
@@ -377,10 +400,10 @@ export function CreateExerciseScreen({
         {/* Only exists when there is no weight: something has to be counted. */}
         {draft.requiresWeight ? null : (
           <>
-            <Kicker className="mx-lg mb-sm mt-xl">Counted in</Kicker>
+            <Kicker className="mx-lg mb-sm mt-xl">{t('Counted in')}</Kicker>
             <View className="mx-lg">
               <Segmented
-                options={COUNT_UNITS}
+                options={countUnits(t)}
                 value={draft.countUnit}
                 onChange={(countUnit) =>
                   patch({
@@ -393,7 +416,7 @@ export function CreateExerciseScreen({
                         : 'manual',
                   })
                 }
-                accessibilityLabel="Counted in"
+                accessibilityLabel={t('Counted in')}
               />
             </View>
           </>
@@ -401,13 +424,13 @@ export function CreateExerciseScreen({
 
         {/* Green because this label just changed under the user's thumb. */}
         <Kicker tone="green" className="mx-lg mb-sm mt-xl">
-          Set inputs · {describeSetInputs(draft)}
+          {t('Set inputs')} · {describeSetInputs(draft, lang)}
         </Kicker>
         {/* A laddered bodyweight movement has NO wells: the max below is its only
             number, and an empty row is the honest rendering of that. */}
         {wells.length === 0 ? (
           <Text className="mx-lg text-label text-ink-faint">
-            The ladder’s max is the only number this exercise needs — it derives every set.
+            {t('The ladder’s max is the only number this exercise needs — it derives every set.')}
           </Text>
         ) : (
           <View className="mx-lg flex-row">
@@ -452,24 +475,24 @@ export function CreateExerciseScreen({
             counts for you. */}
         {isTimeCounted ? (
           <>
-            <Kicker className="mx-lg mb-sm mt-xl">Timer</Kicker>
+            <Kicker className="mx-lg mb-sm mt-xl">{t('Timer')}</Kicker>
             <View className="mx-lg">
               <Segmented
-                options={TIMER_MODES}
+                options={timerModes(t)}
                 value={draft.timerMode}
                 onChange={(timerMode) => patch({ timerMode })}
-                accessibilityLabel="Timer"
+                accessibilityLabel={t('Timer')}
               />
             </View>
             <Text className="mx-lg mt-sm text-label text-ink-faint">
-              {timerHelp(draft, isRounds)}
+              {timerHelp(draft, isRounds, t)}
             </Text>
 
             {draft.timerMode === 'manual' ? null : (
               <ListCard className="mx-lg mt-lg">
                 <SettingRow
-                  label="Get ready"
-                  value={prepareLabel(draft.prepareSeconds)}
+                  label={t('Get ready')}
+                  value={prepareLabel(draft.prepareSeconds, t)}
                   onPress={() => patch({ prepareSeconds: nextPrepare(draft.prepareSeconds) })}
                 />
               </ListCard>
@@ -480,13 +503,13 @@ export function CreateExerciseScreen({
         {/* Load mode only means something when there is a load to read. */}
         {draft.requiresWeight ? (
           <>
-            <Kicker className="mx-lg mb-sm mt-xl">Load mode</Kicker>
+            <Kicker className="mx-lg mb-sm mt-xl">{t('Load mode')}</Kicker>
             <View className="mx-lg">
               <Segmented
-                options={LOAD_MODES}
+                options={loadModes(t)}
                 value={draft.loadMode}
                 onChange={(loadMode) => patch({ loadMode })}
-                accessibilityLabel="Load mode"
+                accessibilityLabel={t('Load mode')}
               />
             </View>
           </>
@@ -500,11 +523,11 @@ export function CreateExerciseScreen({
             on a screen the user is not looking at.
           */}
           <StepperRow
-            label={isRounds ? 'Rounds' : 'Sets'}
+            label={isRounds ? t('Rounds') : t('Sets')}
             hint={
               draft.ladderOn
-                ? 'The ladder is shaped to this many sets'
-                : 'What a routine plans for this exercise'
+                ? t('The ladder is shaped to this many sets')
+                : t('What a routine plans for this exercise')
             }
             value={String(draft.targetSets)}
             onDecrease={() => {
@@ -521,8 +544,8 @@ export function CreateExerciseScreen({
           {draft.requiresWeight ? (
             <>
               <SettingRow
-                label="Increment"
-                value={`± ${draft.incrementKg} kg`}
+                label={t('Increment')}
+                value={`± ${draft.incrementKg} ${term('unit', 'kg', lang)}`}
                 onPress={() => {
                   tap();
                   patch({ incrementKg: nextIncrement(draft.incrementKg) });
@@ -547,13 +570,13 @@ export function CreateExerciseScreen({
             setting is two minutes", and the first tap on `−` is what turns one into
             the other. */}
           <StepperRow
-            label={isRounds ? 'Rest between rounds' : 'Rest between sets'}
+            label={isRounds ? t('Rest between rounds') : t('Rest between sets')}
             hint={
               draft.restFollowsSettings
-                ? 'Following your setting — it moves when you change it'
-                : 'This exercise only'
+                ? t('Following your setting — it moves when you change it')
+                : t('This exercise only')
             }
-            value={draft.restSeconds > 0 ? formatClock(draft.restSeconds) : 'None'}
+            value={draft.restSeconds > 0 ? formatClock(draft.restSeconds) : t('None')}
             onDecrease={() => {
               tap();
               patch(bumpDraftRest(draft, -REST_LIMITS.step));
@@ -576,11 +599,11 @@ export function CreateExerciseScreen({
                   patch(followSettingsRest(draft, settingsRestSeconds));
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Follow the rest setting instead of this exercise's own"
+                accessibilityLabel={t("Follow the rest setting instead of this exercise's own")}
                 className="h-hit justify-center px-lg"
               >
                 <Text className="text-label font-medium text-ink-muted">
-                  Follow the setting instead
+                  {t('Follow the setting instead')}
                 </Text>
               </Pressable>
             </>
@@ -595,7 +618,7 @@ export function CreateExerciseScreen({
             <>
               <Separator />
               <SettingRow
-                label="Overload nudges"
+                label={t('Overload nudges')}
                 value="Off · the ladder owns the reps"
                 valueTone="faint"
               />
@@ -603,7 +626,11 @@ export function CreateExerciseScreen({
           ) : draft.requiresWeight ? null : (
             <>
               <Separator />
-              <SettingRow label="Overload nudges" value="Off · no load to add" valueTone="faint" />
+              <SettingRow
+                label={t('Overload nudges')}
+                value="Off · no load to add"
+                valueTone="faint"
+              />
             </>
           )}
         </ListCard>
@@ -612,7 +639,7 @@ export function CreateExerciseScreen({
           <Text className="mx-lg mt-xl text-label text-ink-faint">
             Reps, time and metres swap the same two wells:{' '}
             <Text className="text-label text-ink-muted">
-              reps only · duration · distance + duration
+              {t('reps only · duration · distance + duration')}
             </Text>
             .
           </Text>
@@ -652,6 +679,7 @@ function WellStepper({
   onChange: (patch: Partial<ExerciseDraft>) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const { small, large, min, isTime } = stepsFor(well.field, draft);
   const deltas = [-large, -small, small, large];
 
@@ -728,10 +756,10 @@ function WellStepper({
           onPress={onClose}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="Done adjusting"
+          accessibilityLabel={t('Done adjusting')}
           className="h-hit justify-center"
         >
-          <Text className="text-label font-semibold text-green-bright">Done</Text>
+          <Text className="text-label font-semibold text-green-bright">{t('Done')}</Text>
         </Pressable>
       </View>
     </View>
@@ -778,6 +806,8 @@ function LadderSection({
   draft: ExerciseDraft;
   onChange: (next: (draft: ExerciseDraft) => ExerciseDraft) => void;
 }) {
+  const t = useT();
+  const lang = useLanguage();
   const ladder = { max: draft.ladderMax, earned: draft.ladderEarned };
   /*
    * Previewed at THIS exercise's set count, not at the scheme's five. The two are
@@ -792,16 +822,17 @@ function LadderSection({
   return (
     <>
       <Kicker tone={draft.ladderOn ? 'green' : 'faint'} className="mx-lg mb-sm mt-xl">
-        Ladder{draft.ladderOn ? ` · ${describeLadder(targets)}` : ''}
+        {t('Ladder')}
+        {draft.ladderOn ? ` · ${describeLadder(targets)}` : ''}
       </Kicker>
 
       <View className="mx-lg min-h-[64px] flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg py-sm">
         <View className="flex-1 pr-md">
-          <Text className="text-body font-medium text-ink">Rep ladder</Text>
+          <Text className="text-body font-medium text-ink">{t('Rep ladder')}</Text>
           <Text className="mt-[2px] text-label text-ink-faint">
             {draft.ladderOn
-              ? 'One max, and every set derived from it — plus a rep every session you meet it'
-              : 'Off — every set of this exercise plans the same number'}
+              ? t('One max, and every set derived from it — plus a rep every session you meet it')
+              : t('Off — every set of this exercise plans the same number')}
           </Text>
         </View>
         <Toggle
@@ -810,7 +841,7 @@ function LadderSection({
             tap();
             onChange((d) => toggleLadder(d, on));
           }}
-          accessibilityLabel="Rep ladder"
+          accessibilityLabel={t('Rep ladder')}
         />
       </View>
 
@@ -836,7 +867,9 @@ function LadderSection({
                 <Text className="text-display font-semibold tabular-nums text-ink">
                   {draft.ladderMax}
                 </Text>
-                <Text className="ml-xs text-micro font-semibold uppercase text-ink-faint">max</Text>
+                <Text className="ml-xs text-micro font-semibold uppercase text-ink-faint">
+                  {t('max')}
+                </Text>
               </View>
 
               <View className="flex-row">
@@ -861,12 +894,16 @@ function LadderSection({
 
           {/* The session, in the notation the user writes it in themselves. */}
           <Text className="mx-lg mt-md text-body font-medium tabular-nums text-ink">
-            {describeLadder(targets)} · {ladderTotal(targets)} reps
+            {describeLadder(targets)} ·{' '}
+            {t('{count} {unit}', { count: ladderTotal(targets), unit: term('unit', 'reps', lang) })}
           </Text>
           <Text className="mx-lg mt-xs text-label text-ink-faint">
             {untilPR === 1
-              ? `Meet every set and the max becomes ${draft.ladderMax + 1}.`
-              : `Meet every set and one rep is added, from the bottom up. ${untilPR} met sessions and the max becomes ${draft.ladderMax + 1}.`}
+              ? t('Meet every set and the max becomes {max}.', { max: draft.ladderMax + 1 })
+              : t(
+                  'Meet every set and one rep is added, from the bottom up. {count} met sessions and the max becomes {max}.',
+                  { count: untilPR, max: draft.ladderMax + 1 },
+                )}
           </Text>
           <Text className="mx-lg mt-xs text-label text-ink-faint">
             Miss one and nothing moves — the same numbers come back next time. Shown at {sets} sets,
@@ -957,29 +994,31 @@ function nextIncrement(current: number): number {
 }
 
 /** " · PULL · back, biceps" — the filing decision, echoed back in pick order. */
-function describeMuscles(muscles: MuscleGroup[]): string {
+function describeMuscles(muscles: MuscleGroup[], lang: Language): string {
   if (muscles.length === 0) return '';
-  const cluster = clusterLabel(MUSCLE_CLUSTER[muscles[0]]);
-  return ` · ${cluster} · ${muscles.join(', ')}`;
+  const cluster = clusterLabel(MUSCLE_CLUSTER[muscles[0]], lang);
+  // `muscleLabel` rather than `term` directly: it owns the capitalisation the
+  // catalogue's namespaced keys are written in.
+  return ` · ${cluster} · ${muscles.map((m) => muscleLabel(m, lang)).join(', ')}`;
 }
 
 /** What the chosen timer mode will actually do, in one line. */
-function timerHelp(draft: ExerciseDraft, isRounds: boolean): string {
+function timerHelp(draft: ExerciseDraft, isRounds: boolean, t: Translate): string {
   const target = formatClock(draft.durationSeconds);
   switch (draft.timerMode) {
     case 'countdown':
       return isRounds
-        ? `Each round counts down from ${target}, then logs itself.`
-        : `Counts down from ${target} and logs the hold when it reaches zero.`;
+        ? t('Each round counts down from {target}, then logs itself.', { target })
+        : t('Counts down from {target} and logs the hold when it reaches zero.', { target });
     case 'countup':
-      return 'Counts up until you stop it, and logs the time you held.';
+      return t('Counts up until you stop it, and logs the time you held.');
     default:
-      return 'You type the number after the set. No clock runs.';
+      return t('You type the number after the set. No clock runs.');
   }
 }
 
-function prepareLabel(seconds: number): string {
-  return seconds > 0 ? `${seconds} sec` : 'None';
+function prepareLabel(seconds: number, t: Translate): string {
+  return seconds > 0 ? t('{seconds} sec', { seconds }) : t('None');
 }
 
 /** Cycle to the next get-ready length, wrapping. */

@@ -96,6 +96,7 @@ import { useRestTimer } from '../hooks/useRestTimer';
 import { useSetTimer } from '../hooks/useSetTimer';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
+import { useLanguage, usePlural, useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 import { FOCUS_GLOW } from './FocusClock';
 import { FocusBottom, FocusDone, FocusFinish } from './FocusControls';
@@ -137,6 +138,7 @@ interface FocusModeProps {
 }
 
 export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: FocusModeProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
 
@@ -418,8 +420,8 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
           }}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Leave focus mode"
-          accessibilityHint="Swipe down, or tap"
+          accessibilityLabel={t('Leave focus mode')}
+          accessibilityHint={t('Swipe down, or tap')}
           className="h-hit items-center justify-center"
         >
           {({ pressed }) => (
@@ -441,7 +443,7 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
           style={{ position: 'absolute', left: 0, right: 0, bottom: 0, opacity: hint }}
         >
           <Text className="text-center text-micro uppercase text-ink-faint">
-            swipe down to exit
+            {t('swipe down to exit')}
           </Text>
         </Animated.View>
 
@@ -453,8 +455,10 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
             {session.title}
           </Text>
           <Text className="ml-md text-micro font-semibold uppercase tabular-nums text-ink-faint">
-            {progress.done} of {progress.total} sets
-            {elapsedMinutes == null ? ' · not started' : ` · ${elapsedMinutes} min`}
+            {t('{done} of {total} sets', { done: progress.done, total: progress.total })}
+            {elapsedMinutes == null
+              ? ` · ${t('not started')}`
+              : ` · ${t('{minutes} min', { minutes: elapsedMinutes })}`}
           </Text>
         </View>
       </View>
@@ -507,6 +511,8 @@ function Lift({
   onDone: () => void;
   onUndo: (() => void) | null;
 }) {
+  const t = useT();
+  const lang = useLanguage();
   const { exercise } = target.entry;
 
   return (
@@ -514,7 +520,7 @@ function Lift({
       <View className="flex-1 justify-center">
         <View className="px-lg">
           <Text className="text-micro font-semibold uppercase text-green-bright">
-            {describeSetPosition(target)}
+            {describeSetPosition(target, lang)}
           </Text>
           <Text numberOfLines={2} className="mt-xs text-title-lg font-medium text-ink">
             {exercise.name}
@@ -529,10 +535,13 @@ function Lift({
              read as "dash kilograms" — the same absence the cell itself has. */
           accessibilityLabel={[
             exercise.requiresWeight
-              ? `${formatWeight(target.set.weightKg, unitSystem, exercise.loadMode)} ${unitLabel(unitSystem)} by`
+              ? t('{weight} {unit} by', {
+                  weight: formatWeight(target.set.weightKg, unitSystem, exercise.loadMode),
+                  unit: unitLabel(unitSystem, lang),
+                })
               : '',
-            `${formatCount(target.set.count, exercise.countUnit)} ${countUnitLabel(exercise.countUnit)}.`,
-            'Adjust.',
+            `${formatCount(target.set.count, exercise.countUnit)} ${countUnitLabel(exercise.countUnit, lang)}.`,
+            t('Adjust.'),
           ]
             .filter(Boolean)
             .join(' ')}
@@ -543,13 +552,13 @@ function Lift({
               <WorkNumber
                 value={formatWeight(target.set.weightKg, unitSystem, exercise.loadMode)}
               />
-              <WorkUnit label={unitLabel(unitSystem)} />
+              <WorkUnit label={unitLabel(unitSystem, lang)} />
               <Text className="mx-sm text-title text-ink-faint">×</Text>
             </>
           ) : null}
 
           <WorkNumber value={formatCount(target.set.count, exercise.countUnit)} />
-          <WorkUnit label={countUnitLabel(exercise.countUnit)} />
+          <WorkUnit label={countUnitLabel(exercise.countUnit, lang)} />
 
           <View className="flex-1" />
           {/* WHAT GIVES WAY WHEN THE LINE IS TOO LONG. `+120 kg × 12 reps` plus
@@ -574,13 +583,15 @@ function Lift({
           /* What this exercise did last time. Reference, not instruction — the
              same `ink-faint` clause the expanded card carries. */
           <Text numberOfLines={1} className="mt-sm px-lg text-label tabular-nums text-ink-faint">
-            {target.entry.lastSessionShort ? `last: ${target.entry.lastSessionShort}` : ' '}
+            {target.entry.lastSessionShort
+              ? t('last: {what}', { what: target.entry.lastSessionShort })
+              : ' '}
           </Text>
         )}
       </View>
 
       <FocusBottom onUndo={onUndo}>
-        <FocusDone onPress={onDone} label="done" />
+        <FocusDone onPress={onDone} label={t('done')} />
       </FocusBottom>
     </>
   );
@@ -638,20 +649,27 @@ function SessionComplete({
   onFinish: () => void;
   onUndo: (() => void) | null;
 }) {
+  const t = useT();
+  const countedSets = usePlural();
+
   return (
     <>
       <View className="flex-1 justify-center px-lg">
         <Text className="text-micro font-semibold uppercase text-green-bright">
-          last set logged
+          {t('last set logged')}
         </Text>
         <Text allowFontScaling={false} className="mt-xs text-focus-work font-semibold text-ink">
-          Session complete
+          {t('Session complete')}
         </Text>
         <Text className="mt-md text-label tabular-nums text-ink-muted">
-          {loggedCount} {loggedCount === 1 ? 'set' : 'sets'} logged
-          {elapsedMinutes == null ? '' : ` · ${elapsedMinutes} min`}
+          {t('{count} {sets} logged', {
+            count: loggedCount,
+            // `few` is Russian's own third form, so it is the Russian word.
+            sets: countedSets(loggedCount, { one: t('set'), few: 'подхода', many: t('sets') }),
+          })}
+          {elapsedMinutes == null ? '' : ` · ${t('{minutes} min', { minutes: elapsedMinutes })}`}
         </Text>
-        <Text className="mt-xs text-label text-ink-faint">nothing left to rest for</Text>
+        <Text className="mt-xs text-label text-ink-faint">{t('nothing left to rest for')}</Text>
       </View>
 
       <FocusBottom onUndo={onUndo}>

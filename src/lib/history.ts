@@ -13,6 +13,7 @@
  * stay out of the chart, because a drop set is not a regression.
  */
 
+import { plural, t, term, type Language } from './i18n';
 import type { Exercise, ID, SetHistory } from '../types/models';
 import type { TrendPoint } from './trends';
 import { formatDuration } from './units';
@@ -137,12 +138,32 @@ export function describeHistory(
   rows: SessionRow[],
   plateauDays: number | null,
   loadPrefix = '',
+  lang: Language = 'en',
 ): string {
-  const parts = [`${rows.length} ${rows.length === 1 ? 'session' : 'sessions'}`];
+  const parts = [
+    t('{count} {sessions}', lang, {
+      count: rows.length,
+      // `few` is Russian's own third form, so it is the Russian word.
+      sessions: plural(rows.length, lang, {
+        one: t('session', lang),
+        few: 'тренировки',
+        many: t('sessions', lang),
+      }),
+    }),
+  ];
 
   const top = rows.map((r) => r.topWeightKg).filter((w): w is number => w != null);
-  if (top.length > 0) parts.push(`top ${loadPrefix}${Math.max(...top)} kg`);
-  if (plateauDays != null && plateauDays > 0) parts.push(`same weight for ${plateauDays} days`);
+  if (top.length > 0) {
+    parts.push(
+      t('top {weight} {unit}', lang, {
+        weight: `${loadPrefix}${Math.max(...top)}`,
+        unit: term('unit', 'kg', lang),
+      }),
+    );
+  }
+  if (plateauDays != null && plateauDays > 0) {
+    parts.push(t('same weight for {days} days', lang, { days: plateauDays }));
+  }
 
   return parts.join(' · ');
 }

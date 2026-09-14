@@ -40,6 +40,7 @@
  */
 
 import { MONTH_NAMES, dayKey, weekdayIndex } from './days';
+import { plural, t, type Language } from './i18n';
 import type { CompletedWorkout } from './completedWorkout';
 
 // `dayKey` and the weekday order live in `lib/days.ts` now — three logs hang off
@@ -182,10 +183,25 @@ export function trainingMonths(
 }
 
 /** "8 workouts · 7 days" — the month's header line, or null for an empty month. */
-export function describeMonth(month: CalendarMonth): string | null {
+export function describeMonth(month: CalendarMonth, lang: Language = 'en'): string | null {
   if (month.total === 0) return null;
-  const workouts = `${month.total} ${month.total === 1 ? 'workout' : 'workouts'}`;
+  const workouts = t('{count} {workouts}', lang, {
+    count: month.total,
+    // `few` is Russian's own third form, so it is the Russian word.
+    workouts: plural(month.total, lang, {
+      one: t('workout', lang),
+      few: 'тренировки',
+      many: t('workouts', lang),
+    }),
+  });
   // Only when they differ: "8 workouts · 8 days" states the same thing twice.
   if (month.daysTrained === month.total) return workouts;
-  return `${workouts} · ${month.daysTrained} days`;
+  return `${workouts} · ${t('{count} {days}', lang, {
+    count: month.daysTrained,
+    days: plural(month.daysTrained, lang, {
+      one: t('day', lang),
+      few: 'дня',
+      many: t('days', lang),
+    }),
+  })}`;
 }

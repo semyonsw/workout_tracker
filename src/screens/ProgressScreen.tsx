@@ -52,6 +52,8 @@ import {
 import { bodyweightSeries } from '../lib/bodyweightLog';
 import { useSettings } from '../state/settingsStore';
 import { formatClock, formatShortDate } from '../lib/units';
+import { term } from '../lib/i18n';
+import { useLanguage, useT } from '../hooks/useT';
 import type { Exercise, ID, SetHistory } from '../types/models';
 import type { ReactNode } from 'react';
 
@@ -76,6 +78,8 @@ export function ProgressScreen({
   toolbar,
   onBack,
 }: ProgressScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
   const [scope, setScope] = useState<Scope>(null);
   /*
    * Read here rather than passed in, unlike the log and the library: it is a
@@ -124,31 +128,36 @@ export function ProgressScreen({
         {
           key: 'count',
           title: isTime
-            ? 'Time per session'
+            ? t('Time per session')
             : isDistance
-              ? 'Distance per session'
-              : 'Reps per session',
+              ? t('Distance per session')
+              : t('Reps per session'),
           points: exerciseCountSeries(history, exercise.id),
           // A clock, not "2 min" / "90 sec": one form all the way up an axis.
           format: isTime ? formatClock : undefined,
-          unit: isTime ? '' : isDistance ? 'm' : 'reps',
+          unit: isTime ? '' : isDistance ? term('unit', 'm', lang) : term('unit', 'reps', lang),
         },
         {
           key: 'weight',
-          title: 'Top weight per session',
+          title: t('Top weight per session'),
           points: exerciseTopWeightSeries(history, exercise.id),
-          unit: 'kg',
+          unit: term('unit', 'kg', lang),
         },
       ];
     }
 
     return [
-      { key: 'reps', title: 'Reps per workout', points: workoutRepsSeries(workouts), unit: 'reps' },
+      {
+        key: 'reps',
+        title: t('Reps per workout'),
+        points: workoutRepsSeries(workouts),
+        unit: term('unit', 'reps', lang),
+      },
       {
         key: 'volume',
-        title: 'Weight per workout',
+        title: t('Weight per workout'),
         points: workoutVolumeSeries(workouts),
-        unit: 'kg',
+        unit: term('unit', 'kg', lang),
       },
       /*
        * BODYWEIGHT — the third line, and the only one that is not about a session.
@@ -162,21 +171,21 @@ export function ProgressScreen({
        */
       {
         key: 'bodyweight',
-        title: 'Bodyweight',
+        title: t('Bodyweight'),
         points: bodyweightSeries(bodyweightLog),
-        unit: 'kg',
+        unit: term('unit', 'kg', lang),
       },
     ];
-  }, [bodyweightLog, exercise, historyByExerciseId, workouts]);
+  }, [bodyweightLog, exercise, historyByExerciseId, lang, t, workouts]);
 
   const drawable = graphs.filter((graph) => graph.points.length >= 2);
 
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
-        kicker="Training history"
+        kicker={t('Training history')}
         onBack={onBack}
-        subtitle={exercise ? exercise.name : 'Every workout you have logged'}
+        subtitle={exercise ? exercise.name : t('Every workout you have logged')}
         bordered={false}
       >
         {toolbar}
@@ -195,7 +204,7 @@ export function ProgressScreen({
             className="mt-md"
           >
             <SelectChip
-              label="All workouts"
+              label={t('All workouts')}
               selected={active == null}
               onPress={() => {
                 tap();
@@ -239,6 +248,8 @@ interface Graph {
 }
 
 function GraphBlock({ graph }: { graph: Graph }) {
+  const t = useT();
+  const lang = useLanguage();
   const summary = summarizeTrend(graph.points);
   const format = graph.format ?? ((value: number) => String(Math.round(value)));
 
@@ -249,35 +260,49 @@ function GraphBlock({ graph }: { graph: Graph }) {
    */
   const delta = summary
     ? summary.delta === 0
-      ? 'level'
-      : `${summary.delta > 0 ? 'up' : 'down'} ${format(Math.abs(summary.delta))}${graph.unit ? ` ${graph.unit}` : ''}`
+      ? t('level')
+      : t(summary.delta > 0 ? 'up {amount}' : 'down {amount}', {
+          amount: `${format(Math.abs(summary.delta))}${graph.unit ? ` ${graph.unit}` : ''}`,
+        })
     : null;
 
   return (
     <View className="mt-xl">
       <Kicker className="mx-lg">
         {graph.title}
-        {delta ? ` · ${delta} since ${formatShortDate(graph.points[0].at)}` : ''}
+        {delta
+          ? ` · ${t('{delta} since {date}', {
+              delta,
+              date: formatShortDate(graph.points[0].at, lang),
+            })}`
+          : ''}
       </Kicker>
       <View className="mx-lg mt-md">
         <TrendChart points={graph.points} formatValue={format} />
       </View>
       <Text className="mx-lg mt-sm text-label tabular-nums text-ink-faint">
         {format(graph.points[graph.points.length - 1].value)}
-        {graph.unit ? ` ${graph.unit}` : ''} last session · {graph.points.length} sessions plotted
+        {graph.unit ? ` ${graph.unit}` : ''}{' '}
+        {t('last session · {count} sessions plotted', { count: graph.points.length })}
       </Text>
     </View>
   );
 }
 
 function Empty({ hasWorkouts }: { hasWorkouts: boolean }) {
+  const t = useT();
+
   return (
     <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
-      <Kicker>Not enough yet</Kicker>
+      <Kicker>{t('Not enough yet')}</Kicker>
       <Text className="mt-sm text-body text-ink-muted">
         {hasWorkouts
-          ? 'A line needs two sessions to have a direction. Log this exercise once more and it appears here.'
-          : 'Finish two workouts and both graphs draw themselves — reps and weight, session by session.'}
+          ? t(
+              'A line needs two sessions to have a direction. Log this exercise once more and it appears here.',
+            )
+          : t(
+              'Finish two workouts and both graphs draw themselves — reps and weight, session by session.',
+            )}
       </Text>
     </View>
   );

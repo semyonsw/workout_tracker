@@ -55,6 +55,7 @@ import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Kicker, ListCard, Separator, TextButton, Toggle } from '../components/primitives';
 import { commit, tap, undo } from '../lib/feedback';
+import { usePlural, useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 import type { ID, Routine, TrainingSequence } from '../types/models';
 
@@ -92,8 +93,18 @@ export function SequenceScreen({
   onEditStep,
   onVaryStep,
 }: SequenceScreenProps) {
+  const t = useT();
+  const countedSteps = usePlural();
   const byId = new Map(routines.map((r) => [r.id, r]));
   const steps = sequence.routineIds;
+  /*
+   * "3 шага" — one phrase, used by the switch's value and by the list's kicker.
+   * `few` is Russian's own third form, so it is the Russian word.
+   */
+  const stepCount = t('{count} {steps}', {
+    count: steps.length,
+    steps: countedSteps(steps.length, { one: t('step'), few: 'шага', many: t('steps') }),
+  });
   /** How many steps point at each routine — what decides `Make it different`. */
   const uses = steps.reduce<Record<ID, number>>((count, id) => {
     count[id] = (count[id] ?? 0) + 1;
@@ -103,13 +114,13 @@ export function SequenceScreen({
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
-        kicker="Training sequence"
+        kicker={t('Training sequence')}
         subtitle={
           steps.length === 0
-            ? 'Off · no steps yet'
+            ? t('Off · no steps yet')
             : sequence.isActive
-              ? `On · ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`
-              : `Off · ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`
+              ? `${t('On')} · ${stepCount}`
+              : `${t('Off')} · ${stepCount}`
         }
         onBack={onBack}
       />
@@ -122,11 +133,11 @@ export function SequenceScreen({
         <ListCard className="mx-lg">
           <View className="h-row flex-row items-center px-lg">
             <View className="flex-1 pr-md">
-              <Text className="text-body font-medium text-ink">Use this sequence</Text>
+              <Text className="text-body font-medium text-ink">{t('Use this sequence')}</Text>
               <Text className="mt-[2px] text-label text-ink-faint">
                 {steps.length === 0
-                  ? 'Add at least one step to turn it on'
-                  : 'Suggests the next routine on the home screen'}
+                  ? t('Add at least one step to turn it on')
+                  : t('Suggests the next routine on the home screen')}
               </Text>
             </View>
             <Toggle
@@ -135,7 +146,7 @@ export function SequenceScreen({
                 tap();
                 onSetActive(value);
               }}
-              accessibilityLabel="Use this sequence"
+              accessibilityLabel={t('Use this sequence')}
             />
           </View>
         </ListCard>
@@ -143,7 +154,7 @@ export function SequenceScreen({
         {steps.length > 0 ? (
           <>
             <Kicker className="mx-lg mb-sm mt-xl">
-              The order · {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+              {t('The order')} · {stepCount}
             </Kicker>
             <ListCard className="mx-lg">
               {steps.map((routineId, index) => (
@@ -151,7 +162,7 @@ export function SequenceScreen({
                   {index > 0 ? <Separator /> : null}
                   <StepRow
                     position={index + 1}
-                    name={byId.get(routineId)?.name ?? 'Deleted routine'}
+                    name={byId.get(routineId)?.name ?? t('Deleted routine')}
                     isNext={index === sequence.cursor}
                     /* Both actions need a routine that still exists: a step whose
                        routine was deleted has nothing to open and nothing to copy. */
@@ -184,7 +195,7 @@ export function SequenceScreen({
 
         {routines.length > 0 ? (
           <>
-            <Kicker className="mx-lg mb-sm mt-xl">Add a step</Kicker>
+            <Kicker className="mx-lg mb-sm mt-xl">{t('Add a step')}</Kicker>
             <ListCard className="mx-lg">
               {routines.map((routine, index) => (
                 <View key={routine.id}>
@@ -195,7 +206,7 @@ export function SequenceScreen({
                       onAddStep(routine.id);
                     }}
                     accessibilityRole="button"
-                    accessibilityLabel={`Add ${routine.name} to the sequence`}
+                    accessibilityLabel={t('Add {name} to the sequence', { name: routine.name })}
                     className="h-row flex-row items-center px-lg"
                   >
                     <Icon name="plus" size={14} color={palette.greenBright} />
@@ -217,7 +228,7 @@ export function SequenceScreen({
         {steps.length > 1 && sequence.cursor > 0 ? (
           <View className="mx-lg mt-xl">
             <TextButton
-              label="Start the sequence over"
+              label={t('Start the sequence over')}
               onPress={() => {
                 undo();
                 onSetCursor(0);
@@ -258,6 +269,8 @@ function StepRow({
   /** Split this step off onto its own copy. Absent unless the routine repeats. */
   onVary?: () => void;
 }) {
+  const t = useT();
+
   return (
     <View className="py-sm">
       <View className="h-row-lg flex-row items-center pl-lg pr-sm">
@@ -265,7 +278,9 @@ function StepRow({
           onPress={onPressNext}
           accessibilityRole="button"
           accessibilityLabel={
-            isNext ? `${name}, next up` : `${name}, step ${position}. Make it the next one up.`
+            isNext
+              ? t('{name}, next up', { name })
+              : t('{name}, step {position}. Make it the next one up.', { name, position })
           }
           className="h-row-lg flex-1 flex-row items-center pr-md"
         >
@@ -273,20 +288,20 @@ function StepRow({
           <Text numberOfLines={1} className="ml-sm flex-1 text-body font-medium text-ink">
             {name}
           </Text>
-          {isNext ? <Kicker tone="green">next</Kicker> : null}
+          {isNext ? <Kicker tone="green">{t('next')}</Kicker> : null}
         </Pressable>
 
         {/* ⌃ and ⌄ are the chevron rotated by the same 90° the disclosure uses. */}
         <ArrowButton
           direction={-1}
           disabled={!canMoveUp}
-          label={`Move ${name} up`}
+          label={t('Move {name} up', { name })}
           onPress={() => onMove(-1)}
         />
         <ArrowButton
           direction={1}
           disabled={!canMoveDown}
-          label={`Move ${name} down`}
+          label={t('Move {name} down', { name })}
           onPress={() => onMove(1)}
         />
 
@@ -294,7 +309,7 @@ function StepRow({
           onPress={onRemove}
           hitSlop={6}
           accessibilityRole="button"
-          accessibilityLabel={`Remove ${name} from the sequence`}
+          accessibilityLabel={t('Remove {name} from the sequence', { name })}
           className="h-hit w-[36px] items-center justify-center"
         >
           <Icon name="x" size={15} color={palette.inkMuted} />
@@ -316,10 +331,10 @@ function StepRow({
               }}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={`Edit the exercises in ${name}`}
+              accessibilityLabel={t('Edit the exercises in {name}', { name })}
               className="h-hit justify-center pr-lg"
             >
-              <Text className="text-label font-medium text-ink-muted">edit exercises</Text>
+              <Text className="text-label font-medium text-ink-muted">{t('edit exercises')}</Text>
             </Pressable>
           ) : null}
           {onVary ? (
@@ -330,10 +345,15 @@ function StepRow({
               }}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={`Give this step its own copy of ${name}, so it can hold different exercises`}
+              accessibilityLabel={t(
+                'Give this step its own copy of {name}, so it can hold different exercises',
+                { name },
+              )}
               className="h-hit justify-center"
             >
-              <Text className="text-label font-medium text-green-bright">make it different</Text>
+              <Text className="text-label font-medium text-green-bright">
+                {t('make it different')}
+              </Text>
             </Pressable>
           ) : null}
         </View>

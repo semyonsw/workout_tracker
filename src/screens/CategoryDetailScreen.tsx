@@ -63,6 +63,7 @@ import {
   formatMoney,
 } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
+import { useLanguage, useT } from '../hooks/useT';
 import { useSettings } from '../state/settingsStore';
 import { palette } from '../theme/tokens';
 import type { ID } from '../types/models';
@@ -85,6 +86,8 @@ export function CategoryDetailScreen({
   onOpenAmount,
   onAddAmount,
 }: CategoryDetailScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
   const amounts = useMoney((s) => s.amounts);
   const updateCategory = useMoney((s) => s.updateCategory);
   const archiveCategory = useMoney((s) => s.archiveCategory);
@@ -104,7 +107,7 @@ export function CategoryDetailScreen({
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker="Expenses" onBack={onBack} bordered={false} />
+      <ScreenHeader kicker={t('Expenses')} onBack={onBack} bordered={false} />
 
       <ScrollView
         className="flex-1"
@@ -128,7 +131,7 @@ export function CategoryDetailScreen({
               }
               cursorColor={palette.greenBright}
               selectionColor={palette.greenBright}
-              accessibilityLabel="Category glyph"
+              accessibilityLabel={t('Category glyph')}
               className="w-full text-center text-[22px] text-ink"
             />
           </View>
@@ -137,12 +140,12 @@ export function CategoryDetailScreen({
               value={category.name}
               size="body"
               onChangeText={(name) => updateCategory(category.id, { name })}
-              accessibilityLabel="Category name"
+              accessibilityLabel={t('Category name')}
             />
           </View>
         </View>
 
-        <Kicker className="mx-lg mb-sm mt-xl">{describeCount(rows.length)}</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xl">{describeCount(rows.length, lang)}</Kicker>
 
         {rows.length > 0 ? (
           <ListCard className="mx-lg">
@@ -160,24 +163,26 @@ export function CategoryDetailScreen({
         )}
 
         <View className="mx-lg">
-          <AddRow label="Add to this category" onPress={onAddAmount} />
+          <AddRow label={t('Add to this category')} onPress={onAddAmount} />
         </View>
 
         <View className="mx-lg mt-sm h-hairline bg-hairline" />
         <View className="mx-lg">
-          <TextButton label="Archive this category" onPress={() => setArchiving(true)} />
+          <TextButton label={t('Archive this category')} onPress={() => setArchiving(true)} />
         </View>
         <Text className="mx-lg text-label text-ink-faint">
-          Archived, not deleted — its amounts stay in the month, the year and the balance.
+          {t('Archived, not deleted — its amounts stay in the month, the year and the balance.')}
         </Text>
       </ScrollView>
 
       {archiving ? (
         <ConfirmSheet
-          title={`Archive “${category.name}”?`}
-          body="It leaves the grid and the chips. Every amount in it stays in the month, the year and the balance."
-          confirmLabel="Archive it"
-          cancelLabel="Keep it"
+          title={t('Archive “{name}”?', { name: category.name })}
+          body={t(
+            'It leaves the grid and the chips. Every amount in it stays in the month, the year and the balance.',
+          )}
+          confirmLabel={t('Archive it')}
+          cancelLabel={t('Keep it')}
           onConfirm={() => {
             archiveCategory(category.id);
             setArchiving(false);
@@ -202,7 +207,8 @@ function AmountRow({
   currency: string;
   onPress: () => void;
 }) {
-  const detail = describeAmount(amount);
+  const lang = useLanguage();
+  const detail = describeAmount(amount, lang);
   return (
     <Pressable
       onPress={onPress}

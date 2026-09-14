@@ -36,7 +36,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { TrendChart } from '../components/TrendChart';
 import { pressedStyle } from '../components/motion';
 import { Kicker, Segmented, SelectChip } from '../components/primitives';
-import { useT } from '../hooks/useT';
+import { useT, type Translate } from '../hooks/useT';
 import { WEEKDAY_INITIALS, dayKey, formatShortDay, parseDay } from '../lib/days';
 import { tap } from '../lib/feedback';
 import {
@@ -52,10 +52,16 @@ import { useSettings } from '../state/settingsStore';
 import { useTasks } from '../state/tasksStore';
 import { palette } from '../theme/tokens';
 
-const VIEWS = [
-  { value: 'month' as const, label: 'Month' },
-  { value: 'trend' as const, label: 'Trend' },
-];
+/*
+ * A function rather than a constant, because the labels are translated: a
+ * module-level array would be frozen in whichever language the app started in.
+ */
+function views(t: Translate) {
+  return [
+    { value: 'month' as const, label: t('Month') },
+    { value: 'trend' as const, label: t('Trend') },
+  ];
+}
 
 interface TasksHistoryScreenProps {
   /** The day the tasks screen is showing, so the grid opens on its month. */
@@ -78,10 +84,10 @@ export function TasksHistoryScreen({ selected, onBack, onPickDay }: TasksHistory
       <ScreenHeader kicker={t('Task history')} onBack={onBack} bordered={false}>
         <View className="mt-md">
           <Segmented
-            options={VIEWS}
+            options={views(t)}
             value={view}
             onChange={setView}
-            accessibilityLabel="The month or the trend"
+            accessibilityLabel={t('The month or the trend')}
           />
         </View>
       </ScreenHeader>
@@ -344,7 +350,7 @@ function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog
 
       {points.length >= 2 ? (
         <>
-          <Kicker className="mx-lg mt-xl">Percent done, day by day</Kicker>
+          <Kicker className="mx-lg mt-xl">{t('Percent done, day by day')}</Kicker>
           <View className="mx-lg mt-md">
             <TrendChart points={points} formatValue={(value) => `${Math.round(value)}%`} />
           </View>

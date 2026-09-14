@@ -39,8 +39,10 @@ import { useSetTimer } from '../hooks/useSetTimer';
 import { useActiveWorkout } from '../state/activeWorkoutStore';
 import { FINAL_SECONDS, PillClock, PillLabel, pillTone, TimerPill } from './TimerPill';
 import { Icon } from './Icon';
+import { useT } from '../hooks/useT';
 
 export function SetTimerPill() {
+  const t = useT();
   const { timer, reading, stepSeconds, add, startNow, stop, cancel } = useSetTimer();
   /* The exercise name is what makes the clock mean something — "1:24" alone
      could be rest. Read straight from the store so the pill needs no props. */
@@ -60,10 +62,10 @@ export function SetTimerPill() {
   const tone = pillTone(finalTen);
 
   const label = preparing
-    ? 'get ready'
+    ? t('get ready')
     : timer.mode === 'countup'
-      ? 'holding'
-      : (exerciseName ?? 'working');
+      ? t('holding')
+      : (exerciseName ?? t('working'));
 
   return (
     <TimerPill inverted={finalTen} remainingFraction={reading.remainingFraction}>
@@ -77,8 +79,10 @@ export function SetTimerPill() {
           variant={preparing ? 'count' : 'clock'}
           accessibilityLabel={
             preparing
-              ? `Starting in ${reading.display} seconds`
-              : `${formatClock(reading.display)} ${timer.mode === 'countup' ? 'held' : 'left'}`
+              ? t('Starting in {seconds} seconds', { seconds: reading.display })
+              : timer.mode === 'countup'
+                ? t('{clock} held', { clock: formatClock(reading.display) })
+                : t('{clock} left', { clock: formatClock(reading.display) })
           }
         />
         <PillLabel tone={tone}>{label}</PillLabel>
@@ -91,7 +95,7 @@ export function SetTimerPill() {
             onPress={startNow}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Start now, skip the get-ready count"
+            accessibilityLabel={t('Start now, skip the get-ready count')}
             className="h-hit justify-center px-md"
           >
             <Text
@@ -99,7 +103,7 @@ export function SetTimerPill() {
               style={{ color: tone.secondary }}
               className="text-label font-semibold"
             >
-              Start now
+              {t('Start now')}
             </Text>
           </Pressable>
         ) : timer.mode === 'countdown' ? (
@@ -107,7 +111,7 @@ export function SetTimerPill() {
             onPress={() => add(stepSeconds)}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel={`Add ${stepSeconds} seconds`}
+            accessibilityLabel={t('Add {seconds} seconds', { seconds: stepSeconds })}
             className="h-hit justify-center px-md"
           >
             <Text
@@ -125,7 +129,9 @@ export function SetTimerPill() {
             onPress={stop}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel={`Stop and log ${formatClock(reading.workedSeconds)}`}
+            accessibilityLabel={t('Stop and log {clock}', {
+              clock: formatClock(reading.workedSeconds),
+            })}
             className="h-hit justify-center px-md"
           >
             <Text
@@ -133,7 +139,7 @@ export function SetTimerPill() {
               style={{ color: tone.primary }}
               className="text-label font-semibold"
             >
-              Stop
+              {t('Stop')}
             </Text>
           </Pressable>
         )}
@@ -144,7 +150,7 @@ export function SetTimerPill() {
           onPress={cancel}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Cancel timer without logging"
+          accessibilityLabel={t('Cancel timer without logging')}
           className="h-hit w-[28px] items-center justify-center"
         >
           <Icon name="x" size={16} color={finalTen ? tone.primary : tone.label} />

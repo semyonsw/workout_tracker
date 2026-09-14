@@ -24,7 +24,8 @@ import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { pressedStyle } from '../components/motion';
 import { AddRow, Kicker, ListCard, Separator } from '../components/primitives';
-import { useT } from '../hooks/useT';
+import { useLanguage, usePlural, useT, type Translate } from '../hooks/useT';
+import type { Language } from '../lib/i18n';
 import { describeItemsFocus } from '../lib/muscles';
 import { palette } from '../theme/tokens';
 import type { Exercise, ID, Routine, TrainingSequence } from '../types/models';
@@ -54,6 +55,8 @@ export function RoutineListScreen({
 }: RoutineListScreenProps) {
   const insets = useSafeAreaInsets();
   const t = useT();
+  const lang = useLanguage();
+  const counted = usePlural();
   const stepCount = sequence.routineIds.length;
 
   return (
@@ -78,9 +81,15 @@ export function RoutineListScreen({
               <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
                 {stepCount === 0
                   ? t('Off · no order set')
-                  : `${sequence.isActive ? t('On') : t('Off')} · ${stepCount} ${t(
-                      stepCount === 1 ? 'step' : 'steps',
-                    )}`}
+                  : `${sequence.isActive ? t('On') : t('Off')} · ${t('{count} {steps}', {
+                      count: stepCount,
+                      // `few` is Russian's own third form, so it is the Russian word.
+                      steps: counted(stepCount, {
+                        one: t('step'),
+                        few: 'шага',
+                        many: t('steps'),
+                      }),
+                    })}`}
               </Text>
             </View>
             <Icon name="chevron-right" size={18} color={palette.inkFaint} />
@@ -115,7 +124,7 @@ export function RoutineListScreen({
                         numberOfLines={1}
                         className="mt-[2px] text-label tabular-nums text-ink-faint"
                       >
-                        {summarize(routine, exercisesById)}
+                        {summarize(routine, exercisesById, t, lang)}
                       </Text>
                     </View>
                     <View className="ml-md">
@@ -129,7 +138,7 @@ export function RoutineListScreen({
                     <Pressable
                       onPress={() => onStartWorkout(routine.id)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Open ${routine.name} as a workout`}
+                      accessibilityLabel={t('Open {name} as a workout', { name: routine.name })}
                       style={pressedStyle}
                       className="h-row-lg w-[52px] items-center justify-center"
                     >
@@ -162,9 +171,16 @@ export function RoutineListScreen({
  * It leads because it is the thing you scan for when you are looking for the
  * right session, and it drops out silently for a routine with no muscles filed.
  */
-function summarize(routine: Routine, exercisesById: Record<ID, Exercise>): string {
+function summarize(
+  routine: Routine,
+  exercisesById: Record<ID, Exercise>,
+  t: Translate,
+  lang: Language,
+): string {
   const items = routine.items.filter((item) => exercisesById[item.exerciseId]);
   const sets = items.reduce((total, item) => total + item.targetSets, 0);
-  const focus = describeItemsFocus(items, exercisesById);
-  return [focus, `${items.length} exercises · ${sets} sets`].filter(Boolean).join(' · ');
+  const focus = describeItemsFocus(items, exercisesById, lang);
+  return [focus, t('{exercises} exercises · {sets} sets', { exercises: items.length, sets })]
+    .filter(Boolean)
+    .join(' · ');
 }

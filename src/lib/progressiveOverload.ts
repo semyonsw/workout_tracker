@@ -56,6 +56,7 @@
 
 import type { CountUnit, Exercise, OverloadPolicy, SetHistory, UnitSystem } from '../types/models';
 import { countStep, daysBetween, formatCount, resolveIncrementKg, roundToStep } from './units';
+import { term, type Language } from './i18n';
 import { resolveTimerMode } from './setTimer';
 import { ladderOf } from './repLadder';
 
@@ -533,9 +534,9 @@ function evaluateCountOverload(
  * formatter: it fills a fixed-width cell that already has a unit label beside it,
  * so it never carries one.
  */
-export function describeCount(count: number, countUnit: CountUnit): string {
+export function describeCount(count: number, countUnit: CountUnit, lang: Language = 'en'): string {
   if (countUnit === 'seconds' || countUnit === 'rounds') return formatCount(count, countUnit);
-  if (countUnit === 'meters') return `${count} m`;
+  if (countUnit === 'meters') return `${count} ${term('unit', 'm', lang)}`;
   return String(count);
 }
 

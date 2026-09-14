@@ -48,6 +48,7 @@
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useT, type Translate } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 import { Kicker, PrimaryButton, SelectChip } from './primitives';
 import type { SessionEffort } from '../types/models';
@@ -61,11 +62,17 @@ import type { SessionEffort } from '../types/models';
  */
 const EFFORT_CHOICES: readonly SessionEffort[] = ['easy', 'right', 'hard'];
 
-const EFFORT_LABELS: Record<SessionEffort, string> = {
-  easy: 'Easy',
-  right: 'Right',
-  hard: 'Brutal',
-};
+/**
+ * A function rather than a constant, because the labels are translated: a
+ * module-level record would be frozen in whichever language the app started in.
+ */
+function effortLabels(t: Translate): Record<SessionEffort, string> {
+  return {
+    easy: t('Easy'),
+    right: t('Right'),
+    hard: t('Brutal'),
+  };
+}
 
 interface FinishSheetProps {
   /** Sets the user planned but never logged. Drives the whole copy. */
@@ -114,7 +121,9 @@ export function FinishSheet({
   onConfirmAndUpdatePlan,
   onDismiss,
 }: FinishSheetProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
+  const efforts = effortLabels(t);
 
   return (
     <View className="absolute inset-0" accessibilityViewIsModal>
@@ -123,7 +132,7 @@ export function FinishSheet({
       <Pressable
         onPress={onDismiss}
         accessibilityRole="button"
-        accessibilityLabel="Keep going"
+        accessibilityLabel={t('Keep going')}
         className="flex-1"
         style={{ backgroundColor: palette.scrim }}
       />
@@ -132,14 +141,18 @@ export function FinishSheet({
         style={{ paddingBottom: insets.bottom + 16 }}
         className="rounded-t-surface border-t border-t-hairline bg-surface px-lg pt-xl"
       >
-        <Text className="text-title font-medium text-ink">Finish workout?</Text>
+        <Text className="text-title font-medium text-ink">{t('Finish workout?')}</Text>
         {/* Only when there is something to lose. A session with everything logged
             is on this sheet for the ladder line below, and telling it "0 sets are
             still unlogged" would be the sheet reading out a zero. */}
         {unloggedCount > 0 ? (
           <Text className="mt-sm text-body tabular-nums text-ink-muted">
-            {unloggedCount} {unloggedCount === 1 ? 'set is' : 'sets are'} still unlogged. They won't
-            be saved.
+            {t('{count} still unlogged. They won’t be saved.', {
+              count:
+                unloggedCount === 1
+                  ? t('{count} set is', { count: unloggedCount })
+                  : t('{count} sets are', { count: unloggedCount }),
+            })}
           </Text>
         ) : null}
 
@@ -168,13 +181,14 @@ export function FinishSheet({
         {onSetEffort ? (
           <>
             <Kicker tone={effort ? 'green' : 'faint'} className="mt-xl">
-              How did that go{effort ? ` · ${EFFORT_LABELS[effort].toLowerCase()}` : ''}
+              {t('How did that go')}
+              {effort ? ` · ${efforts[effort].toLowerCase()}` : ''}
             </Kicker>
             <View className="mt-sm flex-row">
               {EFFORT_CHOICES.map((choice) => (
                 <SelectChip
                   key={choice}
-                  label={EFFORT_LABELS[choice]}
+                  label={efforts[choice]}
                   selected={effort === choice}
                   onPress={() => onSetEffort(choice)}
                 />
@@ -186,12 +200,15 @@ export function FinishSheet({
         <View className="mt-xl">
           {planChange ? (
             <>
-              <PrimaryButton label="Finish and update the plan" onPress={onConfirmAndUpdatePlan} />
+              <PrimaryButton
+                label={t('Finish and update the plan')}
+                onPress={onConfirmAndUpdatePlan}
+              />
               <View className="h-sm" />
             </>
           ) : null}
           <PrimaryButton
-            label={`Finish · ${loggedCount} sets`}
+            label={`${t('Finish')} · ${t('{count} sets', { count: loggedCount })}`}
             /* Demoted to ghost when there are two ways to finish, so the two are
                not one mis-tap apart at the same weight. Neither is destructive:
                both save the workout, and only one also touches the routine. */
@@ -199,7 +216,7 @@ export function FinishSheet({
             onPress={onConfirm}
           />
           <View className="h-sm" />
-          <PrimaryButton label="Keep going" variant="ghost" onPress={onDismiss} />
+          <PrimaryButton label={t('Keep going')} variant="ghost" onPress={onDismiss} />
         </View>
       </View>
     </View>

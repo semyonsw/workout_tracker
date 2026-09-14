@@ -42,6 +42,7 @@
  * themselves.
  */
 
+import { t, type Language } from './i18n';
 import type { DraftEntry, DraftSession, DraftSet } from './draft';
 import { workingSetLabels } from './draft';
 import { lastLoggedSet, upNextSet } from './upNext';
@@ -124,9 +125,9 @@ export function focusTarget(
  * uppercased in CSS everywhere, and a string that arrives shouting cannot be put
  * in a sentence.
  */
-export function describeSetPosition(target: FocusTarget): string {
-  if (target.workingNumber == null) return 'warm-up';
-  return `set ${target.workingNumber} of ${target.workingTotal}`;
+export function describeSetPosition(target: FocusTarget, lang: Language = 'en'): string {
+  if (target.workingNumber == null) return t('warm-up', lang);
+  return t('set {n} of {total}', lang, { n: target.workingNumber, total: target.workingTotal });
 }
 
 /** Everything focus mode renders, for the session as it now stands. */

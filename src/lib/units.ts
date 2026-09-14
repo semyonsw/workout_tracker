@@ -5,6 +5,8 @@
  * input commit) so a unit-system toggle can never corrupt history.
  */
 
+import { MONTH_NAMES_RU_OF } from './days';
+import { term, type Language } from './i18n';
 import type { CountUnit, LoadMode, UnitSystem } from '../types/models';
 
 export const KG_PER_LB = 0.45359237;
@@ -89,8 +91,18 @@ export function formatWeight(
   return body;
 }
 
-export function unitLabel(unitSystem: UnitSystem): string {
-  return unitSystem === 'imperial' ? 'lb' : 'kg';
+/**
+ * `kg` / `lb`, in the reading language.
+ *
+ * Namespaced through `term`, because `m` is metres here and `min` is minutes,
+ * and both are words elsewhere in the catalogue — an abbreviation is exactly the
+ * kind of two-letter string that collides with a real sentence.
+ *
+ * The language defaults to English so every caller that has no opinion — a test,
+ * a log line, an export — keeps the storage-side spelling.
+ */
+export function unitLabel(unitSystem: UnitSystem, lang: Language = 'en'): string {
+  return term('unit', unitSystem === 'imperial' ? 'lb' : 'kg', lang);
 }
 
 /**
@@ -99,16 +111,16 @@ export function unitLabel(unitSystem: UnitSystem): string {
  * Singular for `rounds` because the cell labels ONE row, and one row is one
  * round — "3:00 ROUND", not "3:00 ROUNDS". Rendered uppercase by the caller.
  */
-export function countUnitLabel(countUnit: CountUnit): string {
+export function countUnitLabel(countUnit: CountUnit, lang: Language = 'en'): string {
   switch (countUnit) {
     case 'seconds':
-      return 'min';
+      return term('unit', 'min', lang);
     case 'meters':
-      return 'm';
+      return term('unit', 'm', lang);
     case 'rounds':
-      return 'round';
+      return term('unit', 'round', lang);
     default:
-      return 'reps';
+      return term('unit', 'reps', lang);
   }
 }
 
@@ -207,7 +219,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  * matters you are on the history screen looking at a chart. No weekday either —
  * a training log is read by date, so which weekday it was is not information.
  */
-export function formatShortDate(iso: string): string {
+export function formatShortDate(iso: string, lang: Language = 'en'): string {
   const date = new Date(iso);
   /*
    * The phone's own calendar day, not UTC's. Timestamps are stored as UTC — that
@@ -216,12 +228,14 @@ export function formatShortDate(iso: string): string {
    * in Yerevan to the day before. `daysBetween` stays UTC on purpose: it measures
    * a span rather than naming a day.
    */
-  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
+  // Russian dates take the genitive month — `12 сентября`, never `12 Сентябрь`.
+  const months = lang === 'ru' ? MONTH_NAMES_RU_OF : MONTHS;
+  return `${date.getDate()} ${months[date.getMonth()]}`;
 }
 
 /** "8 AUG" — the chart's axis form. */
-export function formatChartDate(iso: string): string {
-  return formatShortDate(iso).toUpperCase();
+export function formatChartDate(iso: string, lang: Language = 'en'): string {
+  return formatShortDate(iso, lang).toUpperCase();
 }
 
 /**
@@ -252,7 +266,7 @@ export function daysBetween(a: Date | string, b: Date | string): number {
  * `HistoryScreen` until the Today screen started printing the same number, and
  * two copies of a grouping rule is how two screens end up disagreeing about it.
  */
-export function formatVolumeKg(kg: number): string {
+export function formatVolumeKg(kg: number, lang: Language = 'en'): string {
   const digits = String(Math.max(0, Math.round(kg)));
   let grouped = '';
   for (let i = 0; i < digits.length; i += 1) {
@@ -260,5 +274,5 @@ export function formatVolumeKg(kg: number): string {
     if (i > 0 && fromEnd % 3 === 0) grouped += ' ';
     grouped += digits[i];
   }
-  return `${grouped} kg`;
+  return `${grouped} ${term('unit', 'kg', lang)}`;
 }

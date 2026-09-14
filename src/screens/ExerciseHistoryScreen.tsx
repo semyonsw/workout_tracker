@@ -43,7 +43,9 @@ import type { OverloadVerdict } from '../lib/progressiveOverload';
 import { describeBests, exerciseBests } from '../lib/records';
 import { bodyweightAt } from '../lib/bodyweightLog';
 import { formatCount, formatShortDate, formatWeight } from '../lib/units';
+import { term } from '../lib/i18n';
 import { useSettings } from '../state/settingsStore';
+import { useLanguage, useT } from '../hooks/useT';
 import type { Exercise, ID, SetHistory } from '../types/models';
 
 interface ExerciseHistoryScreenProps {
@@ -72,6 +74,8 @@ export function ExerciseHistoryScreen({
   onEdit,
   onOpenSession,
 }: ExerciseHistoryScreenProps) {
+  const t = useT();
+  const lang = useLanguage();
   const rows = sessionRows(history, exercise);
   const series = topWeightSeries(rows);
   /*
@@ -113,9 +117,9 @@ export function ExerciseHistoryScreen({
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader
-        kicker="History"
+        kicker={t('History')}
         onBack={onBack}
-        action={onEdit ? { label: 'Edit', tone: 'muted', onPress: onEdit } : undefined}
+        action={onEdit ? { label: t('Edit'), tone: 'muted', onPress: onEdit } : undefined}
       />
 
       <ScrollView
@@ -125,7 +129,7 @@ export function ExerciseHistoryScreen({
       >
         <Text className="mx-lg text-title font-medium text-ink">{exercise.name}</Text>
         <Text className="mx-lg mt-xs text-label tabular-nums text-ink-muted">
-          {describeHistory(rows, plateauDays, loadPrefix)}
+          {describeHistory(rows, plateauDays, loadPrefix, lang)}
         </Text>
 
         {/*
@@ -138,7 +142,7 @@ export function ExerciseHistoryScreen({
         */}
         {bestsLine ? (
           <Text className="mx-lg mt-xs text-label tabular-nums text-ink-faint">
-            Best {bestsLine}
+            {t('Best')} {bestsLine}
           </Text>
         ) : null}
 
@@ -153,23 +157,30 @@ export function ExerciseHistoryScreen({
         {ladder && ladderPlan ? (
           <>
             <Kicker tone="green" className="mx-lg mt-xl">
-              Ladder · max {ladder.max}
+              {t('Ladder · max {max}', { max: ladder.max })}
             </Kicker>
             <Text className="mx-lg mt-sm text-title font-medium tabular-nums text-ink">
               {describeLadder(ladderPlan)}
             </Text>
             <Text className="mx-lg mt-xs text-label tabular-nums text-ink-muted">
-              {ladderTotal(ladderPlan)} reps ·{' '}
+              {t('{count} {unit}', {
+                count: ladderTotal(ladderPlan),
+                unit: term('unit', 'reps', lang),
+              })}{' '}
+              ·{' '}
               {untilPR === 1
-                ? `meet it and the max becomes ${ladder.max + 1}`
-                : `${untilPR} met sessions to a max of ${ladder.max + 1}`}
+                ? t('meet it and the max becomes {max}', { max: ladder.max + 1 })
+                : t('{count} met sessions to a max of {max}', {
+                    count: untilPR,
+                    max: ladder.max + 1,
+                  })}
             </Text>
           </>
         ) : null}
 
         {series.length >= 2 ? (
           <>
-            <Kicker className="mx-lg mt-xl">Top working weight</Kicker>
+            <Kicker className="mx-lg mt-xl">{t('Top working weight')}</Kicker>
             <View className="mx-lg mt-md">
               <TrendChart points={series} />
             </View>
@@ -178,7 +189,7 @@ export function ExerciseHistoryScreen({
 
         {rows.length > 0 ? (
           <>
-            <Kicker className="mx-lg mb-sm mt-xl">Sessions</Kicker>
+            <Kicker className="mx-lg mb-sm mt-xl">{t('Sessions')}</Kicker>
             <ListCard className="mx-lg">
               {rows.map((row, index) => (
                 <View key={row.sessionId}>
@@ -187,11 +198,11 @@ export function ExerciseHistoryScreen({
                     onPress={onOpenSession ? () => onOpenSession(row.sessionId) : undefined}
                     disabled={!onOpenSession}
                     accessibilityRole="button"
-                    accessibilityLabel={`${formatShortDate(row.performedAt)}: ${row.lead}${row.drops ?? ''}`}
+                    accessibilityLabel={`${formatShortDate(row.performedAt, lang)}: ${row.lead}${row.drops ?? ''}`}
                     className="h-row flex-row items-center px-lg"
                   >
                     <Text className="w-[64px] text-label tabular-nums text-ink-faint">
-                      {formatShortDate(row.performedAt)}
+                      {formatShortDate(row.performedAt, lang)}
                     </Text>
                     {/* Drops continue the same Text so they wrap as one line of
                         prose, not as a second column that needs aligning. */}
@@ -212,7 +223,9 @@ export function ExerciseHistoryScreen({
             </ListCard>
           </>
         ) : (
-          <Text className="mx-lg mt-xl text-body text-ink-muted">No completed sets yet.</Text>
+          <Text className="mx-lg mt-xl text-body text-ink-muted">
+            {t('No completed sets yet.')}
+          </Text>
         )}
       </ScrollView>
     </View>

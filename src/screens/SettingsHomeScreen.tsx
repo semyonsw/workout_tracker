@@ -158,7 +158,7 @@ export function SettingsHomeScreen({
     try {
       const outcome = await saveJsonFile(backupBaseName(), exportBackupText());
       if (!outcome.saved) {
-        setStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
+        setStatus({ tone: 'quiet', text: t('No folder picked, so nothing was saved.') });
         return;
       }
       commit();
@@ -174,9 +174,11 @@ export function SettingsHomeScreen({
 
       setStatus({
         tone: 'ok',
-        text: `Saved ${outcome.name} to ${outcome.where} — ${describeCounts(onThisPhone())}.${
-          adopted ? ' Automatic backups will go to that folder from now on.' : ''
-        }`,
+        text: `${t('Saved {name} to {where} — {counts}.', {
+          name: outcome.name,
+          where: outcome.where,
+          counts: describeCounts(onThisPhone(), language),
+        })}${adopted ? ` ${t('Automatic backups will go to that folder from now on.')}` : ''}`,
       });
     } catch (error) {
       setStatus({ tone: 'quiet', text: describeError(error) });
@@ -200,7 +202,7 @@ export function SettingsHomeScreen({
     try {
       const file = await pickJsonFile();
       if (!file) {
-        setStatus({ tone: 'quiet', text: 'No file picked.' });
+        setStatus({ tone: 'quiet', text: t('No file picked.') });
         return;
       }
       const result = parseBackup(await readTextFile(file.uri));
@@ -226,7 +228,9 @@ export function SettingsHomeScreen({
       // What LANDED, not what the file claimed: rows that fail validation are
       // dropped on the way in, and a restore that reports the file's own numbers
       // is how someone learns not to trust the feature.
-      text: `Restored ${describeCounts(applied)}${applied.settingsApplied ? ', and your settings' : ''}.`,
+      text: applied.settingsApplied
+        ? t('Restored {counts}, and your settings.', { counts: describeCounts(applied, language) })
+        : t('Restored {counts}.', { counts: describeCounts(applied, language) }),
     });
   };
 
@@ -248,7 +252,7 @@ export function SettingsHomeScreen({
       if (!folder) {
         const picked = await pickFolder();
         if (!picked) {
-          setStatus({ tone: 'quiet', text: 'No folder picked, so nothing was saved.' });
+          setStatus({ tone: 'quiet', text: t('No folder picked, so nothing was saved.') });
           return;
         }
         settings.setAutoBackupFolder(picked);
@@ -259,14 +263,18 @@ export function SettingsHomeScreen({
       if (!result.wrote) {
         setStatus({
           tone: 'quiet',
-          text: 'Could not write to that folder. Pick it again to re-grant access.',
+          text: t('Could not write to that folder. Pick it again to re-grant access.'),
         });
         return;
       }
       commit();
       setStatus({
         tone: 'ok',
-        text: `Backed up ${result.name} to ${folderLabel(folder)} — ${describeCounts(onThisPhone())}.`,
+        text: t('Backed up {name} to {folder} — {counts}.', {
+          name: result.name ?? '',
+          folder: folderLabel(folder),
+          counts: describeCounts(onThisPhone(), language),
+        }),
       });
     } catch (error) {
       setStatus({ tone: 'quiet', text: describeError(error) });
@@ -337,19 +345,19 @@ export function SettingsHomeScreen({
           <Kicker className="mx-lg mb-sm mt-xxl">{t('Everything, in one file')}</Kicker>
           <View className="mx-lg overflow-hidden rounded-surface border border-hairline bg-surface">
             <SettingRow
-              label="Last backup"
+              label={t('Last backup')}
               value={describeBackupAge(settings.lastBackupAt)}
               valueTone={settings.lastBackupAt == null ? 'muted' : 'faint'}
             />
             <Separator inset={0} />
             <SettingRow
-              label="Back up automatically"
+              label={t('Back up automatically')}
               value={
                 !settings.autoBackupEnabled
                   ? 'Off'
                   : settings.autoBackupFolderUri == null
-                    ? 'Needs a folder'
-                    : `Every ${settings.autoBackupIntervalDays} days · ${folderLabel(settings.autoBackupFolderUri)}`
+                    ? t('Needs a folder')
+                    : `${t('Every {days} days', { days: settings.autoBackupIntervalDays })} · ${folderLabel(settings.autoBackupFolderUri)}`
               }
               valueTone={
                 settings.autoBackupEnabled && settings.autoBackupFolderUri == null
@@ -365,8 +373,8 @@ export function SettingsHomeScreen({
               <>
                 <Separator inset={0} />
                 <StepperRow
-                  label="Backup every"
-                  value={`${settings.autoBackupIntervalDays} days`}
+                  label={t('Backup every')}
+                  value={t('{days} days', { days: settings.autoBackupIntervalDays })}
                   onDecrease={() => {
                     tap();
                     settings.bumpNumber(
@@ -387,26 +395,28 @@ export function SettingsHomeScreen({
             <Separator inset={0} />
             <TextButton
               label={
-                settings.autoBackupFolderUri == null ? 'Choose a backup folder' : 'Back up now'
+                settings.autoBackupFolderUri == null
+                  ? t('Choose a backup folder')
+                  : t('Back up now')
               }
               tone="green"
               onPress={() => void backUpNow()}
             />
             <Separator inset={0} />
             <TextButton
-              label="Export everything"
+              label={t('Export everything')}
               tone="green"
               onPress={() => void exportEverything()}
             />
             <Separator inset={0} />
             <TextButton
-              label="Replace everything from a file"
+              label={t('Replace everything from a file')}
               tone="green"
               onPress={() => void importEverything()}
             />
             <Separator inset={0} />
             <TextButton
-              label="Reset every setting to its default"
+              label={t('Reset every setting to its default')}
               onPress={() => setConfirmingReset(true)}
             />
           </View>
@@ -442,14 +452,19 @@ export function SettingsHomeScreen({
 
       {pending ? (
         <ConfirmSheet
-          title="Replace everything with this file?"
+          title={t('Replace everything with this file?')}
           body={[
-            `${pending.file} holds ${describeCounts(pending.counts)}.`,
-            `This phone has ${describeCounts(onThisPhone())}, and all of it goes.`,
-            'This cannot be undone.',
+            t('{file} holds {counts}.', {
+              file: pending.file,
+              counts: describeCounts(pending.counts, language),
+            }),
+            t('This phone has {counts}, and all of it goes.', {
+              counts: describeCounts(onThisPhone(), language),
+            }),
+            t('This cannot be undone.'),
           ].join(' ')}
-          confirmLabel="Import it"
-          cancelLabel="Keep what I have"
+          confirmLabel={t('Import it')}
+          cancelLabel={t('Keep what I have')}
           onConfirm={confirmImport}
           onCancel={() => setPending(null)}
         />
@@ -457,14 +472,16 @@ export function SettingsHomeScreen({
 
       {confirmingReset ? (
         <ConfirmSheet
-          title="Reset every setting?"
-          body="Every duration, switch, target and default across all three sections goes back to how it shipped, and your bodyweight is cleared. Your exercises, routines, history, tasks and amounts are untouched."
-          confirmLabel="Reset settings"
-          cancelLabel="Keep mine"
+          title={t('Reset every setting?')}
+          body={t(
+            'Every duration, switch, target and default across all three sections goes back to how it shipped, and your bodyweight is cleared. Your exercises, routines, history, tasks and amounts are untouched.',
+          )}
+          confirmLabel={t('Reset settings')}
+          cancelLabel={t('Keep mine')}
           onConfirm={() => {
             settings.resetToDefaults();
             setConfirmingReset(false);
-            setStatus({ tone: 'ok', text: 'Every setting is back to its default.' });
+            setStatus({ tone: 'ok', text: t('Every setting is back to its default.') });
           }}
           onCancel={() => setConfirmingReset(false)}
         />

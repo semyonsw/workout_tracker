@@ -55,6 +55,8 @@
  */
 
 /** The `format` field. A file without it is not ours; a file with it might be. */
+import { plural, t, type Language, type PluralForms } from './i18n';
+
 export const BACKUP_FORMAT = 'workout-tracker-backup';
 
 /**
@@ -296,16 +298,44 @@ export function parseBackup(text: string): ParseResult {
 }
 
 /** "42 workouts · 512 sets · 88 exercises · 6 routines" — one line for a sheet. */
-export function describeCounts(counts: BackupCounts): string {
-  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+export function describeCounts(counts: BackupCounts, lang: Language = 'en'): string {
+  /*
+   * The counted noun goes through `plural`, not through an appended `s`: Russian
+   * has three forms of every one of these words and none of them is the singular
+   * with a letter on the end. `few` is the Russian-only form, so it is the
+   * Russian word.
+   */
+  const counted = (n: number, forms: PluralForms) =>
+    t('{count} {noun}', lang, { count: n, noun: plural(n, lang, forms) });
+
   const parts = [
-    plural(counts.workouts, 'workout'),
-    plural(counts.sets, 'set'),
-    plural(counts.exercises, 'exercise'),
-    plural(counts.routines, 'routine'),
+    counted(counts.workouts, {
+      one: t('workout', lang),
+      few: 'тренировки',
+      many: t('workouts', lang),
+    }),
+    counted(counts.sets, { one: t('set', lang), few: 'подхода', many: t('sets', lang) }),
+    counted(counts.exercises, {
+      one: t('exercise', lang),
+      few: 'упражнения',
+      many: t('exercises', lang),
+    }),
+    counted(counts.routines, {
+      one: t('routine', lang),
+      few: 'программы',
+      many: t('routines', lang),
+    }),
   ];
   // Only when the file actually carries them — see `BackupCounts`.
-  if (counts.tasks != null) parts.push(plural(counts.tasks, 'task'));
-  if (counts.amounts != null) parts.push(plural(counts.amounts, 'amount'));
+  if (counts.tasks != null) {
+    parts.push(
+      counted(counts.tasks, { one: t('task', lang), few: 'задачи', many: t('tasks', lang) }),
+    );
+  }
+  if (counts.amounts != null) {
+    parts.push(
+      counted(counts.amounts, { one: t('amount', lang), few: 'суммы', many: t('amounts', lang) }),
+    );
+  }
   return parts.join(' · ');
 }

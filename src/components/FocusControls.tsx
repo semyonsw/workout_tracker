@@ -30,6 +30,7 @@ import { Pressable, Text, View } from 'react-native';
 import { commit, tap, undo as undoFeedback } from '../lib/feedback';
 import { glow as GLOW, palette } from '../theme/tokens';
 import { Icon, type IconName } from './Icon';
+import { useT } from '../hooks/useT';
 
 /**
  * How far a large target sinks under a finger.
@@ -83,6 +84,8 @@ export function FocusDone({ onPress, label }: { onPress: () => void; label: stri
  * logic of its own; it only puts the button where the thumb is.
  */
 export function FocusFinish({ onPress }: { onPress: () => void }) {
+  const t = useT();
+
   return (
     <Pressable
       onPress={() => {
@@ -90,7 +93,7 @@ export function FocusFinish({ onPress }: { onPress: () => void }) {
         onPress();
       }}
       accessibilityRole="button"
-      accessibilityLabel="Finish this workout"
+      accessibilityLabel={t('Finish this workout')}
       style={({ pressed }) => [
         DONE_GLOW,
         pressed ? { transform: [{ scale: PRESS_SCALE_LARGE }] } : null,
@@ -98,7 +101,7 @@ export function FocusFinish({ onPress }: { onPress: () => void }) {
       className="h-focus-finish flex-row items-center justify-center rounded-pill bg-green"
     >
       <Icon name="check" size={34} color={palette.ink} />
-      <Text className="ml-lg text-title-lg font-semibold text-ink">Finish workout</Text>
+      <Text className="ml-lg text-title-lg font-semibold text-ink">{t('Finish workout')}</Text>
     </Pressable>
   );
 }
@@ -112,6 +115,8 @@ export function FocusFinish({ onPress }: { onPress: () => void }) {
  * its opacity says whether it can be pressed.
  */
 export function FocusUndoRow({ onPress }: { onPress: (() => void) | null }) {
+  const t = useT();
+
   return (
     <Pressable
       onPress={
@@ -124,12 +129,14 @@ export function FocusUndoRow({ onPress }: { onPress: (() => void) | null }) {
       }
       disabled={onPress == null}
       accessibilityRole="button"
-      accessibilityLabel="Undo the last logged set"
+      accessibilityLabel={t('Undo the last logged set')}
       accessibilityState={{ disabled: onPress == null }}
       style={({ pressed }) => [{ opacity: onPress == null ? 0.25 : pressed ? 0.45 : 1 }]}
       className="h-hit items-center justify-center"
     >
-      <Text className="text-micro font-semibold uppercase text-ink-faint">undo last set</Text>
+      <Text className="text-micro font-semibold uppercase text-ink-faint">
+        {t('undo last set')}
+      </Text>
     </Pressable>
   );
 }

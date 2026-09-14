@@ -45,7 +45,7 @@ import {
   weekEnd,
   weekStart,
 } from './days';
-import { t, type Language } from './i18n';
+import { plural, t, type Language } from './i18n';
 import type { ID } from '../types/models';
 
 export type Direction = 'expense' | 'income';
@@ -282,19 +282,27 @@ function sortKey(amount: Amount): string {
 }
 
 /** "12 September · taxi to the gym" — the faint line under an amount. */
-export function describeAmount(amount: Amount): string {
+export function describeAmount(amount: Amount, lang: Language = 'en'): string {
   const parts: string[] = [];
   if (amount.when.kind === 'day') {
-    parts.push(formatShortDay(amount.when.date));
+    parts.push(formatShortDay(amount.when.date, lang));
   } else {
-    parts.push(formatMonth(amount.when.year, amount.when.month), 'whole month');
+    parts.push(formatMonth(amount.when.year, amount.when.month, lang), t('whole month', lang));
   }
   if (amount.note.trim() !== '') parts.push(amount.note.trim());
   return parts.join(' · ');
 }
 
 /** "7 amounts" · "1 amount" · "No amounts yet". */
-export function describeCount(count: number): string {
-  if (count === 0) return 'No amounts yet';
-  return `${count} ${count === 1 ? 'amount' : 'amounts'}`;
+export function describeCount(count: number, lang: Language = 'en'): string {
+  if (count === 0) return t('No amounts yet', lang);
+  return t('{count} {amounts}', lang, {
+    count,
+    // `few` is Russian's own third form, so it is the Russian word.
+    amounts: plural(count, lang, {
+      one: t('amount', lang),
+      few: 'суммы',
+      many: t('amounts', lang),
+    }),
+  });
 }

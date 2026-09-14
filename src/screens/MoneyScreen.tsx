@@ -397,6 +397,8 @@ function CategoryTile({
   onPress: () => void;
   onLongPress: () => void;
 }) {
+  const t = useT();
+
   return (
     <Pressable
       onPress={onPress}
@@ -404,7 +406,7 @@ function CategoryTile({
       delayLongPress={280}
       accessibilityRole="button"
       accessibilityLabel={`${category.name}, ${formatMoney(total, currency)}`}
-      accessibilityHint="Long press to edit the category"
+      accessibilityHint={t('Long press to edit the category')}
       style={pressedStyle}
       className="flex-row items-center rounded-surface border border-hairline bg-surface p-md"
     >

@@ -47,7 +47,7 @@
  * disk is read synchronously before the first render whatever the migration does.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
@@ -55,6 +55,9 @@ import * as Notifications from 'expo-notifications';
 import './global.css';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { AppShell } from './src/navigation/AppShell';
+import { LanguageChoiceScreen } from './src/screens/LanguageChoiceScreen';
+import { useSettingsHydrated } from './src/hooks/useHydrated';
+import { useSettings } from './src/state/settingsStore';
 import { prepareAudio } from './src/lib/beeper';
 import { ensureTimerChannels, requestNotificationPermission } from './src/lib/notify';
 import { migrateHistoryIfNeeded, useWorkoutHistory } from './src/state/workoutHistoryStore';
@@ -146,9 +149,49 @@ export default function App() {
           repeats on every launch — see `ErrorBoundary`.
         */}
         <ErrorBoundary>
-          <AppShell />
+          <Root />
         </ErrorBoundary>
       </View>
     </SafeAreaProvider>
   );
+}
+
+/**
+ * The language question, then the app.
+ *
+ * Its own component rather than a branch in `App`, because the branch has to
+ * re-render when the store hydrates and when the language is answered — and
+ * `App` is where the launch effects live, which must run once and not again.
+ *
+ * NOTHING until the store has been read: the picker's whole correctness rests on
+ * `languageChosen`, and that flag reads false for a frame or two on every launch
+ * while `persist` is still reading from disk (`useSettingsHydrated`). A bare
+ * background for those two frames is the app's own colour, so it reads as the
+ * splash rather than as a blank screen.
+ *
+ * ── IT IS A LAUNCH SCREEN, SO IT ONLY EVER APPEARS AT LAUNCH ──────────────
+ *
+ * The question is asked because of what was on disk when the app opened, and
+ * that answer is latched the moment hydration finishes. Reading the flag live
+ * instead would let it go false again mid-session — importing a backup written
+ * before the picker existed does exactly that — and a launch screen arriving on
+ * top of somebody who is three taps into Settings is worse than asking them
+ * again next time they open the app, which is what latching gets us.
+ */
+function Root() {
+  const hydrated = useSettingsHydrated();
+  /** Null until hydration; then fixed for the life of this launch. */
+  const [asking, setAsking] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (hydrated) setAsking((current) => current ?? !useSettings.getState().languageChosen);
+  }, [hydrated]);
+
+  const chosen = useSettings((s) => s.languageChosen);
+
+  if (!hydrated || asking === null) return <View className="flex-1 bg-bg" />;
+  // `chosen` is still read live, for the one transition that has to be instant:
+  // the tap on the picker itself.
+  if (asking && !chosen) return <LanguageChoiceScreen />;
+  return <AppShell />;
 }

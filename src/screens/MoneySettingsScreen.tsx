@@ -40,16 +40,22 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { FieldWell, Kicker, SelectChip } from '../components/primitives';
-import { useT } from '../hooks/useT';
+import { useT, type Translate } from '../hooks/useT';
 import { tap } from '../lib/feedback';
 import { INTERVALS, INTERVAL_LABELS } from '../lib/money';
 import { TREND_RANGES, TREND_RANGE_LABELS } from '../lib/trends';
 import { useSettings } from '../state/settingsStore';
 
-const DIRECTIONS = [
-  { value: 'expense' as const, label: 'Expenses' },
-  { value: 'income' as const, label: 'Incomes' },
-];
+/*
+ * A function rather than a constant, because the labels are translated: a
+ * module-level array would be frozen in whichever language the app started in.
+ */
+function directions(t: Translate) {
+  return [
+    { value: 'expense' as const, label: t('Expenses') },
+    { value: 'income' as const, label: t('Incomes') },
+  ];
+}
 
 export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
   const t = useT();
@@ -88,7 +94,7 @@ export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
               // stored rather than what was typed at it.
               setDraft(useSettings.getState().currencyCode);
             }}
-            accessibilityLabel="What amounts are counted in"
+            accessibilityLabel={t('What amounts are counted in')}
           />
         </View>
         <Text className="mx-lg mt-sm text-label text-ink-faint">
@@ -113,7 +119,7 @@ export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
           ))}
         </View>
         <View className="mx-lg flex-row flex-wrap">
-          {DIRECTIONS.map((option) => (
+          {directions(t).map((option) => (
             <SelectChip
               key={option.value}
               label={option.label}

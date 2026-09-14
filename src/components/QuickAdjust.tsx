@@ -46,6 +46,7 @@ import type { Exercise, UnitSystem } from '../types/models';
 import { nudgeSet, nudgeSteps } from '../lib/setNudge';
 import { countUnitLabel, formatCount, formatWeight, lbToKg, unitLabel } from '../lib/units';
 import type { SetField } from './SetRow';
+import { useLanguage, useT } from '../hooks/useT';
 
 interface QuickAdjustProps {
   field: SetField;
@@ -66,6 +67,8 @@ export function QuickAdjust({
   onClose,
   onRemoveSet,
 }: QuickAdjustProps) {
+  const t = useT();
+  const lang = useLanguage();
   const [typing, setTyping] = useState(false);
   const [buffer, setBuffer] = useState('');
   const inputRef = useRef<TextInput>(null);
@@ -83,7 +86,9 @@ export function QuickAdjust({
   const displayValue = isWeight
     ? formatWeight(set.weightKg, unitSystem, exercise.loadMode)
     : formatCount(set.count, exercise.countUnit);
-  const displayUnit = isWeight ? unitLabel(unitSystem) : countUnitLabel(exercise.countUnit);
+  const displayUnit = isWeight
+    ? unitLabel(unitSystem, lang)
+    : countUnitLabel(exercise.countUnit, lang);
 
   useEffect(() => {
     if (typing) inputRef.current?.focus();
@@ -178,9 +183,9 @@ export function QuickAdjust({
           hitSlop={8}
           className="h-hit justify-center"
           accessibilityRole="button"
-          accessibilityLabel="Type an exact value"
+          accessibilityLabel={t('Type an exact value')}
         >
-          <Text className="text-label font-medium text-ink-muted">Type</Text>
+          <Text className="text-label font-medium text-ink-muted">{t('Type')}</Text>
         </Pressable>
 
         <Pressable
@@ -193,7 +198,7 @@ export function QuickAdjust({
           accessibilityRole="switch"
           accessibilityState={{ checked: set.isWarmup }}
           accessibilityLabel={
-            set.isWarmup ? 'Make this a working set' : 'Mark this set as a warm-up'
+            set.isWarmup ? t('Make this a working set') : t('Mark this set as a warm-up')
           }
         >
           <Text
@@ -202,7 +207,7 @@ export function QuickAdjust({
               set.isWarmup ? 'text-green-bright' : 'text-ink-muted',
             ].join(' ')}
           >
-            {set.isWarmup ? 'Working set' : 'Warm-up'}
+            {set.isWarmup ? t('Working set') : t('Warm-up')}
           </Text>
         </Pressable>
 
@@ -211,9 +216,9 @@ export function QuickAdjust({
           hitSlop={8}
           className="h-hit justify-center"
           accessibilityRole="button"
-          accessibilityLabel="Remove set"
+          accessibilityLabel={t('Remove set')}
         >
-          <Text className="text-label font-medium text-ink-muted">Remove set</Text>
+          <Text className="text-label font-medium text-ink-muted">{t('Remove set')}</Text>
         </Pressable>
 
         <Pressable
@@ -221,9 +226,9 @@ export function QuickAdjust({
           hitSlop={8}
           className="h-hit justify-center"
           accessibilityRole="button"
-          accessibilityLabel="Done editing"
+          accessibilityLabel={t('Done editing')}
         >
-          <Text className="text-label font-semibold text-green-bright">Done</Text>
+          <Text className="text-label font-semibold text-green-bright">{t('Done')}</Text>
         </Pressable>
       </View>
     </View>

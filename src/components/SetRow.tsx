@@ -84,6 +84,7 @@ import type { DraftSet } from '../lib/draft';
 import type { Exercise, UnitSystem } from '../types/models';
 import { describePlates, platesFor } from '../lib/plates';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
+import { useLanguage, useT } from '../hooks/useT';
 import { glow as GLOW, palette } from '../theme/tokens';
 import { Icon } from './Icon';
 
@@ -150,6 +151,8 @@ function SetRowComponent({
   onToggleComplete,
   onPressTimer,
 }: SetRowProps) {
+  const t = useT();
+  const lang = useLanguage();
   const done = set.isCompleted;
   /*
    * A logged set is not "up next" however the card labels it: the ring means DO
@@ -242,12 +245,15 @@ function SetRowComponent({
             <ValueCell
               width="w-full"
               value={formatWeight(set.weightKg, unitSystem, exercise.loadMode)}
-              unit={unitLabel(unitSystem)}
+              unit={unitLabel(unitSystem, lang)}
               tone={valueTone}
               emphasis={ring}
               focused={focusedField === 'weight'}
               onPress={openWeight}
-              accessibilityLabel={`Weight ${formatWeight(set.weightKg, unitSystem, exercise.loadMode)} ${unitLabel(unitSystem)}`}
+              accessibilityLabel={t('Weight {weight} {unit}', {
+                weight: formatWeight(set.weightKg, unitSystem, exercise.loadMode),
+                unit: unitLabel(unitSystem, lang),
+              })}
             />
             {/* Micro, ink-faint, under the number it describes: it is reference,
                 not a control, and nothing about it is tappable. */}
@@ -255,7 +261,7 @@ function SetRowComponent({
               <Text
                 numberOfLines={1}
                 className="mt-[1px] text-micro tabular-nums text-ink-faint"
-                accessibilityLabel={`On the bar: ${plateLabel} kilograms`}
+                accessibilityLabel={t('On the bar: {plates} kilograms', { plates: plateLabel })}
               >
                 {plateLabel}
               </Text>
@@ -270,12 +276,12 @@ function SetRowComponent({
       <ValueCell
         width={exercise.requiresWeight ? 'min-w-[76px]' : 'min-w-[96px]'}
         value={formatCount(set.count, exercise.countUnit)}
-        unit={countUnitLabel(exercise.countUnit)}
+        unit={countUnitLabel(exercise.countUnit, lang)}
         tone={valueTone}
         emphasis={ring}
         focused={focusedField === 'count'}
         onPress={openCount}
-        accessibilityLabel={`${set.count} ${countUnitLabel(exercise.countUnit)}`}
+        accessibilityLabel={`${set.count} ${countUnitLabel(exercise.countUnit, lang)}`}
       />
 
       <View className="flex-1" />
@@ -289,8 +295,10 @@ function SetRowComponent({
           accessibilityRole="button"
           accessibilityLabel={
             isTiming
-              ? 'Stop the timer and log this set'
-              : `Start ${formatCount(set.count, exercise.countUnit)} timer`
+              ? t('Stop the timer and log this set')
+              : t('Start the {count} timer', {
+                  count: formatCount(set.count, exercise.countUnit),
+                })
           }
           className={[
             'mr-sm h-hit w-hit items-center justify-center rounded-pill',
@@ -307,7 +315,7 @@ function SetRowComponent({
         hitSlop={12}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: done }}
-        accessibilityLabel={done ? 'Undo set' : 'Complete set'}
+        accessibilityLabel={done ? t('Undo set') : t('Complete set')}
         className={[
           'h-hit w-hit items-center justify-center rounded-pill',
           done ? 'bg-green' : 'border border-hairline',
@@ -347,7 +355,7 @@ function SetRowComponent({
     <Pressable
       onLongPress={onOpenFocus}
       delayLongPress={280}
-      accessibilityHint="Long press for focus mode"
+      accessibilityHint={t('Long press for focus mode')}
       className={rowClass}
     >
       {rowChildren}

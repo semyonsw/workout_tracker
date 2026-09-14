@@ -25,6 +25,7 @@ import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 import { FieldWell, PrimaryButton } from './primitives';
 
@@ -46,12 +47,17 @@ export function NumberSheet({
   body,
   initial,
   min = 1,
-  confirmLabel = 'Save',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   onConfirm,
   onCancel,
 }: NumberSheetProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
+  // Defaulted here rather than in the parameter list, because the default is a
+  // translation and a parameter default is evaluated before the hook can run.
+  const save = confirmLabel ?? t('Save');
+  const keep = cancelLabel ?? t('Cancel');
   const [text, setText] = useState(initial == null ? '' : String(initial));
 
   /* Digits only — a workout number has no sign, no decimal point and no spaces. */
@@ -63,7 +69,7 @@ export function NumberSheet({
       <Pressable
         onPress={onCancel}
         accessibilityRole="button"
-        accessibilityLabel={cancelLabel}
+        accessibilityLabel={keep}
         className="flex-1"
         style={{ backgroundColor: palette.scrim }}
       />
@@ -91,12 +97,12 @@ export function NumberSheet({
           {/* Inert rather than hidden while the field holds nothing usable: a
               button that vanishes as you delete a digit is a moving target. */}
           <PrimaryButton
-            label={confirmLabel}
+            label={save}
             variant={valid ? 'primary' : 'ghost'}
             onPress={valid ? () => onConfirm(parsed) : () => {}}
           />
           <View className="h-sm" />
-          <PrimaryButton label={cancelLabel} variant="ghost" onPress={onCancel} />
+          <PrimaryButton label={keep} variant="ghost" onPress={onCancel} />
         </View>
       </View>
     </View>

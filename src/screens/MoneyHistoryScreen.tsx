@@ -48,13 +48,23 @@ import { TREND_RANGES, TREND_RANGE_LABELS, type TrendRange } from '../lib/trends
 import { formatMoney, formatValue, type Direction } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useSettings } from '../state/settingsStore';
+import { useLanguage, useT, type Translate } from '../hooks/useT';
+import { plural, t as translate, type Language } from '../lib/i18n';
 
-const DIRECTIONS = [
-  { value: 'expense' as const, label: 'Expenses' },
-  { value: 'income' as const, label: 'Incomes' },
-];
+/*
+ * A function rather than a constant, because the labels are translated: a
+ * module-level array would be frozen in whichever language the app started in.
+ */
+function directions(t: Translate) {
+  return [
+    { value: 'expense' as const, label: t('Expenses') },
+    { value: 'income' as const, label: t('Incomes') },
+  ];
+}
 
 export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
+  const t = useT();
+  const lang = useLanguage();
   const categories = useMoney((s) => s.categories);
   const amounts = useMoney((s) => s.amounts);
   const currency = useSettings((s) => s.currencyCode);
@@ -94,7 +104,7 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker="Expense history" onBack={onBack} bordered={false} />
+      <ScreenHeader kicker={t('Expense history')} onBack={onBack} bordered={false} />
 
       <ScrollView
         className="flex-1"
@@ -102,7 +112,7 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
         showsVerticalScrollIndicator={false}
       >
         <View className="mx-lg flex-row flex-wrap">
-          {DIRECTIONS.map((option) => (
+          {directions(t).map((option) => (
             <SelectChip
               key={option.value}
               label={option.label}
@@ -116,13 +126,13 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
         </View>
 
         <Kicker className="mx-lg mb-sm mt-xxl">
-          {direction === 'expense' ? 'Expenses over time' : 'Incomes over time'}
+          {direction === 'expense' ? t('Expenses over time') : t('Incomes over time')}
         </Kicker>
         <View className="mx-lg flex-row flex-wrap">
           {TREND_RANGES.map((option) => (
             <SelectChip
               key={option}
-              label={TREND_RANGE_LABELS[option]}
+              label={t(TREND_RANGE_LABELS[option])}
               selected={option === range}
               onPress={() => {
                 tap();
@@ -142,30 +152,40 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
               <TrendChart points={series} formatValue={(value) => formatValue(value)} />
             </View>
             <Text className="mx-lg mt-sm text-label tabular-nums text-ink-faint">
-              {money(trend.total)} over {trend.buckets} {bucketNoun(range, trend.buckets)} · about{' '}
-              {money(trend.average)} each
-              {trend.peak ? ` · most on ${trend.peak.label}, ${money(trend.peak.value)}` : ''}
+              {t('{total} over {count} {buckets} · about {average} each', {
+                total: money(trend.total),
+                count: trend.buckets,
+                buckets: bucketNoun(range, trend.buckets, lang),
+                average: money(trend.average),
+              })}
+              {trend.peak
+                ? ` · ${t('most on {label}, {value}', {
+                    label: trend.peak.label,
+                    value: money(trend.peak.value),
+                  })}`
+                : ''}
             </Text>
 
-            <Kicker className="mx-lg mb-sm mt-xl">Balance over the same range</Kicker>
+            <Kicker className="mx-lg mb-sm mt-xl">{t('Balance over the same range')}</Kicker>
             <View className="mx-lg">
               <TrendChart points={balanceLine} formatValue={(value) => formatValue(value)} />
             </View>
             <Text className="mx-lg mt-sm text-label text-ink-faint">
-              Incomes less expenses, running. It starts from what you already had, so the left edge
-              is where the range opened rather than zero.
+              {t(
+                'Incomes less expenses, running. It starts from what you already had, so the left edge is where the range opened rather than zero.',
+              )}
             </Text>
 
             {shares.length > 0 ? (
               <>
-                <Kicker className="mx-lg mb-sm mt-xl">Where it went</Kicker>
+                <Kicker className="mx-lg mb-sm mt-xl">{t('Where it went')}</Kicker>
                 <View className="mx-lg overflow-hidden rounded-surface border border-hairline bg-surface">
                   {shares.slice(0, 5).map((share, index) => (
                     <View key={share.categoryId}>
                       {index > 0 ? <Separator /> : null}
                       <ShareRow
                         glyph={namesById[share.categoryId]?.glyph ?? '•'}
-                        name={namesById[share.categoryId]?.name ?? 'Archived'}
+                        name={namesById[share.categoryId]?.name ?? t('Archived')}
                         value={share.value}
                         percent={share.percent}
                         currency={currency}
@@ -178,16 +198,17 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
           </>
         ) : (
           <View className="mx-lg mt-md rounded-surface border border-hairline bg-surface p-lg">
-            <Kicker>Not enough yet</Kicker>
+            <Kicker>{t('Not enough yet')}</Kicker>
             <Text className="mt-sm text-body text-ink-muted">
-              Nothing recorded in this range. Put something in and the line draws itself.
+              {t('Nothing recorded in this range. Put something in and the line draws itself.')}
             </Text>
           </View>
         )}
 
         <Text className="mx-lg mt-md text-label text-ink-faint">
-          Up to three months the line is one point a day; past that it is one a month. A whole-month
-          amount has no day to sit on, so it only appears once the buckets are months.
+          {t(
+            'Up to three months the line is one point a day; past that it is one a month. A whole-month amount has no day to sit on, so it only appears once the buckets are months.',
+          )}
         </Text>
       </ScrollView>
     </View>
@@ -196,9 +217,18 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
 
 /* ------------------------------------------------------------------ */
 
-function bucketNoun(range: TrendRange, count: number): string {
-  const unit = range === 'year' || range === 'all' ? 'month' : 'day';
-  return count === 1 ? unit : `${unit}s`;
+function bucketNoun(range: TrendRange, count: number, lang: Language): string {
+  /*
+   * Spelled out rather than pluralised by appending an `s`, which is what this
+   * did and which is wrong in the language this app now ships in: Russian has
+   * three forms of a counted noun and none of them is the singular with a letter
+   * on the end. `few` is the Russian-only form, so it is the Russian word.
+   */
+  const forms =
+    range === 'year' || range === 'all'
+      ? { one: translate('month', lang), few: 'месяца', many: translate('months', lang) }
+      : { one: translate('day', lang), few: 'дня', many: translate('days', lang) };
+  return plural(count, lang, forms);
 }
 
 /**

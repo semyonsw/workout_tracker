@@ -55,6 +55,7 @@ import { FocusNudge } from './FocusNudge';
 import { Icon } from './Icon';
 import { FINAL_SECONDS, pillTone, type PillTone } from './TimerPill';
 import { restLabel } from './RestTimerPill';
+import { useT } from '../hooks/useT';
 import type { UnitSystem } from '../types/models';
 
 export function FocusRest({
@@ -90,6 +91,7 @@ export function FocusRest({
    * the user opened it a moment ago, and that is not a fact worth surviving the
    * rest it was opened during.
    */
+  const t = useT();
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const { remaining, isPaused, source, totalSeconds, stepSeconds, add, pause, resume, skip } = rest;
 
@@ -137,15 +139,15 @@ export function FocusRest({
         <FocusClockBlock
           tone={tone}
           shadow={finalTen}
-          label={restLabel(source, isPaused)}
+          label={restLabel(source, isPaused, t)}
           /* The only green left on a paused block, and the reason `PAUSED` reads
              as a state rather than as a stopped clock. */
           labelColor={isPaused ? palette.greenBright : undefined}
           value={formatClock(remaining)}
           accessibilityLabel={
             isPaused
-              ? `Rest paused with ${secondsLeft} seconds left`
-              : `${secondsLeft} seconds of rest left`
+              ? t('Rest paused with {seconds} seconds left', { seconds: secondsLeft })
+              : t('{seconds} seconds of rest left', { seconds: secondsLeft })
           }
           remainingFraction={totalSeconds > 0 ? remaining / totalSeconds : 0}
           drainColor={isPaused ? palette.greenDim : undefined}
@@ -159,22 +161,33 @@ export function FocusRest({
             tone={tone}
             quiet
             onPress={() => add(-stepSeconds)}
-            accessibilityLabel={`Shorten ${restLabel(source, false)} by ${stepSeconds} seconds`}
+            accessibilityLabel={t('Shorten {what} by {seconds} seconds', {
+              what: restLabel(source, false, t),
+              seconds: stepSeconds,
+            })}
           />
           <RestControl
             label={`+${stepSeconds}`}
             tone={tone}
             quiet
             onPress={() => add(stepSeconds)}
-            accessibilityLabel={`Lengthen ${restLabel(source, false)} by ${stepSeconds} seconds`}
+            accessibilityLabel={t('Lengthen {what} by {seconds} seconds', {
+              what: restLabel(source, false, t),
+              seconds: stepSeconds,
+            })}
           />
           <RestControl
             icon={isPaused ? 'play' : 'pause'}
             tone={tone}
             onPress={isPaused ? resume : pause}
-            accessibilityLabel={isPaused ? 'Resume rest' : 'Pause rest'}
+            accessibilityLabel={isPaused ? t('Resume rest') : t('Pause rest')}
           />
-          <RestControl label="Skip" tone={tone} onPress={skip} accessibilityLabel="Skip rest" />
+          <RestControl
+            label={t('Skip')}
+            tone={tone}
+            onPress={skip}
+            accessibilityLabel={t('Skip rest')}
+          />
         </FocusClockBlock>
       </Animated.View>
 
@@ -226,11 +239,13 @@ export function FocusRest({
          */
         <View className="mx-lg mb-xl rounded-surface border border-hairline px-lg py-lg">
           <Text className="text-micro font-semibold uppercase text-ink-faint">
-            every set logged
+            {t('every set logged')}
           </Text>
-          <Text className="mt-xs text-title font-medium text-ink">Nothing left to rest for</Text>
+          <Text className="mt-xs text-title font-medium text-ink">
+            {t('Nothing left to rest for')}
+          </Text>
           <Text className="mt-xs text-label text-ink-faint">
-            skip the clock to finish the workout
+            {t('skip the clock to finish the workout')}
           </Text>
         </View>
       )}

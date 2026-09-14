@@ -9,6 +9,7 @@
  * number only when reality differs from last time.
  */
 
+import type { Language } from './i18n';
 import type {
   Exercise,
   ID,
@@ -249,15 +250,18 @@ export function summarizeLastSession(
  * a format ever gets. The count comes from the rows the session actually has, so
  * adding or removing a set reshapes the line under the thumb that did it.
  */
-export function formatTarget(entry: {
-  targetSets: number;
-  targetRepsMin?: number;
-  targetRepsMax?: number;
-  exercise: Exercise;
-  ladder?: RepLadder;
-  /** The session's own rows, when there are any — see the ladder note above. */
-  sets?: readonly Pick<DraftSet, 'isWarmup'>[];
-}): string {
+export function formatTarget(
+  entry: {
+    targetSets: number;
+    targetRepsMin?: number;
+    targetRepsMax?: number;
+    exercise: Exercise;
+    ladder?: RepLadder;
+    /** The session's own rows, when there are any — see the ladder note above. */
+    sets?: readonly Pick<DraftSet, 'isWarmup'>[];
+  },
+  lang: Language = 'en',
+): string {
   const { targetSets, targetRepsMin, targetRepsMax, exercise } = entry;
   const unit = exercise.countUnit;
 
@@ -276,7 +280,7 @@ export function formatTarget(entry: {
     targetRepsMin && targetRepsMax && targetRepsMin !== targetRepsMax
       ? `${targetRepsMin}–${targetRepsMax}`
       : String(targetRepsMax ?? targetRepsMin ?? '');
-  return `${targetSets} × ${range} ${countUnitLabel(unit)}`;
+  return `${targetSets} × ${range} ${countUnitLabel(unit, lang)}`;
 }
 
 /* ------------------------------------------------------------------ */

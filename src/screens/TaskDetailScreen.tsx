@@ -309,6 +309,8 @@ function Cell({
   selected: boolean;
   onPress?: () => void;
 }) {
+  const t = useT();
+
   if (cell.day === null) return <View className="flex-1 p-[3px]" />;
 
   const fill =
@@ -325,7 +327,8 @@ function Cell({
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${cell.day}, ${cell.state}`}
+      // The state is spoken, so it is a WORD rather than the stored key.
+      accessibilityLabel={`${cell.day}, ${t(cell.state)}`}
       accessibilityState={{ selected }}
       style={pressedStyle}
       className="flex-1 p-[3px]"

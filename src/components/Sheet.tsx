@@ -22,6 +22,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Easing, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 
 /** Matches `ConfirmSheet` and `FocusMode`. */
@@ -34,6 +35,7 @@ interface SheetProps {
 }
 
 export function Sheet({ title, onDismiss, children }: SheetProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
 
   const scrim = useRef(new Animated.Value(0)).current;
@@ -60,7 +62,7 @@ export function Sheet({ title, onDismiss, children }: SheetProps) {
       <AnimatedPressable
         onPress={onDismiss}
         accessibilityRole="button"
-        accessibilityLabel="Close"
+        accessibilityLabel={t('Close')}
         style={{ flex: 1, backgroundColor: palette.scrim, opacity: scrim }}
       />
 

@@ -91,7 +91,7 @@ import {
   SwitchRow,
   TextButton,
 } from '../components/primitives';
-import { useLanguage, useT } from '../hooks/useT';
+import { useLanguage, usePlural, useT, type Translate } from '../hooks/useT';
 import { parseClockTime, weekdayLabels } from '../lib/days';
 import { notificationsGranted } from '../lib/notify';
 import type { Weekday } from '../lib/tasks';
@@ -147,10 +147,18 @@ const PLATE_SIZES_KG = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5];
  */
 const CLUSTER_ROWS = CLUSTERS;
 
-const UNIT_OPTIONS: readonly { value: UnitSystem; label: string }[] = [
-  { value: 'metric', label: 'Kilograms' },
-  { value: 'imperial', label: 'Pounds' },
-];
+/**
+ * The two unit systems, named in the user's language.
+ *
+ * A function rather than a constant because the labels are translated, and a
+ * module-level array would be frozen in whichever language the app started in.
+ */
+function unitOptions(t: Translate): readonly { value: UnitSystem; label: string }[] {
+  return [
+    { value: 'metric', label: t('Kilograms') },
+    { value: 'imperial', label: t('Pounds') },
+  ];
+}
 
 /**
  * A duration as the user thinks about it.
@@ -160,13 +168,16 @@ const UNIT_OPTIONS: readonly { value: UnitSystem; label: string }[] = [
  * a length. Zero is a word: `0 s` for a setting that is switched off reads like a
  * value that failed to load.
  */
-function formatSeconds(seconds: number, zeroLabel = 'Off'): string {
-  if (seconds <= 0) return zeroLabel;
-  if (seconds < 60) return `${seconds} s`;
+function formatSeconds(seconds: number, t: Translate, zeroLabel = 'Off'): string {
+  if (seconds <= 0) return t(zeroLabel);
+  if (seconds < 60) return t('{seconds} s', { seconds });
   return formatClock(seconds);
 }
 
 export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
+  const t = useT();
+  const lang = useLanguage();
+  const countedWorkouts = usePlural();
   const settings = useSettings();
   /**
    * The bulk half of `Make every exercise a rep ladder`. The flag lives in
@@ -294,7 +305,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
     setHealthConnect(granted ? 'ready' : state);
     settings.setShareToHealthConnect(granted);
     if (!granted) {
-      setNotice('Health Connect did not grant permission, so nothing will be shared.');
+      setNotice(t('Health Connect did not grant permission, so nothing will be shared.'));
     }
   };
 
@@ -303,7 +314,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
   return (
     <View className="flex-1 bg-bg">
       <View className="flex-1" style={asking ? { opacity: 0.28 } : undefined}>
-        <ScreenHeader kicker="Workout settings" onBack={onBack} bordered={false} />
+        <ScreenHeader kicker={t('Workout settings')} onBack={onBack} bordered={false} />
 
         <ScrollView
           className="flex-1"
@@ -312,60 +323,62 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
           scrollEnabled={!asking}
         >
           {/* ---------------------------------------------------------- */}
-          <Kicker className="mx-lg mb-sm mt-md">Rest</Kicker>
+          <Kicker className="mx-lg mb-sm mt-md">{t('Rest')}</Kicker>
           <ListCard className="mx-lg">
             <StepperRow
-              label="Between sets"
-              value={formatSeconds(settings.restSecondsBetweenSets, 'No rest')}
-              hint="Every set of every exercise. Setting it clears any exercise you have given a rest of its own."
+              label={t('Between sets')}
+              value={formatSeconds(settings.restSecondsBetweenSets, t, 'No rest')}
+              hint={t(
+                'Every set of every exercise. Setting it clears any exercise you have given a rest of its own.',
+              )}
               onDecrease={() => bumpBetweenSets(-1)}
               onIncrease={() => bumpBetweenSets(1)}
             />
             <MeasuredRestRow
               measuredSeconds={measured.betweenSets}
               settingSeconds={settings.restSecondsBetweenSets}
-              what="between sets"
+              what={t('between sets')}
               onAdopt={() => setRestBetweenSets(measured.betweenSets ?? 0)}
             />
             <Separator />
             <StepperRow
-              label="Between exercises"
-              value={formatSeconds(settings.restSecondsBetweenExercises, 'No rest')}
+              label={t('Between exercises')}
+              value={formatSeconds(settings.restSecondsBetweenExercises, t, 'No rest')}
               onDecrease={() => bump('restSecondsBetweenExercises', -1)}
               onIncrease={() => bump('restSecondsBetweenExercises', 1)}
             />
             <MeasuredRestRow
               measuredSeconds={measured.betweenExercises}
               settingSeconds={settings.restSecondsBetweenExercises}
-              what="between exercises"
+              what={t('between exercises')}
               onAdopt={() =>
                 settings.setNumber('restSecondsBetweenExercises', measured.betweenExercises ?? 0)
               }
             />
             <Separator />
             <SwitchRow
-              label="Start rest automatically"
-              hint="Off: rest only runs when you start it"
+              label={t('Start rest automatically')}
+              hint={t('Off: rest only runs when you start it')}
               value={settings.autoStartRest}
               onChange={(v) => settings.setFlag('autoStartRest', v)}
             />
             <Separator />
             <StepperRow
-              label="Timer ± step"
-              hint="The +15 on the rest and set-timer pills"
-              value={formatSeconds(settings.adjustStepSeconds)}
+              label={t('Timer ± step')}
+              hint={t('The +15 on the rest and set-timer pills')}
+              value={formatSeconds(settings.adjustStepSeconds, t)}
               onDecrease={() => bump('adjustStepSeconds', -1)}
               onIncrease={() => bump('adjustStepSeconds', 1)}
             />
           </ListCard>
 
           {/* ---------------------------------------------------------- */}
-          <Kicker className="mx-lg mb-sm mt-xxl">Timed sets</Kicker>
+          <Kicker className="mx-lg mb-sm mt-xxl">{t('Timed sets')}</Kicker>
           <ListCard className="mx-lg">
             <StepperRow
-              label="Get ready"
-              hint="Counted in before a plank or a hang starts"
-              value={formatSeconds(settings.prepareSeconds, 'Straight to work')}
+              label={t('Get ready')}
+              hint={t('Counted in before a plank or a hang starts')}
+              value={formatSeconds(settings.prepareSeconds, t, 'Straight to work')}
               onDecrease={() => bump('prepareSeconds', -1)}
               onIncrease={() => bump('prepareSeconds', 1)}
             />
@@ -384,11 +397,14 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               the ladders this switch added and nothing else. A max you set yourself
               and a ladder that has earned a rep are facts, and a setting does not
               get to delete a fact. */}
-          <Kicker className="mx-lg mb-sm mt-xxl">Rep ladder</Kicker>
+          <Kicker className="mx-lg mb-sm mt-xxl">{t('Rep ladder')}</Kicker>
           <ListCard className="mx-lg">
             <SwitchRow
-              label="Make every exercise a rep ladder"
-              hint={`One max, ${LADDER_SETS} sets — ${describeLadder(ladderForMax(12, LADDER_SETS))} at a max of 12`}
+              label={t('Make every exercise a rep ladder')}
+              hint={t('One max, {sets} sets — {ladder} at a max of 12', {
+                sets: LADDER_SETS,
+                ladder: describeLadder(ladderForMax(12, LADDER_SETS)),
+              })}
               value={settings.ladderAllExercises}
               onChange={(v) => {
                 settings.setFlag('ladderAllExercises', v);
@@ -398,43 +414,49 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
           </ListCard>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
             {settings.ladderAllExercises
-              ? 'Every rep-counted exercise runs a ladder, and new ones start with it on. Switching this off takes back only the ladders it added — a max you set yourself, and any ladder that has earned a rep, stay exactly as they are.'
-              : 'Switches the ladder on for every rep-counted exercise at once, seeded from each one’s target reps. Holds, rounds and distances are left alone — a ladder is a rep prescription.'}
+              ? t(
+                  'Every rep-counted exercise runs a ladder, and new ones start with it on. Switching this off takes back only the ladders it added — a max you set yourself, and any ladder that has earned a rep, stay exactly as they are.',
+                )
+              : t(
+                  'Switches the ladder on for every rep-counted exercise at once, seeded from each one’s target reps. Holds, rounds and distances are left alone — a ladder is a rep prescription.',
+                )}
           </Text>
 
           {/* ---------------------------------------------------------- */}
-          <Kicker className="mx-lg mb-sm mt-xxl">Countdown</Kicker>
+          <Kicker className="mx-lg mb-sm mt-xxl">{t('Countdown')}</Kicker>
           <ListCard className="mx-lg">
             <StepperRow
-              label="Beep the last"
-              hint="Every countdown: rest, get ready, and a prescribed hold"
-              value={formatSeconds(settings.beepSeconds, 'Silent')}
+              label={t('Beep the last')}
+              hint={t('Every countdown: rest, get ready, and a prescribed hold')}
+              value={formatSeconds(settings.beepSeconds, t, 'Silent')}
               onDecrease={() => bump('beepSeconds', -1)}
               onIncrease={() => bump('beepSeconds', 1)}
             />
             <Separator />
             <SwitchRow
-              label="Sound"
+              label={t('Sound')}
               value={settings.soundEnabled}
               onChange={(v) => settings.setFlag('soundEnabled', v)}
             />
             <Separator />
             <SwitchRow
-              label="Vibration"
+              label={t('Vibration')}
               value={settings.hapticsEnabled}
               onChange={(v) => settings.setFlag('hapticsEnabled', v)}
             />
             <Separator />
             <SwitchRow
-              label="Keep the screen on"
-              hint="While a timer is running"
+              label={t('Keep the screen on')}
+              hint={t('While a timer is running')}
               value={settings.keepAwakeEnabled}
               onChange={(v) => settings.setFlag('keepAwakeEnabled', v)}
             />
             <Separator />
             <SwitchRow
-              label="Notify when a timer ends"
-              hint="How the beep reaches you when the app isn't open — a tick 5 s out, then the tone"
+              label={t('Notify when a timer ends')}
+              hint={t(
+                "How the beep reaches you when the app isn't open — a tick 5 s out, then the tone",
+              )}
               value={settings.notifyOnTimerEnd}
               onChange={(v) => settings.setFlag('notifyOnTimerEnd', v)}
             />
@@ -475,14 +497,14 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               Nudged by the app's own coarse weight step (2 kg / 5 lb) because
               bodyweight to the nearest couple of kilos is all volume needs, and
               because a once-ever setting nudged in half-kilos is forty taps. */}
-          <Kicker className="mx-lg mb-sm mt-xxl">Body</Kicker>
+          <Kicker className="mx-lg mb-sm mt-xxl">{t('Body')}</Kicker>
           <ListCard className="mx-lg">
             <StepperRow
-              label="Bodyweight"
-              hint="What makes push-ups, dips and assisted work countable"
+              label={t('Bodyweight')}
+              hint={t('What makes push-ups, dips and assisted work countable')}
               value={
                 settings.bodyweightKg == null
-                  ? 'Not set'
+                  ? t('Not set')
                   : `${formatWeight(settings.bodyweightKg, settings.unitSystem)} ${unitLabel(settings.unitSystem)}`
               }
               onDecrease={() => bumpBodyweight(-1)}
@@ -492,7 +514,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               <>
                 <Separator />
                 <TextButton
-                  label="Clear my bodyweight"
+                  label={t('Clear my bodyweight')}
                   onPress={() => {
                     tap();
                     settings.setBodyweightKg(undefined);
@@ -503,8 +525,12 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
           </ListCard>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
             {settings.bodyweightKg == null
-              ? 'Until this is set, a session of push-ups or dips reports no volume — the app will not guess what your body weighs. Nothing else reads it.'
-              : 'Read only when working out session volume. It is not logged, charted or compared to anything.'}
+              ? t(
+                  'Until this is set, a session of push-ups or dips reports no volume — the app will not guess what your body weighs. Nothing else reads it.',
+                )
+              : t(
+                  'Read only when working out session volume. It is not logged, charted or compared to anything.',
+                )}
           </Text>
 
           {/* ----------------------------------------------------------
@@ -524,7 +550,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
           {settings.gyms.length > 1 ? (
             <>
               <Kicker tone="green" className="mx-lg mb-sm mt-xxl">
-                Gym · {settings.gyms.find((g) => g.id === settings.activeGymId)?.name ?? ''}
+                {t('Gym')} · {settings.gyms.find((g) => g.id === settings.activeGymId)?.name ?? ''}
               </Kicker>
               <View className="mx-lg flex-row flex-wrap">
                 {settings.gyms.map((gym) => (
@@ -543,7 +569,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
           ) : null}
 
           <Kicker className="mx-lg mb-sm mt-xxl">
-            {settings.gyms.length > 1 ? 'Plates · this gym' : 'Plates'}
+            {settings.gyms.length > 1 ? t('Plates · this gym') : t('Plates')}
           </Kicker>
           <View className="mx-lg flex-row flex-wrap">
             {PLATE_SIZES_KG.map((plate) => (
@@ -559,8 +585,13 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
             ))}
           </View>
           <Text className="mx-lg text-label text-ink-faint">
-            Which plates {settings.gyms.length > 1 ? 'this gym' : 'your gym'} has, in kilograms.
-            Only used to work out what goes on the bar; it never changes a weight you have typed.
+            {settings.gyms.length > 1
+              ? t(
+                  'Which plates this gym has, in kilograms. Only used to work out what goes on the bar; it never changes a weight you have typed.',
+                )
+              : t(
+                  'Which plates your gym has, in kilograms. Only used to work out what goes on the bar; it never changes a weight you have typed.',
+                )}
           </Text>
 
           {/* ADDING A SECOND GYM is what makes the switcher appear. Seeded from
@@ -572,7 +603,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
                 {index > 0 ? <Separator inset={0} /> : null}
                 <SettingRow
                   label={gym.name}
-                  value={`${gym.platesKg.length} sizes`}
+                  value={t('{count} sizes', { count: gym.platesKg.length })}
                   valueTone="faint"
                   onPress={
                     settings.gyms.length > 1
@@ -590,7 +621,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               <>
                 <Separator inset={0} />
                 <TextButton
-                  label={`Remove ${gymBeingEdited.name}`}
+                  label={t('Remove {name}', { name: gymBeingEdited.name })}
                   onPress={() => {
                     tap();
                     settings.removeGym(gymBeingEdited.id);
@@ -603,19 +634,20 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               <>
                 <Separator inset={0} />
                 <TextButton
-                  label="Add another gym"
+                  label={t('Add another gym')}
                   tone="green"
                   onPress={() => {
                     tap();
-                    settings.addGym(`Gym ${settings.gyms.length + 1}`);
+                    settings.addGym(t('Gym {n}', { n: settings.gyms.length + 1 }));
                   }}
                 />
               </>
             ) : null}
           </ListCard>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
-            A gym is a name and the plates on its rack — nothing else. Tap one to make it the
-            current gym; the chips above then edit that gym&apos;s plates.
+            {t(
+              'A gym is a name and the plates on its rack — nothing else. Tap one to make it the current gym; the chips above then edit that gym’s plates.',
+            )}
           </Text>
 
           {/* ----------------------------------------------------------
@@ -633,7 +665,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               target exists the training history's row reads `14 / 16` and its bar
               measures against it instead of against the busiest cluster. Nothing
               turns red, nothing warns, and going over is not an error. */}
-          <Kicker className="mx-lg mb-sm mt-xxl">Weekly sets</Kicker>
+          <Kicker className="mx-lg mb-sm mt-xxl">{t('Weekly sets')}</Kicker>
           <ListCard className="mx-lg">
             {CLUSTER_ROWS.map((cluster, index) => {
               const target = settings.weeklySetTargets[cluster];
@@ -641,8 +673,8 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
                 <View key={cluster}>
                   {index > 0 ? <Separator /> : null}
                   <StepperRow
-                    label={clusterLabel(cluster)}
-                    value={target == null ? '—' : `${target} sets`}
+                    label={clusterLabel(cluster, lang)}
+                    value={target == null ? '—' : t('{count} sets', { count: target })}
                     onDecrease={() => {
                       tap();
                       /*
@@ -667,22 +699,24 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
             })}
           </ListCard>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
-            Optional. Set one and the training history compares this window against it; leave it at
-            &ldquo;—&rdquo; and the counts stay counts.
+            {t(
+              'Optional. Set one and the training history compares this window against it; leave it at “—” and the counts stay counts.',
+            )}
           </Text>
 
           {/* ---------------------------------------------------------- */}
-          <Kicker className="mx-lg mb-sm mt-xxl">Units</Kicker>
+          <Kicker className="mx-lg mb-sm mt-xxl">{t('Units')}</Kicker>
           <View className="mx-lg">
             <Segmented
-              options={UNIT_OPTIONS}
+              options={unitOptions(t)}
               value={settings.unitSystem}
               onChange={settings.setUnitSystem}
-              accessibilityLabel="Weight units"
+              accessibilityLabel={t('Weight units')}
             />
             <Text className="mt-sm text-label text-ink-faint">
-              Display only. Every set is stored in kilograms, so switching can never change what
-              your history says you lifted.
+              {t(
+                'Display only. Every set is stored in kilograms, so switching can never change what your history says you lifted.',
+              )}
             </Text>
           </View>
 
@@ -704,13 +738,13 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               See `screens/SettingsHomeScreen.tsx`. */}
           <View className="mx-lg mt-xxl overflow-hidden rounded-surface border border-hairline bg-surface">
             <SettingRow
-              label="Workouts on disk"
+              label={t('Workouts on disk')}
               value={
                 onDisk == null
-                  ? 'Cannot read the log'
+                  ? t('Cannot read the log')
                   : onDisk === workoutCount
                     ? `${onDisk}`
-                    : `${onDisk} on disk · ${workoutCount} loaded`
+                    : t('{onDisk} on disk · {loaded} loaded', { onDisk, loaded: workoutCount })
               }
               valueTone={onDisk == null || onDisk !== workoutCount ? 'muted' : 'faint'}
             />
@@ -731,13 +765,13 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               <>
                 <Separator inset={0} />
                 <SettingRow
-                  label="Share workouts with Health Connect"
+                  label={t('Share workouts with Health Connect')}
                   value={
                     !settings.shareToHealthConnect
-                      ? 'Off'
+                      ? t('Off')
                       : healthConnect === 'ready'
-                        ? 'On · start, end and name'
-                        : 'Needs permission'
+                        ? t('On · start, end and name')
+                        : t('Needs permission')
                   }
                   valueTone={
                     settings.shareToHealthConnect && healthConnect !== 'ready' ? 'muted' : 'faint'
@@ -752,7 +786,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               <>
                 <Separator inset={0} />
                 <TextButton
-                  label="Delete all workout history"
+                  label={t('Delete all workout history')}
                   onPress={() => setConfirming('history')}
                 />
               </>
@@ -762,19 +796,31 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
           {notice ? <Text className="mx-lg mt-md text-label text-ink-muted">{notice}</Text> : null}
 
           <Text className="mx-lg mt-md text-label text-ink-faint">
-            Everything on this screen is about training. The daily tasks and the expenses have
-            settings screens of their own, and the backup that carries all three is one row in the
-            general section.
+            {t(
+              'Everything on this screen is about training. The daily tasks and the expenses have settings screens of their own, and the backup that carries all three is one row in the general section.',
+            )}
           </Text>
         </ScrollView>
       </View>
 
       {confirming === 'history' ? (
         <ConfirmSheet
-          title="Delete all workout history?"
-          body={`All ${workoutCount} finished ${workoutCount === 1 ? 'workout' : 'workouts'} go, and so do the sets in them — which is what the prefills and the overload suggestions read. This cannot be undone.`}
-          confirmLabel="Delete everything"
-          cancelLabel="Keep my history"
+          title={t('Delete all workout history?')}
+          body={t(
+            'All {count} finished {workouts} go, and so do the sets in them — which is what the prefills and the overload suggestions read. This cannot be undone.',
+            {
+              count: workoutCount,
+              // `few` is a Russian-only form, so it is the Russian word — the
+              // same shape the streak rows already use.
+              workouts: countedWorkouts(workoutCount, {
+                one: t('workout'),
+                few: 'тренировки',
+                many: t('workouts'),
+              }),
+            },
+          )}
+          confirmLabel={t('Delete everything')}
+          cancelLabel={t('Keep my history')}
           onConfirm={() => {
             clearHistory();
             setConfirming(null);
@@ -823,6 +869,8 @@ function MeasuredRestRow({
   what: string;
   onAdopt: () => void;
 }) {
+  const t = useT();
+
   if (measuredSeconds == null) return null;
   // Within one nudge of the chips is agreement. See the note above.
   if (Math.abs(measuredSeconds - settingSeconds) < SETTING_LIMITS.restSecondsBetweenSets.step) {
@@ -836,14 +884,17 @@ function MeasuredRestRow({
         onAdopt();
       }}
       accessibilityRole="button"
-      accessibilityLabel={`You rest ${formatClock(measuredSeconds)} ${what}. Use that as the setting.`}
+      accessibilityLabel={t('You rest {clock} {what}. Use that as the setting.', {
+        clock: formatClock(measuredSeconds),
+        what,
+      })}
       style={pressedStyle}
       className="min-h-[44px] flex-row items-center px-lg pb-md"
     >
       <Text className="flex-1 pr-md text-label tabular-nums text-ink-muted">
-        You rest {formatClock(measuredSeconds)} {what}.
+        {t('You rest {clock} {what}.', { clock: formatClock(measuredSeconds), what })}
       </Text>
-      <Text className="text-label font-semibold text-green-bright">Use it</Text>
+      <Text className="text-label font-semibold text-green-bright">{t('Use it')}</Text>
     </Pressable>
   );
 }
@@ -857,6 +908,7 @@ function MeasuredRestRow({
  * faked from the same two sounds so it cannot mislead.
  */
 function TestBeepRow() {
+  const t = useT();
   const [playing, setPlaying] = useState(false);
 
   const play = () => {
@@ -880,13 +932,13 @@ function TestBeepRow() {
     <Pressable
       onPress={play}
       accessibilityRole="button"
-      accessibilityLabel="Test the countdown beep"
+      accessibilityLabel={t('Test the countdown beep')}
       style={pressedStyle}
       className="h-row flex-row items-center px-lg"
     >
-      <Text className="flex-1 text-body font-medium text-ink">Test the beep</Text>
+      <Text className="flex-1 text-body font-medium text-ink">{t('Test the beep')}</Text>
       <Text className="mr-md text-label text-ink-faint">
-        {playing ? 'counting…' : '3 · 2 · 1 · go'}
+        {playing ? t('counting…') : t('3 · 2 · 1 · go')}
       </Text>
       <Icon name="play" size={16} color={palette.greenBright} />
     </Pressable>

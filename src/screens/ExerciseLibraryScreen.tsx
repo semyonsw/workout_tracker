@@ -61,7 +61,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { Icon } from '../components/Icon';
 import { pressedStyle, Reveal } from '../components/motion';
 import { FieldWell, Kicker, ListCard, Separator } from '../components/primitives';
-import { useLanguage, useT } from '../hooks/useT';
+import { useLanguage, usePlural, useT } from '../hooks/useT';
 import { describeShape } from '../lib/exerciseShape';
 import { buildMuscleTree, clusterLabel, muscleLabel } from '../lib/muscles';
 import { palette } from '../theme/tokens';
@@ -353,13 +353,24 @@ function DisclosureRow({
   indent: 0 | 1;
   onPress: () => void;
 }) {
+  const t = useT();
+  const counted = usePlural();
   const isCluster = indent === 0;
+
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
-      accessibilityLabel={`${label}, ${count} ${count === 1 ? 'exercise' : 'exercises'}`}
+      accessibilityLabel={`${label}, ${t('{count} {exercises}', {
+        count,
+        // `few` is Russian's own third form, so it is the Russian word.
+        exercises: counted(count, {
+          one: t('exercise'),
+          few: 'упражнения',
+          many: t('exercises'),
+        }),
+      })}`}
       style={pressedStyle}
       className={[
         'h-row flex-row items-center pr-lg',
@@ -414,7 +425,10 @@ function ExerciseRow({
   onPress: () => void;
   onDelete: () => void;
 }) {
-  const shape = describeShape(exercise);
+  const t = useT();
+  const lang = useLanguage();
+  const shape = describeShape(exercise, lang);
+
   return (
     <View className={['h-row-lg flex-row items-center pr-xs', INDENT[indent]].join(' ')}>
       <Pressable
@@ -439,7 +453,7 @@ function ExerciseRow({
         onPress={onDelete}
         hitSlop={6}
         accessibilityRole="button"
-        accessibilityLabel={`Delete ${exercise.name}`}
+        accessibilityLabel={t('Delete {name}', { name: exercise.name })}
         style={pressedStyle}
         className="h-hit w-hit items-center justify-center rounded-pill border border-hairline"
       >

@@ -26,6 +26,7 @@ import { Text, TextInput, View } from 'react-native';
 
 import { Sheet } from './Sheet';
 import { FieldWell, PrimaryButton, TextButton } from './primitives';
+import { useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 
 interface CategoryEditorSheetProps {
@@ -43,6 +44,7 @@ export function CategoryEditorSheet({
   onSave,
   onDismiss,
 }: CategoryEditorSheetProps) {
+  const t = useT();
   const [name, setName] = useState(initialName);
   const [glyph, setGlyph] = useState(initialGlyph);
   const savable = name.trim() !== '';
@@ -58,7 +60,7 @@ export function CategoryEditorSheet({
             placeholderTextColor={palette.inkFaint}
             cursorColor={palette.greenBright}
             selectionColor={palette.greenBright}
-            accessibilityLabel="Category glyph"
+            accessibilityLabel={t('Category glyph')}
             className="w-full text-center text-[22px] text-ink"
           />
         </View>
@@ -66,10 +68,10 @@ export function CategoryEditorSheet({
           <FieldWell
             value={name}
             size="body"
-            placeholder="Name"
+            placeholder={t('Name')}
             onChangeText={setName}
             autoFocus={initialName === ''}
-            accessibilityLabel="Category name"
+            accessibilityLabel={t('Category name')}
           />
         </View>
       </View>
@@ -78,12 +80,12 @@ export function CategoryEditorSheet({
 
       <View className="mt-xl">
         <PrimaryButton
-          label="Save"
+          label={t('Save')}
           onPress={() => {
             if (savable) onSave(name.trim(), glyph.trim());
           }}
         />
-        <TextButton label="Cancel" onPress={onDismiss} />
+        <TextButton label={t('Cancel')} onPress={onDismiss} />
       </View>
     </Sheet>
   );

@@ -31,6 +31,7 @@ import { commit } from '../lib/feedback';
 import { describeCount, type OverloadVerdict } from '../lib/progressiveOverload';
 import type { CountUnit, LoadMode, UnitSystem } from '../types/models';
 import { countUnitLabel, formatWeight, unitLabel } from '../lib/units';
+import { useLanguage, useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 import { Icon } from './Icon';
 
@@ -55,6 +56,9 @@ export function OverloadNudge({
   onAccept,
   onDismiss,
 }: OverloadNudgeProps) {
+  const t = useT();
+  const lang = useLanguage();
+
   if (!verdict.shouldNudge || resolved) return null;
 
   /*
@@ -69,18 +73,27 @@ export function OverloadNudge({
    */
   const weighted = verdict.currentWeightKg != null;
   const held = weighted
-    ? `${formatWeight(verdict.currentWeightKg, unitSystem, loadMode)} ${unitLabel(unitSystem)}`
-    : describeCount(verdict.currentCount ?? 0, countUnit);
+    ? `${formatWeight(verdict.currentWeightKg, unitSystem, loadMode)} ${unitLabel(unitSystem, lang)}`
+    : describeCount(verdict.currentCount ?? 0, countUnit, lang);
 
-  const fact = `Same ${held} for ${verdict.plateauDays} days · ${verdict.sessionsInRun} sessions`;
+  const fact = t('Same {held} for {days} days · {sessions} sessions', {
+    held,
+    days: verdict.plateauDays,
+    sessions: verdict.sessionsInRun,
+  });
 
   const suggestion =
     verdict.suggestedWeightKg != null
-      ? `Try ${formatWeight(verdict.suggestedWeightKg, unitSystem, loadMode)} ${unitLabel(unitSystem)}`
+      ? t('Try {what}', {
+          what: `${formatWeight(verdict.suggestedWeightKg, unitSystem, loadMode)} ${unitLabel(unitSystem, lang)}`,
+        })
       : weighted
         ? // Reps before weight: the load stays, the rep target moves.
-          `Try ${verdict.suggestedCount} ${countUnitLabel(countUnit)} at the same weight`
-        : `Try ${describeCount(verdict.suggestedCount ?? 0, countUnit)}`;
+          t('Try {count} {unit} at the same weight', {
+            count: verdict.suggestedCount ?? 0,
+            unit: countUnitLabel(countUnit, lang),
+          })
+        : t('Try {what}', { what: describeCount(verdict.suggestedCount ?? 0, countUnit, lang) });
 
   const handleAccept = () => {
     commit();
@@ -102,17 +115,17 @@ export function OverloadNudge({
         onPress={handleAccept}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel={`${suggestion} — apply to every remaining set`}
+        accessibilityLabel={t('{suggestion} — apply to every remaining set', { suggestion })}
         className="ml-md h-[36px] items-center justify-center rounded-pill bg-green px-lg"
       >
-        <Text className="text-label font-semibold text-ink">Use</Text>
+        <Text className="text-label font-semibold text-ink">{t('Use')}</Text>
       </Pressable>
 
       <Pressable
         onPress={onDismiss}
         hitSlop={12}
         accessibilityRole="button"
-        accessibilityLabel="Dismiss suggestion"
+        accessibilityLabel={t('Dismiss suggestion')}
         className="h-[36px] w-[28px] items-center justify-center"
       >
         <Icon name="x" size={14} color={palette.greenBright} />

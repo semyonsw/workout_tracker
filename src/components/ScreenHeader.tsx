@@ -20,6 +20,7 @@ import type { ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 import { BubblePressable } from './bubbles';
 import { Icon, type IconName } from './Icon';
@@ -80,6 +81,7 @@ export function ScreenHeader({
   bordered = true,
   children,
 }: ScreenHeaderProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
 
   return (
@@ -94,7 +96,7 @@ export function ScreenHeader({
           disabled={!onBack}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Back"
+          accessibilityLabel={t('Back')}
           className="h-hit w-[32px] justify-center"
         >
           {onBack ? <Icon name="chevron-left" size={22} color={palette.inkMuted} /> : null}
