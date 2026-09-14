@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 
+import { useLanguage } from '../hooks/useT';
 import { formatChartDate } from '../lib/units';
 import type { TrendPoint } from '../lib/trends';
 import { palette } from '../theme/tokens';
@@ -70,6 +71,7 @@ interface TrendChartProps {
 }
 
 export function TrendChart({ points, formatValue = defaultFormat }: TrendChartProps) {
+  const lang = useLanguage();
   /*
    * Hooks run before the `points.length < 2` bail-out below, so a chart that
    * gains its second point mid-session still gets an entrance the first time it
@@ -226,7 +228,7 @@ export function TrendChart({ points, formatValue = defaultFormat }: TrendChartPr
             fontWeight="600"
             letterSpacing={1.1}
           >
-            {formatChartDate(points[index].at)}
+            {formatChartDate(points[index].at, lang)}
           </SvgText>
         ))}
       </Svg>

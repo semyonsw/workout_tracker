@@ -69,6 +69,7 @@
  * telling one exercise what to do next is one of them being wrong.
  */
 
+import { plural, t, type Language } from './i18n';
 import type { CountUnit, Exercise, ID, RepLadder } from '../types/models';
 
 /* ------------------------------------------------------------------ */
@@ -564,13 +565,27 @@ export function describeLadder(targets: readonly number[]): string {
  * States the number and nothing about how it felt. "New max 17" is a fact; "great
  * work, new PR!" is the app taking a tone it does not take anywhere else.
  */
-export function describeLadderOutcomes(outcomes: readonly LadderOutcome[]): string | null {
+export function describeLadderOutcomes(
+  outcomes: readonly LadderOutcome[],
+  lang: Language = 'en',
+): string | null {
   if (outcomes.length === 0) return null;
   const [first] = outcomes;
   const head = first.isPersonalRecord
-    ? `${first.name} · new max ${first.after.max} · ${describeLadder(first.nextTargets)} next time`
-    : `${first.name} · ${describeLadder(first.nextTargets)} next time`;
+    ? t('{name} · new max {max} · {plan} next time', lang, {
+        name: first.name,
+        max: first.after.max,
+        plan: describeLadder(first.nextTargets),
+      })
+    : t('{name} · {plan} next time', lang, {
+        name: first.name,
+        plan: describeLadder(first.nextTargets),
+      });
   if (outcomes.length === 1) return head;
   const others = outcomes.length - 1;
-  return `${head}, and ${others} ${others === 1 ? 'other' : 'others'} moved up too`;
+  return t('{head}, and {count} {others} moved up too', lang, {
+    head,
+    count: others,
+    others: plural(others, lang, { one: t('other', lang), few: 'других', many: t('others', lang) }),
+  });
 }

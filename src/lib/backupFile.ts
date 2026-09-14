@@ -31,6 +31,7 @@ import { Platform } from 'react-native';
  */
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
+import { t, type Language } from './i18n';
 
 /**
  * The one type this app writes.
@@ -68,7 +69,7 @@ export function displayName(uri: string): string {
 }
 
 /** The folder a SAF tree URI points at, in words: "Download", "SD card / backups". */
-export function folderLabel(folderUri: string): string {
+export function folderLabel(folderUri: string, lang: Language = 'en'): string {
   const decoded = safeDecode(folderUri);
   const afterTree = decoded.split('tree/').pop() ?? decoded;
   // `primary:Download` — the volume prefix is noise to everyone but Android.
@@ -76,7 +77,7 @@ export function folderLabel(folderUri: string): string {
     ? afterTree.split(':').slice(1).join(':')
     : afterTree;
   const cleaned = withoutVolume.replace(/^\/+|\/+$/g, '').replace(/\//g, ' / ');
-  return cleaned === '' ? 'the folder you picked' : cleaned;
+  return cleaned === '' ? t('the folder you picked', lang) : cleaned;
 }
 
 function safeDecode(value: string): string {
@@ -158,7 +159,7 @@ export async function writeToAppFolder(
   extension = 'json',
 ): Promise<string> {
   const folder = appFolderUri();
-  if (!folder) throw new Error('This device has no writable app folder.');
+  if (!folder) throw new Error(t('This device has no writable app folder.', 'ru'));
   const fileUri = `${folder}${baseName}.${extension}`;
   await FileSystem.writeAsStringAsync(fileUri, contents);
   return fileUri.replace('file://', '');
@@ -184,8 +185,12 @@ export type SaveOutcome =
  * uninstall. Where there is no picker at all, the app's own documents directory —
  * stated as a path, so it is at least reachable over a cable.
  */
-export async function saveJsonFile(baseName: string, contents: string): Promise<SaveOutcome> {
-  return saveTextFile(baseName, contents, JSON_MIME, 'json');
+export async function saveJsonFile(
+  baseName: string,
+  contents: string,
+  lang: Language = 'en',
+): Promise<SaveOutcome> {
+  return saveTextFile(baseName, contents, JSON_MIME, 'json', lang);
 }
 
 async function saveTextFile(
@@ -193,6 +198,7 @@ async function saveTextFile(
   contents: string,
   mimeType: string,
   extension: string,
+  lang: Language,
 ): Promise<SaveOutcome> {
   if (!canPickFolder()) {
     const path = await writeToAppFolder(baseName, contents, extension);
@@ -203,7 +209,7 @@ async function saveTextFile(
   if (!folder) return { saved: false, cancelled: true };
 
   const { name } = await writeToFolder(folder, baseName, contents, mimeType);
-  return { saved: true, name, where: folderLabel(folder), folderUri: folder };
+  return { saved: true, name, where: folderLabel(folder, lang), folderUri: folder };
 }
 
 export interface PickedFile {
@@ -242,7 +248,9 @@ export async function readTextFile(uri: string): Promise<string> {
 }
 
 /** Every unreadable file, every denied permission, in one sentence for the screen. */
-export function describeError(error: unknown): string {
+export function describeError(error: unknown, lang: Language = 'en'): string {
   const message = error instanceof Error ? error.message : String(error);
-  return message.trim() === '' ? 'Something went wrong reaching the file system.' : message;
+  return message.trim() === ''
+    ? t('Something went wrong reaching the file system.', lang)
+    : message;
 }

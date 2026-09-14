@@ -67,6 +67,7 @@ export function useReminders(): void {
           lang: language,
           now: new Date(),
         }),
+        language,
       );
     }, DEBOUNCE_MS);
 
@@ -95,6 +96,7 @@ export function useReminders(): void {
           lang: settings.language,
           now: new Date(),
         }),
+        settings.language,
       );
     });
     return () => sub.remove();

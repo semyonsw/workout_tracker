@@ -36,7 +36,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { TrendChart } from '../components/TrendChart';
 import { pressedStyle } from '../components/motion';
 import { Kicker, Segmented, SelectChip } from '../components/primitives';
-import { useT, type Translate } from '../hooks/useT';
+import { useLanguage, usePlural, useT, type Translate } from '../hooks/useT';
 import { WEEKDAY_INITIALS, dayKey, formatShortDay, parseDay } from '../lib/days';
 import { tap } from '../lib/feedback';
 import {
@@ -131,6 +131,9 @@ function MonthView({
   selected: string;
   onPick: (day: string) => void;
 }) {
+  const t = useT();
+  const lang = useLanguage();
+  const counted = usePlural();
   const start = parseDay(today) ?? new Date();
   const [cursor, setCursor] = useState(() => {
     const at = parseDay(selected) ?? start;
@@ -138,8 +141,8 @@ function MonthView({
   });
 
   const month = useMemo(
-    () => tasksMonth(tasks, log, cursor.year, cursor.month, today),
-    [tasks, log, cursor, today],
+    () => tasksMonth(tasks, log, cursor.year, cursor.month, today, lang),
+    [tasks, log, cursor, today, lang],
   );
   const atLatest = cursor.year === start.getFullYear() && cursor.month === start.getMonth();
 
@@ -155,7 +158,7 @@ function MonthView({
           onPress={() => step(-1)}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="The month before"
+          accessibilityLabel={t('The month before')}
           style={pressedStyle}
           className="h-hit w-[32px] items-center justify-center"
         >
@@ -167,7 +170,7 @@ function MonthView({
           disabled={atLatest}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="The month after"
+          accessibilityLabel={t('The month after')}
           style={pressedStyle}
           className="h-hit w-[32px] items-center justify-center"
         >
@@ -177,8 +180,13 @@ function MonthView({
 
       <Text className="mx-lg mt-xs text-center text-label tabular-nums text-ink-muted">
         {month.asked === 0
-          ? 'Nothing recorded this month'
-          : `${month.done} of ${month.asked} done · ${month.days} ${month.days === 1 ? 'day' : 'days'}`}
+          ? t('Nothing recorded this month')
+          : t('{done} of {asked} done · {days} {dayWord}', {
+              done: month.done,
+              asked: month.asked,
+              days: month.days,
+              dayWord: counted(month.days, { one: t('day'), few: 'дня', many: t('days') }),
+            })}
       </Text>
 
       <View className="mx-lg mt-lg flex-row">
@@ -215,8 +223,9 @@ function MonthView({
       </View>
 
       <Text className="mx-lg mt-md text-label text-ink-faint">
-        The fuller the square, the more of that day was done. Tap one to open it and answer its
-        tasks.
+        {t(
+          'The fuller the square, the more of that day was done. Tap one to open it and answer its tasks.',
+        )}
       </Text>
     </>
   );
@@ -244,6 +253,7 @@ function MonthCell({
   selected: boolean;
   onPress?: () => void;
 }) {
+  const t = useT();
   if (cell.day === null) return <View className="flex-1 p-[3px]" />;
 
   const fill = cell.isBlank ? { className: '' } : fillFor(cell.fraction);
@@ -254,7 +264,9 @@ function MonthCell({
       disabled={!onPress}
       accessibilityRole="button"
       accessibilityLabel={
-        cell.isBlank ? `${cell.day}, nothing asked` : `${cell.day}, ${cell.done} of ${cell.asked}`
+        cell.isBlank
+          ? t('{day}, nothing asked', { day: cell.day })
+          : t('{day}, {done} of {asked}', { day: cell.day, done: cell.done, asked: cell.asked })
       }
       accessibilityState={{ selected }}
       style={pressedStyle}
@@ -304,6 +316,7 @@ function MonthCell({
  */
 function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog; today: string }) {
   const t = useT();
+  const lang = useLanguage();
   /*
    * Seeded from the setting, and then the chips own it. A range that wrote itself
    * back to settings on every tap would make "which range does this open on" and
@@ -355,23 +368,29 @@ function TrendView({ tasks, log, today }: { tasks: readonly Task[]; log: TaskLog
             <TrendChart points={points} formatValue={(value) => `${Math.round(value)}%`} />
           </View>
           <Text className="mx-lg mt-sm text-label tabular-nums text-ink-faint">
-            {formatShortDay(points[0].day)} to {formatShortDay(points[points.length - 1].day)} ·{' '}
-            {summary.done} of {summary.asked} answered done
+            {t('{from} to {to} · {done} of {asked} answered done', {
+              from: formatShortDay(points[0].day, lang),
+              to: formatShortDay(points[points.length - 1].day, lang),
+              done: summary.done,
+              asked: summary.asked,
+            })}
           </Text>
         </>
       ) : (
         <View className="mx-lg mt-xl rounded-surface border border-hairline bg-surface p-lg">
-          <Kicker>Not enough yet</Kicker>
+          <Kicker>{t('Not enough yet')}</Kicker>
           <Text className="mt-sm text-body text-ink-muted">
-            A line needs two days to have a direction. Answer today and tomorrow and it draws
-            itself.
+            {t(
+              'A line needs two days to have a direction. Answer today and tomorrow and it draws itself.',
+            )}
           </Text>
         </View>
       )}
 
       <Text className="mx-lg mt-md text-label text-ink-faint">
-        Days that asked for nothing are left out rather than plotted as zero — a day off is not a
-        day you failed. A task you marked missed on purpose leaves the denominator.
+        {t(
+          'Days that asked for nothing are left out rather than plotted as zero — a day off is not a day you failed. A task you marked missed on purpose leaves the denominator.',
+        )}
       </Text>
     </>
   );

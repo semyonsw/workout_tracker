@@ -152,6 +152,7 @@ import {
 } from '../components/primitives';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
 import { useLanguage, useT, type Translate } from '../hooks/useT';
+import type { Language } from '../lib/i18n';
 import { tap, undo } from '../lib/feedback';
 import {
   DEFAULT_RANDOM_SPEC,
@@ -283,6 +284,7 @@ export function RoutineEditorScreen({
   /** The item the user asked to remove, held while the sheet asks. */
   const [removing, setRemoving] = useState<RoutineItem | null>(null);
   const t = useT();
+  const lang = useLanguage();
 
   /*
    * ── THE DIE ──────────────────────────────────────────────────────────
@@ -389,7 +391,7 @@ export function RoutineEditorScreen({
    * is an edit like any other on this screen.
    */
   const roll = (spec: RandomSpec) => {
-    const rolled = rollRoutine(library, spec);
+    const rolled = rollRoutine(library, spec, Math.random, lang);
     setRandomSpec(spec);
     setAsking(false);
     if (!rolled) {
@@ -554,7 +556,7 @@ export function RoutineEditorScreen({
                       isLifted={isLifted}
                       isOpen={openId === item.id}
                       superset={supersetRunPosition(items, index)}
-                      summary={summarizeItem(item, exercise, defaultRestSeconds, t)}
+                      summary={summarizeItem(item, exercise, defaultRestSeconds, t, lang)}
                       onPress={() => {
                         tap();
                         setOpenId((current) => (current === item.id ? null : item.id));
@@ -638,8 +640,8 @@ export function RoutineEditorScreen({
           body={t(
             'It comes out of this routine only. The exercise stays in your library with every set you have ever logged against it.',
           )}
-          confirmLabel="Remove it"
-          cancelLabel="Keep it"
+          confirmLabel={t('Remove it')}
+          cancelLabel={t('Keep it')}
           onConfirm={() => removeItem(removing.id)}
           onCancel={() => setRemoving(null)}
         />
@@ -816,7 +818,9 @@ function ItemEditor({
    * countdown somebody is watching ("3:00") — the same distinction the rest row
    * below makes in the other direction.
    */
-  const showCount = timed ? formatDuration(target) : `${target} ${countUnitLabel(countUnit, lang)}`;
+  const showCount = timed
+    ? formatDuration(target, lang)
+    : `${target} ${countUnitLabel(countUnit, lang)}`;
 
   return (
     <View className="border-t border-t-hairline bg-surface-alt">
@@ -835,14 +839,16 @@ function ItemEditor({
               history` at the bottom of this panel leads to. */}
           <View className="min-h-[56px] py-sm pl-xxl pr-lg">
             <View className="flex-row items-center">
-              <Text className="flex-1 pr-md text-label font-medium text-ink">Ladder</Text>
+              <Text className="flex-1 pr-md text-label font-medium text-ink">{t('Ladder')}</Text>
               <Text className="text-body font-semibold tabular-nums text-ink">
                 {describeLadder(ladderPlan)}
               </Text>
             </View>
             <Text className="mt-[2px] text-micro text-ink-faint">
-              Max {ladderPlan[0]} · {ladderTotal(ladderPlan)} reps · one rep is added every session
-              you meet it
+              {t('Max {max} · {total} reps · one rep is added every session you meet it', {
+                max: ladderPlan[0],
+                total: ladderTotal(ladderPlan),
+              })}
             </Text>
           </View>
         </>
@@ -907,7 +913,7 @@ function ItemEditor({
             className="h-hit justify-center pl-xxl pr-lg"
           >
             <Text className="text-label font-medium text-ink-muted">
-              Follow the setting instead
+              {t('Follow the setting instead')}
             </Text>
           </Pressable>
         </>
@@ -920,7 +926,9 @@ function ItemEditor({
           <Separator inset={40} />
           <View className="min-h-[56px] flex-row items-center py-sm pl-xxl pr-lg">
             <View className="flex-1 pr-md">
-              <Text className="text-label font-medium text-ink">Superset with the one above</Text>
+              <Text className="text-label font-medium text-ink">
+                {t('Superset with the one above')}
+              </Text>
               <Text className="mt-[2px] text-micro text-ink-faint">
                 {supersetWithAbove
                   ? t('No rest between them — rest comes after the pair')
@@ -945,7 +953,9 @@ function ItemEditor({
         accessibilityLabel={t('Open the history for {name}', { name: exercise.name })}
         className="h-hit flex-row items-center pl-xxl pr-lg"
       >
-        <Text className="flex-1 text-label font-medium text-ink-muted">Open its history</Text>
+        <Text className="flex-1 text-label font-medium text-ink-muted">
+          {t('Open its history')}
+        </Text>
         <Icon name="chevron-right" size={16} color={palette.inkFaint} />
       </Pressable>
     </View>
@@ -1042,6 +1052,7 @@ function summarizeItem(
   exercise: Exercise,
   settingsRestSeconds: number,
   t: Translate,
+  lang: Language,
 ): string {
   const parts: string[] = [];
 
@@ -1051,7 +1062,7 @@ function summarizeItem(
     // count times a target. Same line the session's card shows.
     parts.push(describeLadder(ladderTargets(ladder, item.targetSets)));
   } else if (exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds') {
-    parts.push(`${item.targetSets} × ${formatDuration(item.targetRepsMax ?? 0)}`);
+    parts.push(`${item.targetSets} × ${formatDuration(item.targetRepsMax ?? 0, lang)}`);
   } else {
     const { targetRepsMin: min, targetRepsMax: max } = item;
     const range = min && max && min !== max ? `${min}–${max}` : String(max ?? min ?? '');

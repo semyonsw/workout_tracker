@@ -57,6 +57,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, type IconName } from './Icon';
 import { BubblePressable } from './bubbles';
 import { pressedStyle } from './motion';
+import { useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 
 export interface TopBarAction {
@@ -178,10 +179,11 @@ export function LanguageToggle({
   active: string;
   onSelect: (value: string) => void;
 }) {
+  const t = useT();
   return (
     <View
       accessibilityRole="radiogroup"
-      accessibilityLabel="Application language"
+      accessibilityLabel={t('Application language')}
       className="h-[36px] flex-row items-center rounded-pill border border-hairline bg-surface p-[3px]"
     >
       {options.map((option) => {

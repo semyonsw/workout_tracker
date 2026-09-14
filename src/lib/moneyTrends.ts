@@ -38,6 +38,7 @@
  */
 
 import { dayKey, formatMonth, formatShortDay, parseDay, shiftDay } from './days';
+import type { Language } from './i18n';
 import type { Amount, Direction } from './money';
 import { bucketOf, rangeLength, type TrendPoint, type TrendRange } from './trends';
 
@@ -92,7 +93,12 @@ function monthKey(day: string): string {
  * Built from the CALENDAR rather than from the amounts, which is what makes an
  * empty Tuesday a zero instead of a gap — see the file header.
  */
-function bucketsIn(range: TrendRange, from: string, today: string): MoneyTrendPoint[] {
+function bucketsIn(
+  range: TrendRange,
+  from: string,
+  today: string,
+  lang: Language = 'en',
+): MoneyTrendPoint[] {
   const buckets: MoneyTrendPoint[] = [];
   const byMonth = bucketOf(range) === 'month';
   const seen = new Set<string>();
@@ -108,7 +114,9 @@ function bucketsIn(range: TrendRange, from: string, today: string): MoneyTrendPo
       buckets.push({
         key,
         at: noon.toISOString(),
-        label: byMonth ? formatMonth(at.getFullYear(), at.getMonth()) : formatShortDay(day),
+        label: byMonth
+          ? formatMonth(at.getFullYear(), at.getMonth(), lang)
+          : formatShortDay(day, lang),
         value: 0,
       });
     }
@@ -140,10 +148,11 @@ export function moneyTrendSeries(
   direction: Direction,
   range: TrendRange,
   today: string,
+  lang: Language = 'en',
 ): MoneyTrendPoint[] {
   const from = moneyRangeStart(amounts, range, today);
   const byMonth = bucketOf(range) === 'month';
-  const buckets = bucketsIn(range, from, today);
+  const buckets = bucketsIn(range, from, today, lang);
   const index = new Map(buckets.map((bucket) => [bucket.key, bucket]));
 
   for (const amount of amounts) {
@@ -174,10 +183,11 @@ export function moneyBalanceSeries(
   amounts: readonly Amount[],
   range: TrendRange,
   today: string,
+  lang: Language = 'en',
 ): MoneyTrendPoint[] {
   const from = moneyRangeStart(amounts, range, today);
   const byMonth = bucketOf(range) === 'month';
-  const buckets = bucketsIn(range, from, today);
+  const buckets = bucketsIn(range, from, today, lang);
   const index = new Map(buckets.map((bucket) => [bucket.key, bucket]));
   const keys = new Set(buckets.map((bucket) => bucket.key));
 

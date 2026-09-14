@@ -76,7 +76,7 @@ export function ExerciseHistoryScreen({
 }: ExerciseHistoryScreenProps) {
   const t = useT();
   const lang = useLanguage();
-  const rows = sessionRows(history, exercise);
+  const rows = sessionRows(history, exercise, lang);
   const series = topWeightSeries(rows);
   /*
    * The staleness clause is a fact about the data, not a nag, so it appears as
@@ -112,6 +112,7 @@ export function ExerciseHistoryScreen({
     exercise.countUnit,
     (kg) => `${loadPrefix}${formatWeight(kg, unitSystem, 'external')}`,
     (count) => formatCount(count, exercise.countUnit),
+    lang,
   );
 
   return (

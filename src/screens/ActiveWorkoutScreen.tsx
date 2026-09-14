@@ -149,6 +149,7 @@ import { RestTimerPill } from '../components/RestTimerPill';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
 import { useLanguage, useT } from '../hooks/useT';
+import { describeDeload } from '../lib/deload';
 import type { DraftEntry, DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
 import { useAutoRounds } from '../hooks/useAutoRounds';
@@ -433,10 +434,10 @@ export function ActiveWorkoutScreen({
     const out: Record<ID, string> = {};
     for (const entry of session?.entries ?? []) {
       if (entry.overload.shouldNudge && !entry.overloadAccepted) continue;
-      if (entry.deload?.shouldSuggest) out[entry.localId] = entry.deload.message;
+      if (entry.deload?.shouldSuggest) out[entry.localId] = describeDeload(entry.deload, lang);
     }
     return out;
-  }, [session?.entries]);
+  }, [session?.entries, lang]);
 
   /** The one open card, or null when the user has shut the one they are on. */
   const expandedEntryId =
@@ -573,8 +574,8 @@ export function ActiveWorkoutScreen({
    * row as the STORE has it rather than on the snapshot this line rendered.
    */
   const ladderChange = useMemo(
-    () => describeLadderOutcomes(ladderOutcomes(session?.entries ?? [])),
-    [session?.entries],
+    () => describeLadderOutcomes(ladderOutcomes(session?.entries ?? []), lang),
+    [session?.entries, lang],
   );
 
   const commitFinish = useCallback(
@@ -640,7 +641,7 @@ export function ActiveWorkoutScreen({
   if (!session) {
     return (
       <View className="flex-1 items-center justify-center bg-bg px-xl">
-        <Text className="text-body text-ink-muted">No workout in progress</Text>
+        <Text className="text-body text-ink-muted">{t('No workout in progress')}</Text>
         <View className="mt-xl w-full">
           <PrimaryButton label={t('Back')} variant="ghost" onPress={onExit} />
         </View>
@@ -658,9 +659,9 @@ export function ActiveWorkoutScreen({
   if (session.entries.length === 0) {
     return (
       <View className="flex-1 items-center justify-center bg-bg px-xl">
-        <Text className="text-title font-medium text-ink">Nothing to log</Text>
+        <Text className="text-title font-medium text-ink">{t('Nothing to log')}</Text>
         <Text className="mt-sm text-center text-body text-ink-muted">
-          This workout has no exercises in it right now.
+          {t('This workout has no exercises in it right now.')}
         </Text>
         <View className="mt-xl w-full">
           {onAddExercise ? (
@@ -881,7 +882,7 @@ export function ActiveWorkoutScreen({
               >
                 <Icon name="plus" size={14} color={palette.greenBright} />
                 <Text className="ml-sm text-label font-medium text-green-bright">
-                  Add an exercise
+                  {t('Add an exercise')}
                 </Text>
               </Pressable>
             ) : null}
@@ -906,7 +907,7 @@ export function ActiveWorkoutScreen({
         <FinishSheet
           unloggedCount={progress.total - progress.done}
           loggedCount={progress.done}
-          planChange={describePlannedSetDiff(planChanges)}
+          planChange={describePlannedSetDiff(planChanges, lang)}
           ladderChange={ladderChange}
           effort={session.effort}
           onSetEffort={(effort) => {

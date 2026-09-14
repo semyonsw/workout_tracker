@@ -724,7 +724,7 @@ export const useSettings = create<SettingsState>()(
       addGym: (name) => {
         const { gyms, activeGymId } = get();
         const id = `gym_${Date.now().toString(36)}`;
-        const next = addGymTo(gyms, name, activeGymId, id);
+        const next = addGymTo(gyms, name, activeGymId, id, get().language);
         // At the cap nothing was added, so nothing becomes active either.
         set({ gyms: next, activeGymId: next.some((g) => g.id === id) ? id : activeGymId });
       },

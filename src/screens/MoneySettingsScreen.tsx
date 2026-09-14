@@ -81,7 +81,7 @@ export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Kicker className="mx-lg mb-sm mt-md">Counted in</Kicker>
+        <Kicker className="mx-lg mb-sm mt-md">{t('Counted in')}</Kicker>
         <View className="mx-lg">
           <FieldWell
             value={draft}
@@ -98,18 +98,17 @@ export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
           />
         </View>
         <Text className="mx-lg mt-sm text-label text-ink-faint">
-          A label, not a conversion. Every amount is stored as a plain number, so changing this
-          changes what is printed after each figure and nothing else — no rate, no rewriting of what
-          you already recorded. Up to four characters; points and tokens are as valid here as a
-          currency.
+          {t(
+            'A label, not a conversion. Every amount is stored as a plain number, so changing this changes what is printed after each figure and nothing else — no rate, no rewriting of what you already recorded. Up to four characters; points and tokens are as valid here as a currency.',
+          )}
         </Text>
 
-        <Kicker className="mx-lg mb-sm mt-xxl">Opens on</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xxl">{t('Opens on')}</Kicker>
         <View className="mx-lg flex-row flex-wrap">
           {INTERVALS.map((interval) => (
             <SelectChip
               key={interval}
-              label={INTERVAL_LABELS[interval]}
+              label={t(INTERVAL_LABELS[interval])}
               selected={interval === settings.moneyDefaultInterval}
               onPress={() => {
                 tap();
@@ -132,16 +131,17 @@ export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
           ))}
         </View>
         <Text className="mx-lg text-label text-ink-faint">
-          The window and the direction the expenses section starts at. Both still change on that
-          screen; this is only where it begins.
+          {t(
+            'The window and the direction the expenses section starts at. Both still change on that screen; this is only where it begins.',
+          )}
         </Text>
 
-        <Kicker className="mx-lg mb-sm mt-xxl">History opens on</Kicker>
+        <Kicker className="mx-lg mb-sm mt-xxl">{t('History opens on')}</Kicker>
         <View className="mx-lg flex-row flex-wrap">
           {TREND_RANGES.map((range) => (
             <SelectChip
               key={range}
-              label={TREND_RANGE_LABELS[range]}
+              label={t(TREND_RANGE_LABELS[range])}
               selected={range === settings.moneyTrendRange}
               onPress={() => {
                 tap();
@@ -151,7 +151,7 @@ export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
           ))}
         </View>
         <Text className="mx-lg text-label text-ink-faint">
-          Which range the ⟲ in the corner of the expenses opens on.
+          {t('Which range the ⟲ in the corner of the expenses opens on.')}
         </Text>
       </ScrollView>
     </View>

@@ -48,10 +48,19 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
+import { t, type Language } from './i18n';
 import type { PlannedReminder } from './reminders';
 
-/** Bumped when a channel's SOUND or IMPORTANCE changes — Android freezes both. */
-const CHANNEL_VERSION = 2;
+/**
+ * Bumped when a channel's SOUND or IMPORTANCE changes — Android freezes both.
+ *
+ * 3 — and the NAME is frozen too, which is why translating the three below was
+ * not enough on its own: a phone that has already created `timer-go-v2` keeps
+ * showing "Timer finished" in its notification settings forever. A new id is the
+ * only way the Russian name reaches an existing install, and the old ids join
+ * `RETIRED_CHANNELS` so the settings screen does not list both.
+ */
+const CHANNEL_VERSION = 3;
 
 /** The long tone: rest is over, the bell rang, go. */
 export const CHANNEL_GO = `timer-go-v${CHANNEL_VERSION}`;
@@ -75,7 +84,14 @@ export const CHANNEL_GETSET = `timer-getset-v${CHANNEL_VERSION}`;
 export const CHANNEL_REMINDER = `reminders-v${CHANNEL_VERSION}`;
 
 /** Channels from earlier versions, deleted so the system UI stays honest. */
-const RETIRED_CHANNELS = ['timers', 'timer-go-v1', 'timer-getset-v1'];
+const RETIRED_CHANNELS = [
+  'timers',
+  'timer-go-v1',
+  'timer-getset-v1',
+  'timer-go-v2',
+  'timer-getset-v2',
+  'reminders-v2',
+];
 
 /**
  * How many seconds before a deadline the "get set" alert fires.
@@ -96,7 +112,7 @@ let channelsReady = false;
  * be called at all, in which case Android posts to a default channel with a
  * default sound.
  */
-export async function ensureTimerChannels(): Promise<void> {
+export async function ensureTimerChannels(lang: Language = 'en'): Promise<void> {
   if (channelsReady || Platform.OS !== 'android') return;
   channelsReady = true;
   try {
@@ -105,8 +121,8 @@ export async function ensureTimerChannels(): Promise<void> {
     }
 
     await Notifications.setNotificationChannelAsync(CHANNEL_GO, {
-      name: 'Timer finished',
-      description: 'Rest is over, or a timed set rang its bell.',
+      name: t('Timer finished', lang),
+      description: t('Rest is over, or a timed set rang its bell.', lang),
       importance: Notifications.AndroidImportance.MAX,
       sound: 'beep_final.wav',
       vibrationPattern: [0, 220, 120, 220],
@@ -116,8 +132,10 @@ export async function ensureTimerChannels(): Promise<void> {
     });
 
     await Notifications.setNotificationChannelAsync(CHANNEL_GETSET, {
-      name: 'Get set',
-      description: `A tick ${GETSET_LEAD_SECONDS} seconds before a timer ends.`,
+      name: t('Get set', lang),
+      description: t('A tick {seconds} seconds before a timer ends.', lang, {
+        seconds: GETSET_LEAD_SECONDS,
+      }),
       importance: Notifications.AndroidImportance.HIGH,
       sound: 'beep_tick.wav',
       vibrationPattern: [0, 120],
@@ -127,8 +145,8 @@ export async function ensureTimerChannels(): Promise<void> {
     });
 
     await Notifications.setNotificationChannelAsync(CHANNEL_REMINDER, {
-      name: 'Reminders',
-      description: 'A task, or a workout, at the time you asked to be reminded.',
+      name: t('Reminders', lang),
+      description: t('A task, or a workout, at the time you asked to be reminded.', lang),
       importance: Notifications.AndroidImportance.DEFAULT,
       vibrationPattern: [0, 200],
       enableVibrate: true,
@@ -174,6 +192,8 @@ export interface TimerAlert {
   at: number;
   /** Which tone. `go` is the long one; `getset` is the tick. */
   kind?: 'go' | 'getset';
+  /** The language the Android channel names are created in, first time round. */
+  lang?: Language;
 }
 
 /**
@@ -189,7 +209,7 @@ export async function scheduleTimerAlert(alert: TimerAlert): Promise<string | nu
   const channelId = alert.kind === 'getset' ? CHANNEL_GETSET : CHANNEL_GO;
 
   try {
-    await ensureTimerChannels();
+    await ensureTimerChannels(alert.lang);
     return await Notifications.scheduleNotificationAsync({
       content: {
         title: alert.title,
@@ -225,6 +245,7 @@ export async function scheduleTimerAlertPair(params: {
   /** "Get set" — the headline for the advance tick. */
   getSetTitle: string;
   getSetBody: string;
+  lang?: Language;
 }): Promise<string[]> {
   const ids: string[] = [];
 
@@ -233,6 +254,7 @@ export async function scheduleTimerAlertPair(params: {
     body: params.getSetBody,
     at: params.at - GETSET_LEAD_SECONDS * 1000,
     kind: 'getset',
+    lang: params.lang,
   });
   if (getSetId) ids.push(getSetId);
 
@@ -241,6 +263,7 @@ export async function scheduleTimerAlertPair(params: {
     body: params.goBody,
     at: params.at,
     kind: 'go',
+    lang: params.lang,
   });
   if (goId) ids.push(goId);
 
@@ -331,9 +354,12 @@ function triggerFor(reminder: PlannedReminder): Notifications.NotificationTrigge
  * did before reminders existed, and the settings screen is what reports that the
  * permission is missing.
  */
-export async function syncReminders(plan: readonly PlannedReminder[]): Promise<number> {
+export async function syncReminders(
+  plan: readonly PlannedReminder[],
+  lang: Language = 'en',
+): Promise<number> {
   try {
-    await ensureTimerChannels();
+    await ensureTimerChannels(lang);
     await cancelAllReminders();
 
     let armed = 0;

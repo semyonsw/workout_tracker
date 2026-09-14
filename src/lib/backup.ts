@@ -235,16 +235,19 @@ function asArray(value: unknown): unknown[] {
  * backup hand-edited into a file with the arrays intact is still a backup, and the
  * rows themselves are validated downstream either way.
  */
-export function parseBackup(text: string): ParseResult {
+export function parseBackup(text: string, lang: Language = 'en'): ParseResult {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch {
-    return { ok: false, error: "That isn't valid JSON — the file or the paste is incomplete." };
+    return {
+      ok: false,
+      error: t('That is not valid JSON — the file or the paste is incomplete.', lang),
+    };
   }
 
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return { ok: false, error: 'That file holds something other than a backup.' };
+    return { ok: false, error: t('That file holds something other than a backup.', lang) };
   }
 
   const source = raw as Record<string, unknown>;
@@ -253,7 +256,11 @@ export function parseBackup(text: string): ParseResult {
   if (version > BACKUP_VERSION) {
     return {
       ok: false,
-      error: `That backup was written by a newer version of the app (format ${version}). Update the app first.`,
+      error: t(
+        'That backup was written by a newer version of the app (format {version}). Update the app first.',
+        lang,
+        { version },
+      ),
     };
   }
 
@@ -262,10 +269,16 @@ export function parseBackup(text: string): ParseResult {
     Array.isArray(source.routines) ||
     Array.isArray(source.workouts);
   if (source.format !== BACKUP_FORMAT && !hasCollections) {
-    return { ok: false, error: 'That file has no exercises, routines or workouts in it.' };
+    return {
+      ok: false,
+      error: t('That file has no exercises, routines or workouts in it.', lang),
+    };
   }
   if (!hasCollections) {
-    return { ok: false, error: 'That backup is empty — there is nothing in it to restore.' };
+    return {
+      ok: false,
+      error: t('That backup is empty — there is nothing in it to restore.', lang),
+    };
   }
 
   const payload: BackupPayload = {

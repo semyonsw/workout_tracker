@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_DELOAD_POLICY, evaluateDeload } from './deload';
+import { DEFAULT_DELOAD_POLICY, describeDeload, evaluateDeload } from './deload';
 import type { Exercise, SetHistory } from '../types/models';
 
 /**
@@ -60,7 +60,7 @@ describe('a stall', () => {
     expect(verdict.stuckWeightKg).toBe(80);
     // 85% of 80 is 68, and 67.5 is the heaviest thing these plates can make below it.
     expect(verdict.suggestedWeightKg).toBe(67.5);
-    expect(verdict.message).toContain('67.5');
+    expect(describeDeload(verdict)).toContain('67.5');
   });
 
   it('is not two sessions', () => {

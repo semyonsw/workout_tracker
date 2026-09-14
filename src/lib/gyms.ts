@@ -35,6 +35,7 @@
  * before it.
  */
 
+import { t, type Language } from './i18n';
 import { DEFAULT_PLATES_KG } from './plates';
 
 export interface Gym {
@@ -159,13 +160,14 @@ export function addGym(
   name: string,
   activeGymId: unknown,
   id: string,
+  lang: Language = 'en',
 ): Gym[] {
   if (gyms.length >= MAX_GYMS) return [...gyms];
   return [
     ...gyms,
     {
       id,
-      name: clampGymName(name, `Gym ${gyms.length + 1}`),
+      name: clampGymName(name, t('Gym {n}', lang, { n: gyms.length + 1 })),
       platesKg: activeGymPlates(gyms, activeGymId),
     },
   ];

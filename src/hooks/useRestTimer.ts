@@ -49,6 +49,7 @@ import { tap, undo } from '../lib/feedback';
 import { cancelTimerAlerts, scheduleTimerAlertPair } from '../lib/notify';
 import { useActiveWorkout, type RestSource } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
+import { useLanguage, useT } from './useT';
 import { setRestBetweenExercises, setRestBetweenSets } from '../state/restSync';
 import { useCountdownBeeps } from './useCountdownBeeps';
 
@@ -93,6 +94,8 @@ export function useRestTimer(): RestTimerApi {
   const stepSeconds = useSettings((s) => s.adjustStepSeconds);
   const keepAwakeEnabled = useSettings((s) => s.keepAwakeEnabled);
   const notifyOnTimerEnd = useSettings((s) => s.notifyOnTimerEnd);
+  const t = useT();
+  const lang = useLanguage();
 
   const isPaused = rest.pausedRemainingMs != null;
 
@@ -199,10 +202,11 @@ export function useRestTimer(): RestTimerApi {
 
       const ids = await scheduleTimerAlertPair({
         at: rest.endsAt,
-        getSetTitle: 'Get set',
-        getSetBody: 'Rest ends in 5 seconds.',
-        goTitle: 'Rest over',
-        goBody: 'Next set.',
+        getSetTitle: t('Get set'),
+        getSetBody: t('Rest ends in 5 seconds.'),
+        goTitle: t('Rest over'),
+        goBody: t('Next set.'),
+        lang,
       });
       if (cancelled) {
         await cancelTimerAlerts(ids);
@@ -215,7 +219,7 @@ export function useRestTimer(): RestTimerApi {
       cancelled = true;
       void clearPending();
     };
-  }, [notifyOnTimerEnd, rest.endsAt]);
+  }, [lang, notifyOnTimerEnd, rest.endsAt, t]);
 
   /* --- keep the screen on while resting ------------------------------ */
   useEffect(() => {

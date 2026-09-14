@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { bumpRestBetweenSets, setRestBetweenSets } from './restSync';
-import { stripInheritedRest, useLibrary } from './libraryStore';
+import { renameSeededToRussian, stripInheritedRest, useLibrary } from './libraryStore';
 import { useActiveWorkout } from './activeWorkoutStore';
 import { useSettings } from './settingsStore';
 import { seedRoutines } from '../data/seed';
@@ -130,5 +130,35 @@ describe('stripInheritedRest', () => {
     expect(stripInheritedRest(null)).toBeNull();
     expect(stripInheritedRest({ exercises: 'nonsense' })).toEqual({ exercises: 'nonsense' });
     expect(stripInheritedRest({ routines: [null, 7] })).toEqual({ routines: [null, 7] });
+  });
+});
+
+describe('renameSeededToRussian', () => {
+  it('renames a row still carrying the name the app gave it, and keeps the old one findable', () => {
+    const migrated = renameSeededToRussian({
+      exercises: [{ id: 'ex_dips_weighted', name: 'Weighted dips' }],
+      routines: [{ id: 'r_push', name: 'Push' }],
+    }) as { exercises: { name: string; aliases: string[] }[]; routines: { name: string }[] };
+
+    expect(migrated.exercises[0].name).toBe('Отжимания на брусьях с весом');
+    // The English name survives as an alias, so a search anyone already has in
+    // their fingers keeps finding the row.
+    expect(migrated.exercises[0].aliases).toContain('Weighted dips');
+    expect(migrated.routines[0].name).toBe('Жим');
+  });
+
+  it('leaves a row the user renamed exactly as it is', () => {
+    const migrated = renameSeededToRussian({
+      exercises: [{ id: 'ex_dips_weighted', name: 'Dips with the blue belt' }],
+    }) as { exercises: { name: string; aliases?: unknown }[] };
+
+    expect(migrated.exercises[0].name).toBe('Dips with the blue belt');
+    expect(migrated.exercises[0].aliases).toBeUndefined();
+  });
+
+  it('survives a blob that is not the shape it expects', () => {
+    expect(renameSeededToRussian(null)).toBeNull();
+    expect(renameSeededToRussian({ exercises: 'nonsense' })).toEqual({ exercises: 'nonsense' });
+    expect(renameSeededToRussian({ exercises: [null, 7] })).toEqual({ exercises: [null, 7] });
   });
 });

@@ -345,6 +345,7 @@ export function taskMonth(
   year: number,
   month: number,
   today: string,
+  lang: Language = 'en',
 ): TaskMonth {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const lead = weekdayIndex(new Date(year, month, 1));
@@ -373,7 +374,7 @@ export function taskMonth(
   const weeks: TaskCell[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
-  return { year, month, label: formatMonth(year, month), weeks, done, asked };
+  return { year, month, label: formatMonth(year, month, lang), weeks, done, asked };
 }
 
 /** How many days apart two days are, for "since 4 January 2026" style copy. */
@@ -578,6 +579,7 @@ export function tasksMonth(
   year: number,
   month: number,
   today: string,
+  lang: Language = 'en',
 ): DayMonth {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const lead = weekdayIndex(new Date(year, month, 1));
@@ -623,5 +625,5 @@ export function tasksMonth(
   const weeks: DayCell[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
-  return { year, month, label: formatMonth(year, month), weeks, days, done, asked };
+  return { year, month, label: formatMonth(year, month, lang), weeks, days, done, asked };
 }

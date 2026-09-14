@@ -363,6 +363,7 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
       endedAt,
       currentSettings().bodyweightKg ?? null,
       session.effort,
+      currentSettings().language,
     );
     if (!workout) return null;
 
@@ -624,8 +625,16 @@ function bodyweightFor(workout: CompletedWorkout): number | null {
 function writeEdited(
   set: (partial: Partial<WorkoutHistoryState>) => void,
   get: () => WorkoutHistoryState,
-  next: CompletedWorkout,
+  raw: CompletedWorkout,
 ): boolean {
+  /*
+   * One recompute, in the language in force RIGHT NOW. Every edit path funnels
+   * through here, and `lib/workoutEdit.ts` is pure — it has no way to read a
+   * setting — so this is the one place that can keep the cached shorthand
+   * ("80 кг · 5") in the language the user is actually reading.
+   */
+  const next = recomputeWorkout(raw, bodyweightFor(raw), currentSettings().language);
+
   /*
    * The database first, as everywhere else in this store: a state update that lands
    * before a write that throws is a screen showing a correction that is not on
@@ -662,7 +671,9 @@ function writeRecomputed(
    * and the volume drops the clause rather than printing a figure that undercounts.
    */
   const workouts = get().workouts.map((w) =>
-    w.id === workoutId ? recomputeWorkout({ ...w, sets }, bodyweightFor(w)) : w,
+    w.id === workoutId
+      ? recomputeWorkout({ ...w, sets }, bodyweightFor(w), currentSettings().language)
+      : w,
   );
 
   const corrected = workouts.find((w) => w.id === workoutId);

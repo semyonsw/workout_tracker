@@ -34,6 +34,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
+import { useT } from '../hooks/useT';
 import { tap } from '../lib/feedback';
 import { palette } from '../theme/tokens';
 import { BubblePressable } from './bubbles';
@@ -245,6 +246,7 @@ export function StepperRow({
   onDecrease: () => void;
   onIncrease: () => void;
 }) {
+  const t = useT();
   return (
     <View className="min-h-[56px] flex-row items-center py-md pl-lg pr-sm">
       <View className="flex-1 pr-md">
@@ -254,9 +256,9 @@ export function StepperRow({
 
       <Text className="mr-sm text-body font-semibold tabular-nums text-ink-muted">{value}</Text>
 
-      <StepButton icon="minus" label={`Decrease ${label}`} onPress={onDecrease} />
+      <StepButton icon="minus" label={t('Decrease {label}', { label })} onPress={onDecrease} />
       <View className="w-xs" />
-      <StepButton icon="plus" label={`Increase ${label}`} onPress={onIncrease} />
+      <StepButton icon="plus" label={t('Increase {label}', { label })} onPress={onIncrease} />
     </View>
   );
 }
@@ -448,6 +450,7 @@ export function NumericWell({
   onPress?: () => void;
   selected?: boolean;
 }) {
+  const t = useT();
   return (
     <Pressable
       onPress={onPress}
@@ -456,7 +459,7 @@ export function NumericWell({
       accessibilityState={{ selected }}
       accessibilityLabel={
         onPress
-          ? `${label} ${value} ${unit ?? ''}, adjust`.replace(/\s+/g, ' ').trim()
+          ? `${label} ${value} ${unit ?? ''}, ${t('adjust')}`.replace(/\s+/g, ' ').trim()
           : `${label} ${value} ${unit ?? ''}`.replace(/\s+/g, ' ').trim()
       }
       style={onPress ? pressedStyle : undefined}

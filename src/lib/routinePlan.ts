@@ -31,6 +31,7 @@
 
 import type { CountUnit, Exercise, ID, RoutineItem } from '../types/models';
 import { countStep } from './units';
+import { plural, t, type Language } from './i18n';
 
 /* ------------------------------------------------------------------ */
 /* Limits                                                             */
@@ -300,15 +301,29 @@ export function applyPlannedSetDiff(
  * target": the number changed, and the user is being asked whether the plan
  * should say so.
  */
-export function describePlannedSetDiff(changes: readonly PlannedSetChange[]): string | null {
+export function describePlannedSetDiff(
+  changes: readonly PlannedSetChange[],
+  lang: Language = 'en',
+): string | null {
   if (changes.length === 0) return null;
   const [first] = changes;
-  const head = `${first.name} did ${first.completedSets} ${
-    first.completedSets === 1 ? 'set' : 'sets'
-  }, not ${first.plannedSets}`;
+  const head = t('{name} did {done} {sets}, not {planned}', lang, {
+    name: first.name,
+    done: first.completedSets,
+    planned: first.plannedSets,
+    sets: plural(first.completedSets, lang, {
+      one: t('set', lang),
+      few: 'подхода',
+      many: t('sets', lang),
+    }),
+  });
   if (changes.length === 1) return head;
   const others = changes.length - 1;
-  return `${head}, and ${others} ${others === 1 ? 'other' : 'others'} changed too`;
+  return t('{head}, and {count} {others} changed too', lang, {
+    head,
+    count: others,
+    others: plural(others, lang, { one: t('other', lang), few: 'других', many: t('others', lang) }),
+  });
 }
 
 /** Completed-set counts per exercise, in session order — `plannedSetDiff`'s input. */

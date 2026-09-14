@@ -38,6 +38,7 @@
  */
 
 import { serializeBackup, type BackupCounts, type BackupPayload } from '../lib/backup';
+import { t } from '../lib/i18n';
 import { useLibrary } from './libraryStore';
 import { sanitizeMoney, useMoney } from './moneyStore';
 import { sanitizeSettings, useSettings } from './settingsStore';
@@ -82,7 +83,10 @@ export class UnreadableLogError extends Error {
      * that fixes it.
      */
     super(
-      'The log could not be read, so a backup would be missing it. Nothing is lost — close the app and open it again.',
+      t(
+        'The log could not be read, so a backup would be missing it. Nothing is lost — close the app and open it again.',
+        useSettings.getState().language,
+      ),
     );
     this.name = 'UnreadableLogError';
   }

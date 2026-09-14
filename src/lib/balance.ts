@@ -42,6 +42,7 @@
  *     of it.
  */
 
+import { term, type Language } from './i18n';
 import type { CompletedWorkout } from './completedWorkout';
 import { clusterOf, CLUSTERS } from './muscles';
 import { daysBetween } from './units';
@@ -150,12 +151,13 @@ export function clusterBalance(params: ClusterBalanceParams): ClusterBalance {
 export function describeClusterTotals(
   totals: Partial<Record<CountUnit, number>>,
   formatSeconds: (seconds: number) => string,
+  lang: Language = 'en',
 ): string {
   const parts: string[] = [];
-  if (totals.reps) parts.push(`${totals.reps} reps`);
+  if (totals.reps) parts.push(`${totals.reps} ${term('unit', 'reps', lang)}`);
   if (totals.seconds) parts.push(formatSeconds(totals.seconds));
   if (totals.rounds) parts.push(formatSeconds(totals.rounds));
-  if (totals.meters) parts.push(`${totals.meters} m`);
+  if (totals.meters) parts.push(`${totals.meters} ${term('unit', 'm', lang)}`);
   return parts.join(' · ');
 }
 

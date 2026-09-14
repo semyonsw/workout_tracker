@@ -33,6 +33,7 @@ import { cancelTimerAlerts, scheduleTimerAlertPair } from '../lib/notify';
 import { readSetTimer, workEndsAt, type SetTimerReading } from '../lib/setTimer';
 import { useActiveWorkout, type SetTimerState } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
+import { useLanguage, useT } from './useT';
 import { useCountdownBeeps } from './useCountdownBeeps';
 
 const TICK_MS = 250;
@@ -65,6 +66,8 @@ export function useSetTimer(): SetTimerApi {
   const stepSeconds = useSettings((s) => s.adjustStepSeconds);
   const keepAwakeEnabled = useSettings((s) => s.keepAwakeEnabled);
   const notifyOnTimerEnd = useSettings((s) => s.notifyOnTimerEnd);
+  const t = useT();
+  const lang = useLanguage();
 
   const [now, setNow] = useState(() => Date.now());
   /** The scheduled alerts for the bell: the tick and the tone. */
@@ -184,10 +187,11 @@ export function useSetTimer(): SetTimerApi {
 
       const ids = await scheduleTimerAlertPair({
         at: endsAt,
-        getSetTitle: 'Almost',
-        getSetBody: '5 seconds left.',
-        goTitle: 'Time',
-        goBody: 'Set logged — rest.',
+        getSetTitle: t('Almost'),
+        getSetBody: t('5 seconds left.'),
+        goTitle: t('Time'),
+        goBody: t('Set logged — rest.'),
+        lang,
       });
       if (cancelled) {
         await cancelTimerAlerts(ids);
@@ -202,7 +206,7 @@ export function useSetTimer(): SetTimerApi {
     };
     // `workSeconds` is in the dep list via `timer` identity: every ± replaces the
     // object, which reschedules the bell.
-  }, [notifyOnTimerEnd, timer]);
+  }, [lang, notifyOnTimerEnd, t, timer]);
 
   /* --- keep the screen on for the whole hold -------------------------- */
   useEffect(() => {

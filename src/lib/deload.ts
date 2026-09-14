@@ -47,6 +47,7 @@
  * rewriting a plan off three data points. It says what it sees and stops.
  */
 
+import { t, term, type Language } from './i18n';
 import { loadableAtOrBelow } from './warmup';
 import { ladderOf } from './repLadder';
 import { summarizeSessions } from './progressiveOverload';
@@ -86,8 +87,6 @@ export interface DeloadVerdict {
   stuckWeightKg: number | null;
   /** The suggested back-off weight, loadable. Null when nothing sensible exists. */
   suggestedWeightKg: number | null;
-  /** One line, already written for the UI. */
-  message: string;
 }
 
 const NO_DELOAD: DeloadVerdict = {
@@ -95,7 +94,6 @@ const NO_DELOAD: DeloadVerdict = {
   stalledSessions: 0,
   stuckWeightKg: null,
   suggestedWeightKg: null,
-  message: '',
 };
 
 export interface EvaluateDeloadParams {
@@ -165,8 +163,35 @@ export function evaluateDeload(params: EvaluateDeloadParams): DeloadVerdict {
     stalledSessions: run,
     stuckWeightKg: weight,
     suggestedWeightKg: suggested,
-    message: `${run} sessions at ${trim(weight)} kg without a rep. One session at ${trim(suggested)} kg resets it.`,
   };
+}
+
+/**
+ * The verdict as the one line the card prints.
+ *
+ * Separate from the verdict itself because the verdict is a FACT and this is a
+ * SENTENCE: the facts are language-free numbers that can be stored and compared,
+ * and the sentence has to be rebuilt whenever the language changes. Keeping the
+ * string on the record meant an English line survived the РУ/EN toggle.
+ */
+export function describeDeload(verdict: DeloadVerdict, lang: Language = 'en'): string {
+  if (
+    !verdict.shouldSuggest ||
+    verdict.stuckWeightKg == null ||
+    verdict.suggestedWeightKg == null
+  ) {
+    return '';
+  }
+  return t(
+    '{count} sessions at {weight} {unit} without a rep. One session at {suggested} {unit} resets it.',
+    lang,
+    {
+      count: verdict.stalledSessions,
+      weight: trim(verdict.stuckWeightKg),
+      suggested: trim(verdict.suggestedWeightKg),
+      unit: term('unit', 'kg', lang),
+    },
+  );
 }
 
 /** Round down onto the movement's own step, for anything that is not a bar. */

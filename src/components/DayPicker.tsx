@@ -38,7 +38,7 @@ import { BubblePressable } from './bubbles';
 import { pressedStyle } from './motion';
 import { dayKey, formatMonth, parseDay, weekdayIndex, weekdayInitials } from '../lib/days';
 import { tap } from '../lib/feedback';
-import { useLanguage } from '../hooks/useT';
+import { useLanguage, useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 
 interface DayPickerProps {
@@ -51,6 +51,7 @@ interface DayPickerProps {
 
 export function DayPicker({ value, onChange, earliest }: DayPickerProps) {
   const lang = useLanguage();
+  const t = useT();
   const today = dayKey(new Date());
   const anchor = parseDay(value) ?? new Date();
   const [cursor, setCursor] = useState({
@@ -83,7 +84,7 @@ export function DayPicker({ value, onChange, earliest }: DayPickerProps) {
           onPress={() => step(-1)}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="The month before"
+          accessibilityLabel={t('The month before')}
           style={pressedStyle}
           className="h-hit w-[32px] items-center justify-center"
         >
@@ -96,7 +97,7 @@ export function DayPicker({ value, onChange, earliest }: DayPickerProps) {
           onPress={() => step(1)}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="The month after"
+          accessibilityLabel={t('The month after')}
           style={pressedStyle}
           className="h-hit w-[32px] items-center justify-center"
         >

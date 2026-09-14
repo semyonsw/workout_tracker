@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { dayKey } from '../lib/days';
 import { entryOf } from '../lib/tasks';
 import { useSettings } from './settingsStore';
-import { sanitizeTasks, seedTasks, useTasks } from './tasksStore';
+import { renameSeedTasks, sanitizeTasks, seedTasks, useTasks } from './tasksStore';
 
 /**
  * The task store.
@@ -254,5 +254,29 @@ describe('sanitizing the two new fields', () => {
     }).tasks;
     expect(clamped.reminder).toEqual({ hour: 23, minute: 0 });
     expect(missing.reminder).toBeNull();
+  });
+});
+
+describe('renameSeedTasks', () => {
+  it('renames the nine shipped rows into the app’s language', () => {
+    const migrated = renameSeedTasks({
+      tasks: [{ id: 'task_8', name: 'Sleep before midnight' }],
+    }) as { tasks: { name: string }[] };
+
+    expect(migrated.tasks[0].name).toBe('Лечь спать до полуночи');
+  });
+
+  it('leaves a row the user reworded alone', () => {
+    const migrated = renameSeedTasks({
+      tasks: [{ id: 'task_8', name: 'Sleep before 11' }],
+    }) as { tasks: { name: string }[] };
+
+    expect(migrated.tasks[0].name).toBe('Sleep before 11');
+  });
+
+  it('survives a blob that is not the shape it expects', () => {
+    expect(renameSeedTasks(null)).toBeNull();
+    expect(renameSeedTasks({ tasks: 'nonsense' })).toEqual({ tasks: 'nonsense' });
+    expect(renameSeedTasks({ tasks: [null, 7] })).toEqual({ tasks: [null, 7] });
   });
 });

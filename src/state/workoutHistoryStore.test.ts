@@ -497,8 +497,9 @@ describe('correcting a logged set', () => {
 
     const after = current(before.id);
     expect(after?.sets.find((r) => r.id === first.id)?.weightKg).toBe(4);
-    // Regenerated through the shared shorthand, not patched.
-    expect(after?.exercises[0].summary).toContain('+4 kg');
+    // Regenerated through the shared shorthand, not patched — and in the language
+    // the app is set to, which is Russian by default.
+    expect(after?.exercises[0].summary).toContain('+4 кг');
     expect(after?.exercises[0].summary).not.toBe(before.exercises[0].summary);
   });
 

@@ -116,7 +116,7 @@ export function CategoryDetailScreen({
       >
         <Text className="mx-lg mt-sm text-title font-semibold text-ink">{category.name}</Text>
         <Text className="mx-lg mt-xs text-label text-ink-muted">
-          {describeInterval(interval, anchor)} ·{' '}
+          {describeInterval(interval, anchor, lang)} ·{' '}
           <Text className="tabular-nums text-green-bright">
             {formatMoney(Math.abs(total), currency)}
           </Text>
@@ -158,7 +158,9 @@ export function CategoryDetailScreen({
           </ListCard>
         ) : (
           <Text className="mx-lg text-label text-ink-faint">
-            Nothing in {describeInterval(interval, anchor).toLowerCase()}.
+            {t('Nothing in {window}.', {
+              window: describeInterval(interval, anchor, lang).toLowerCase(),
+            })}
           </Text>
         )}
 

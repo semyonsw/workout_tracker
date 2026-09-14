@@ -41,6 +41,8 @@
  * is the corrupt one".
  */
 
+import { plural, t, type Language } from './i18n';
+
 /** ISO-8601 instants, as everywhere else in the app. */
 export type ISOInstant = string;
 
@@ -129,12 +131,16 @@ export function backupIsStale(
 export function describeBackupAge(
   at: ISOInstant | null | undefined,
   now: Date = new Date(),
+  lang: Language = 'en',
 ): string {
   const days = daysSince(at, now);
-  if (days == null) return 'Never';
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  return `${days} days ago`;
+  if (days == null) return t('Never', lang);
+  if (days === 0) return t('Today', lang);
+  if (days === 1) return t('Yesterday', lang);
+  return t('{days} {daysWord} ago', lang, {
+    days,
+    daysWord: plural(days, lang, { one: t('day', lang), few: 'дня', many: t('days', lang) }),
+  });
 }
 
 /**

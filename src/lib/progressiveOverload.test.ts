@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { SetHistory } from '../types/models';
-import { DEFAULT_OVERLOAD_POLICY, evaluateOverload } from './progressiveOverload';
+import { DEFAULT_OVERLOAD_POLICY, describeCount, evaluateOverload } from './progressiveOverload';
 
 const NOW = new Date('2026-08-13T12:00:00.000Z');
 
@@ -282,13 +282,14 @@ describe('evaluateOverload on the count axis', () => {
       ...holds('s87', '2026-08-11', [120]),
     ];
 
-    const { message } = evaluateOverload({ exercise: plank, history, now: NOW });
+    const verdict = evaluateOverload({ exercise: plank, history, now: NOW });
 
-    expect(message).toBe('3× at 2:00 — try 2:15');
+    expect(verdict.currentCount).toBe(120);
+    expect(verdict.suggestedCount).toBe(135);
     // "try 135 seconds" is the storage unit leaking into copy somebody reads
-    // between sets.
-    expect(message).not.toContain('135');
-    expect(message).not.toContain('120');
+    // between sets — `describeCount` is what the nudge renders through.
+    expect(describeCount(verdict.suggestedCount ?? 0, 'seconds')).toBe('2:15');
+    expect(describeCount(verdict.currentCount ?? 0, 'seconds')).toBe('2:00');
   });
 
   it('stays quiet on a plank that is climbing', () => {
@@ -328,7 +329,6 @@ describe('evaluateOverload on the count axis', () => {
     expect(verdict.status).toBe('building');
     expect(verdict.sessionsInRun).toBe(2);
     expect(verdict.shouldNudge).toBe(false);
-    expect(verdict.message).toBe('2× at 2:00');
   });
 
   it('says nothing about time the phone did not measure', () => {
@@ -370,7 +370,7 @@ describe('evaluateOverload on the count axis', () => {
       now: NOW,
     });
     expect(pushups.suggestedCount).toBe(21);
-    expect(pushups.message).toBe('3× at 20 — try 21');
+    expect(describeCount(21, 'reps')).toBe('21');
 
     const swim = evaluateOverload({
       exercise: { id: 'ex_sw', requiresWeight: false, countUnit: 'meters' },
@@ -379,7 +379,7 @@ describe('evaluateOverload on the count axis', () => {
     });
     // A distance IS measured — by the pool, not by the phone.
     expect(swim.suggestedCount).toBe(1525);
-    expect(swim.message).toBe('3× at 1500 m — try 1525 m');
+    expect(describeCount(1525, 'meters')).toBe('1525 m');
   });
 
   it('ignores warm-ups and incomplete sets, exactly as the weight axis does', () => {

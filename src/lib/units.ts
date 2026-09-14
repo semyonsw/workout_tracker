@@ -6,7 +6,7 @@
  */
 
 import { MONTH_NAMES_RU_OF } from './days';
-import { term, type Language } from './i18n';
+import { t, term, type Language } from './i18n';
 import type { CountUnit, LoadMode, UnitSystem } from '../types/models';
 
 export const KG_PER_LB = 0.45359237;
@@ -136,10 +136,10 @@ export function formatCount(count: number, countUnit: CountUnit): string {
 }
 
 /** "3 min" / "45 sec" — a duration in the coarsest unit that stays exact. */
-export function formatDuration(seconds: number): string {
-  if (seconds <= 0) return 'no rest';
-  if (seconds % 60 === 0) return `${seconds / 60} min`;
-  if (seconds < 60) return `${seconds} sec`;
+export function formatDuration(seconds: number, lang: Language = 'en'): string {
+  if (seconds <= 0) return t('no rest', lang);
+  if (seconds % 60 === 0) return `${seconds / 60} ${term('unit', 'min', lang)}`;
+  if (seconds < 60) return `${seconds} ${term('unit', 'sec', lang)}`;
   return formatClock(seconds);
 }
 

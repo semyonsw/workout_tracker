@@ -47,6 +47,7 @@
  * silence `sessionVolume` keeps rather than printing a figure it knows undercounts.
  */
 
+import { t, type Language } from './i18n';
 import { effectiveLoadKg } from './units';
 import type { CountUnit, Exercise, SetHistory } from '../types/models';
 
@@ -195,6 +196,7 @@ export function describeBests(
   countUnit: CountUnit,
   formatWeight: (kg: number) => string,
   formatCount: (count: number) => string,
+  lang: Language = 'en',
 ): string | null {
   const parts: string[] = [];
 
@@ -208,7 +210,7 @@ export function describeBests(
     if (!sameSet) parts.push(formatCount(bests.mostCount.value));
   }
   if (bests.bestSetLoad && countUnit === 'reps') {
-    parts.push(`${formatWeight(bests.bestSetLoad.value)} set`);
+    parts.push(t('{weight} set', lang, { weight: formatWeight(bests.bestSetLoad.value) }));
   }
 
   return parts.length > 0 ? parts.join(' · ') : null;

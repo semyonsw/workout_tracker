@@ -505,7 +505,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               value={
                 settings.bodyweightKg == null
                   ? t('Not set')
-                  : `${formatWeight(settings.bodyweightKg, settings.unitSystem)} ${unitLabel(settings.unitSystem)}`
+                  : `${formatWeight(settings.bodyweightKg, settings.unitSystem)} ${unitLabel(settings.unitSystem, lang)}`
               }
               onDecrease={() => bumpBodyweight(-1)}
               onIncrease={() => bumpBodyweight(1)}
@@ -556,7 +556,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
                 {settings.gyms.map((gym) => (
                   <SelectChip
                     key={gym.id}
-                    label={gym.name}
+                    label={t(gym.name)}
                     selected={gym.id === settings.activeGymId}
                     onPress={() => {
                       tap();
@@ -602,7 +602,7 @@ export function WorkoutSettingsScreen({ onBack }: { onBack: () => void }) {
               <View key={gym.id}>
                 {index > 0 ? <Separator inset={0} /> : null}
                 <SettingRow
-                  label={gym.name}
+                  label={t(gym.name)}
                   value={t('{count} sizes', { count: gym.platesKg.length })}
                   valueTone="faint"
                   onPress={

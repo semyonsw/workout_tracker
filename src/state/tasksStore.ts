@@ -32,6 +32,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { clampHour, clampMinute, dayKey } from '../lib/days';
+import { t } from '../lib/i18n';
 import { useSettings } from './settingsStore';
 import {
   reorderWithinVisible,
@@ -50,21 +51,36 @@ export interface TasksValue {
   log: TaskLog;
 }
 
+/**
+ * The nine rows the app opens with, in English — the key the catalogue is
+ * indexed by, and what a device installed before 1.9.0 has on disk.
+ *
+ * Names rather than ids because a task is free text the user edits: the rename
+ * below matches the exact shipped string and leaves anything else alone.
+ */
+export const SEED_TASK_NAMES: [string, 'daily' | 'mwf', TaskAutoSource | null][] = [
+  ['Morning Bible/Narek reading', 'daily', null],
+  ['In-Work Task Report', 'mwf', null],
+  ['Gym / Boxing', 'mwf', 'workout'],
+  ['Productivity/Day Tasks', 'daily', null],
+  ['Evening Bible reading', 'daily', null],
+  ["Plan tomorrow's tasks", 'daily', null],
+  ['Book reading before sleep', 'daily', null],
+  ['Sleep before midnight', 'daily', null],
+  ['Track expenses', 'daily', 'money'],
+];
+
 /** The nine rows the app opens with, starting today. */
 export function seedTasks(today = dayKey(new Date())): Task[] {
   const daily: TaskSchedule = { kind: 'daily' };
   const mwf: TaskSchedule = { kind: 'weekdays', days: [0, 2, 4] };
-  const rows: [string, TaskSchedule, TaskAutoSource | null][] = [
-    ['Morning Bible/Narek reading', daily, null],
-    ['In-Work Task Report', mwf, null],
-    ['Gym / Boxing', mwf, 'workout'],
-    ['Productivity/Day Tasks', daily, null],
-    ['Evening Bible reading', daily, null],
-    ["Plan tomorrow's tasks", daily, null],
-    ['Book reading before sleep', daily, null],
-    ['Sleep before midnight', daily, null],
-    ['Track expenses', daily, 'money'],
-  ];
+  const rows: [string, TaskSchedule, TaskAutoSource | null][] = SEED_TASK_NAMES.map(
+    ([english, kind, auto]) => [
+      t(english, useSettings.getState().language),
+      kind === 'daily' ? daily : mwf,
+      auto,
+    ],
+  );
   return rows.map(([name, schedule, auto], order) => ({
     id: `task_${order + 1}`,
     name,
@@ -371,7 +387,17 @@ export const useTasks = create<TasksState>()(
     }),
     {
       name: 'tasks',
-      version: 1,
+      /*
+       * 2 — THE NINE SHIPPED ROWS ARE RENAMED INTO THE APP'S LANGUAGE, ONCE.
+       *
+       * Same reasoning as `libraryStore`'s v3: the seeds are only ever used by a
+       * FIRST launch, so translating `seedTasks` alone would leave every phone
+       * that already has the app reading "Sleep before midnight" in an otherwise
+       * Russian screen. Only an exact match on the shipped string is touched — a
+       * row the user has reworded is theirs.
+       */
+      version: 2,
+      migrate: renameSeedTasks,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({ tasks: state.tasks, log: state.log }),
       merge: (persisted, current) => ({
@@ -385,4 +411,30 @@ export const useTasks = create<TasksState>()(
 /** Read path for code outside React — the auto-tick callers. */
 export function tickTaskSource(source: TaskAutoSource, day?: string): void {
   useTasks.getState().tickAuto(source, day);
+}
+
+/**
+ * v1 → v2: the nine shipped rows, in the language the app is set to.
+ *
+ * Exported for the test that pins it — it runs once per device and then never
+ * again. Tolerant of shape: it runs on a raw blob from disk, before
+ * `sanitizeTasks` has had a look at it.
+ */
+export function renameSeedTasks(persisted: unknown): unknown {
+  if (typeof persisted !== 'object' || persisted === null) return persisted;
+  const state = persisted as { tasks?: unknown };
+  if (!Array.isArray(state.tasks)) return persisted;
+
+  const shipped = new Set(SEED_TASK_NAMES.map(([name]) => name));
+  const lang = useSettings.getState().language;
+
+  return {
+    ...state,
+    tasks: state.tasks.map((row) => {
+      if (typeof row !== 'object' || row === null) return row;
+      const task = row as { name?: unknown };
+      if (typeof task.name !== 'string' || !shipped.has(task.name)) return row;
+      return { ...task, name: t(task.name, lang) };
+    }),
+  };
 }

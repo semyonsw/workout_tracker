@@ -46,7 +46,7 @@
 
 import { parseClockTime, parseDay } from './days';
 import { t, type Language } from './i18n';
-import { asksOn, describeSchedule, type Task, type Weekday } from './tasks';
+import { describeSchedule, type Task, type Weekday } from './tasks';
 
 /** When an alert fires. Two repeat forever; the third is one instant. */
 export type ReminderTrigger =
@@ -167,36 +167,6 @@ export function planReminders(input: ReminderInputs): PlannedReminder[] {
   }
 
   return plan;
-}
-
-/**
- * How many alerts a plan holds, and how many tasks are speaking.
- *
- * Read by the settings screen, so "3 reminders" is a fact taken from the same
- * function that produces them rather than a second count that can disagree.
- */
-export function countReminders(plan: readonly PlannedReminder[]): {
-  alerts: number;
-  subjects: number;
-} {
-  const subjects = new Set(plan.map((reminder) => reminder.id.split(':').slice(0, 2).join(':')));
-  return { alerts: plan.length, subjects: subjects.size };
-}
-
-/** The tasks that would speak, for a settings screen that wants to name them. */
-export function speakingTasks(tasks: readonly Task[]): Task[] {
-  return tasks.filter((task) => task.archivedAt === null && task.reminder !== null);
-}
-
-/**
- * Does this task ask on the day its reminder would land on?
- *
- * A sanity check rather than a scheduler input: `planReminders` derives the days
- * FROM the schedule, so the two cannot disagree — and this is the assertion that
- * keeps it that way if either ever grows a special case.
- */
-export function reminderMatchesSchedule(task: Task, day: string): boolean {
-  return asksOn(task, day);
 }
 
 /* ------------------------------------------------------------------ */

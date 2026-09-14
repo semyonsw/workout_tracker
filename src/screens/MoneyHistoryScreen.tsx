@@ -82,12 +82,12 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
 
   const today = dayKey(new Date());
   const series = useMemo(
-    () => moneyTrendSeries(amounts, direction, range, today),
-    [amounts, direction, range, today],
+    () => moneyTrendSeries(amounts, direction, range, today, lang),
+    [amounts, direction, lang, range, today],
   );
   const balanceLine = useMemo(
-    () => moneyBalanceSeries(amounts, range, today),
-    [amounts, range, today],
+    () => moneyBalanceSeries(amounts, range, today, lang),
+    [amounts, lang, range, today],
   );
   const trend = useMemo(() => summarizeMoneyTrend(series), [series]);
   const shares = useMemo(

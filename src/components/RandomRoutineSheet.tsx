@@ -40,7 +40,7 @@ import { Text, View } from 'react-native';
 
 import { Sheet } from './Sheet';
 import { Kicker, PrimaryButton, SelectChip, StepperRow, TextButton } from './primitives';
-import { useT } from '../hooks/useT';
+import { useLanguage, useT } from '../hooks/useT';
 import { clusterLabel, CLUSTERS } from '../lib/muscles';
 import { drawableCount, RANDOM_LIMITS, type RandomSpec } from '../lib/randomRoutine';
 import type { Exercise, MuscleCluster } from '../types/models';
@@ -60,6 +60,7 @@ export function RandomRoutineSheet({
   onDismiss,
 }: RandomRoutineSheetProps) {
   const t = useT();
+  const lang = useLanguage();
   const [clusters, setClusters] = useState<readonly MuscleCluster[]>(initial.clusters);
   const [exerciseCount, setExerciseCount] = useState(initial.exerciseCount);
   /**
@@ -88,7 +89,7 @@ export function RandomRoutineSheet({
         {CLUSTERS.map((cluster) => (
           <SelectChip
             key={cluster}
-            label={t(clusterLabel(cluster))}
+            label={clusterLabel(cluster, lang)}
             selected={clusters.includes(cluster)}
             onPress={() => toggle(cluster)}
           />

@@ -95,8 +95,8 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
   const [archiving, setArchiving] = useState(false);
 
   const month = useMemo(
-    () => taskMonth(task, log, cursor.year, cursor.month, today),
-    [task, log, cursor, today],
+    () => taskMonth(task, log, cursor.year, cursor.month, today, lang),
+    [task, log, cursor, today, lang],
   );
   const streak = streakOf(task, log, today);
   const note = entryOf(log, task.id, noteDay).note;

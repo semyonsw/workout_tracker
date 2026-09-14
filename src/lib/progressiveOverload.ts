@@ -119,9 +119,6 @@ export interface OverloadVerdict {
   bestRepsAtWeight: number;
   /** ISO date the current weight or count was first reached. */
   since: string | null;
-
-  /** One short line, already written for the UI. Never longer than ~40 chars. */
-  message: string;
 }
 
 /**
@@ -311,7 +308,6 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
       sessionsInRun: run,
       bestRepsAtWeight: bestReps,
       since: sinceDate,
-      message: 'Working back up — hold here',
     };
   }
 
@@ -329,7 +325,6 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
         sessionsInRun: 1,
         bestRepsAtWeight: bestReps,
         since: sinceDate,
-        message: 'Moved up last session',
       };
     }
   }
@@ -346,7 +341,6 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
       sessionsInRun: run,
       bestRepsAtWeight: bestReps,
       since: sinceDate,
-      message: `${run}× at this weight`,
     };
   }
 
@@ -363,7 +357,6 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
       sessionsInRun: run,
       bestRepsAtWeight: bestReps,
       since: sinceDate,
-      message: `${plateauDays}d here — chase ${bestReps + 1} reps`,
     };
   }
 
@@ -382,7 +375,6 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
     sessionsInRun: run,
     bestRepsAtWeight: bestReps,
     since: sinceDate,
-    message: `Same weight ${plateauDays}d — try heavier`,
   };
 }
 
@@ -464,7 +456,6 @@ function evaluateCountOverload(
       plateauDays,
       sessionsInRun: run,
       since,
-      message: 'Working back up — hold here',
     };
   }
 
@@ -476,7 +467,6 @@ function evaluateCountOverload(
       plateauDays,
       sessionsInRun: 1,
       since,
-      message: 'Moved up last session',
     };
   }
 
@@ -489,7 +479,6 @@ function evaluateCountOverload(
       plateauDays,
       sessionsInRun: run,
       since,
-      message: `${run}× at ${describeCount(currentCount, exercise.countUnit)}`,
     };
   }
 
@@ -513,10 +502,6 @@ function evaluateCountOverload(
      * anyone says it; "try 135 seconds" is the storage unit leaking into copy that
      * somebody has to read between sets.
      */
-    message: `${run}× at ${describeCount(currentCount, exercise.countUnit)} — try ${describeCount(
-      suggestedCount,
-      exercise.countUnit,
-    )}`,
   };
 }
 
@@ -528,9 +513,9 @@ function evaluateCountOverload(
  * nothing). Rounds read as a clock too, because `count` holds the LENGTH of a
  * round: the number of rounds is the number of SETS, which lives on the routine.
  *
- * Exported because `OverloadNudge` renders the same numbers this file writes
- * `message` from, and two functions deciding whether 135 is "135" or "2:15" is
- * two places for one answer. `formatCount` in `units.ts` is the SET ROW's
+ * Exported because `OverloadNudge` is what renders these numbers, and two
+ * functions deciding whether 135 is "135" or "2:15" is two places for one
+ * answer. `formatCount` in `units.ts` is the SET ROW's
  * formatter: it fills a fixed-width cell that already has a unit label beside it,
  * so it never carries one.
  */
@@ -556,7 +541,6 @@ function emptyVerdict(): OverloadVerdict {
     sessionsInRun: 0,
     bestRepsAtWeight: 0,
     since: null,
-    message: '',
   };
 }
 

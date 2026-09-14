@@ -36,7 +36,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { defaultTargetCount, defaultTargetSets } from '../lib/draft';
 import { autoLadderFor, isAutoLadder, ladderOf } from '../lib/repLadder';
 import { clearExerciseRest } from '../lib/rest';
-import { seedExercises, seedRoutines, seedUser } from '../data/seed';
+import { t, type Language } from '../lib/i18n';
+import { useSettings } from './settingsStore';
+import {
+  SEEDED_ENGLISH_NAMES,
+  SEEDED_ENGLISH_ROUTINE_NAMES,
+  seedExercises,
+  seedRoutines,
+  seedUser,
+} from '../data/seed';
 import type {
   Exercise,
   ID,
@@ -192,13 +200,23 @@ function nextUntitledName(routines: readonly Routine[]): string {
  * a list you cannot scan. The base is stripped of any existing `(copy …)` first, so
  * the counter applies to the ORIGINAL name however deep the chain goes.
  */
-export function copyName(name: string, routines: readonly Routine[]): string {
-  const base = name.replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, '').trim() || name.trim();
+export function copyName(
+  name: string,
+  routines: readonly Routine[],
+  lang: Language = 'en',
+): string {
+  /*
+   * BOTH words are stripped, whatever the app is set to now. A routine copied
+   * in English and copied again in Russian is still the same routine, and a
+   * pattern that only knows the current language turns "Back (copy)" into
+   * "Back (copy) (копия)" — which is the exact chain the counter exists to stop.
+   */
+  const base = name.replace(/\s*\((?:copy|копия)(?:\s+\d+)?\)\s*$/i, '').trim() || name.trim();
   const taken = new Set(routines.map((r) => r.name));
-  const first = `${base} (copy)`;
+  const first = t('{name} (copy)', lang, { name: base });
   if (!taken.has(first)) return first;
   for (let n = 2; n < 100; n += 1) {
-    const candidate = `${base} (copy ${n})`;
+    const candidate = t('{name} (copy {n})', lang, { name: base, n });
     if (!taken.has(candidate)) return candidate;
   }
   return first;
@@ -420,7 +438,7 @@ export const useLibrary = create<LibraryState>()(
         const copy: Routine = {
           ...source,
           id: `r_${stamp}`,
-          name: copyName(source.name, routines),
+          name: copyName(source.name, routines, useSettings.getState().language),
           items: source.items.map((item, order) => ({
             ...item,
             id: `ri_${stamp}_${order}`,
@@ -628,8 +646,9 @@ export const useLibrary = create<LibraryState>()(
        * thing that starts working. Both overrides are settable by hand from this
        * version on, and those survive, because migrations run once.
        */
-      version: 2,
-      migrate: stripInheritedRest,
+      version: 3,
+      migrate: (persisted, from) =>
+        renameSeededToRussian(from < 2 ? stripInheritedRest(persisted) : persisted),
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         exercises: state.exercises,
@@ -699,6 +718,55 @@ export function stripInheritedRest(persisted: unknown): unknown {
           }),
         };
       })
+    : state.routines;
+
+  return { ...state, exercises, routines };
+}
+
+/**
+ * v2 → v3: the shipped library is Russian now, so rename the rows on disk.
+ *
+ * A phone that installed an earlier build has "Weighted dips" persisted, and
+ * nothing else will ever touch it: `merge` replaces the seeds with the stored
+ * list wholesale, precisely so that deleting a shipped exercise stays deleted.
+ * Without this, translating `data/seed.ts` reaches only a fresh install.
+ *
+ * Renames ONLY where the stored name is still the exact English one the app gave
+ * it — a row the user has named themselves is theirs — and carries the old name
+ * into `aliases`, so every search anyone has in their fingers keeps working.
+ *
+ * Exported for the test that pins it: it runs once per device, which is exactly
+ * the kind of code that is wrong for a year before anybody notices.
+ */
+export function renameSeededToRussian(persisted: unknown): unknown {
+  if (typeof persisted !== 'object' || persisted === null) return persisted;
+  const state = persisted as { exercises?: unknown; routines?: unknown };
+
+  const rename = (
+    row: unknown,
+    was: Record<string, string>,
+    seeds: { id: string; name: string }[],
+  ) => {
+    if (typeof row !== 'object' || row === null) return row;
+    const record = row as { id?: unknown; name?: unknown; aliases?: unknown };
+    if (typeof record.id !== 'string' || typeof record.name !== 'string') return row;
+    const english = was[record.id];
+    if (!english || record.name !== english) return row;
+    const seeded = seeds.find((s) => s.id === record.id);
+    if (!seeded) return row;
+    const aliases = Array.isArray(record.aliases) ? (record.aliases as unknown[]) : [];
+    return {
+      ...record,
+      name: seeded.name,
+      aliases: aliases.includes(english) ? aliases : [english, ...aliases],
+    };
+  };
+
+  const exercises = Array.isArray(state.exercises)
+    ? state.exercises.map((row) => rename(row, SEEDED_ENGLISH_NAMES, seedExercises))
+    : state.exercises;
+  const routines = Array.isArray(state.routines)
+    ? state.routines.map((row) => rename(row, SEEDED_ENGLISH_ROUTINE_NAMES, seedRoutines))
     : state.routines;
 
   return { ...state, exercises, routines };

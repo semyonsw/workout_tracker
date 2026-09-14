@@ -39,6 +39,7 @@ import type {
 import { draftToSetHistory, sessionPerformedAt, sessionVolume, type DraftSession } from './draft';
 import { effectiveLoadKg } from './units';
 import { summarizeSessionSets } from './history';
+import type { Language } from './i18n';
 
 /** One exercise inside a finished workout. */
 export interface CompletedExercise {
@@ -129,6 +130,8 @@ export function buildCompletedWorkout(
   bodyweightKg: number | null = null,
   /** How it felt, from the Finish sheet. Absent = the user skipped the question. */
   effort?: SessionEffort,
+  /** The language the cached shorthand is written in — see `summarizeSessionSets`. */
+  lang: Language = 'en',
 ): CompletedWorkout | null {
   const sets = draftToSetHistory(session);
   if (sets.length === 0) return null;
@@ -156,7 +159,7 @@ export function buildCompletedWorkout(
     // An exercise where only the warm-ups were ticked gets no line: there is
     // nothing to summarize, and "0 sets" under a name is not a record of anything.
     if (rows.length === 0) continue;
-    const { lead, drops, topWeightKg } = summarizeSessionSets(rows, entry.exercise);
+    const { lead, drops, topWeightKg } = summarizeSessionSets(rows, entry.exercise, lang);
 
     exercises.push({
       exerciseId: entry.exercise.id,
@@ -214,6 +217,7 @@ export function buildCompletedWorkout(
 export function recomputeWorkout(
   workout: CompletedWorkout,
   bodyweightKg: number | null = null,
+  lang: Language = 'en',
 ): CompletedWorkout {
   const working = workout.sets.filter((row) => !row.isWarmup);
 
@@ -230,7 +234,7 @@ export function recomputeWorkout(
      * record copies out of the library. Not a coincidence — they were copied in so
      * the shorthand could be regenerated after a rename or a delete.
      */
-    const { lead, drops, topWeightKg } = summarizeSessionSets(rows, snapshot);
+    const { lead, drops, topWeightKg } = summarizeSessionSets(rows, snapshot, lang);
 
     exercises.push({
       ...snapshot,

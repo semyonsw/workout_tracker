@@ -28,10 +28,7 @@ import { DEFAULT_OVERLOAD_POLICY } from '../lib/progressiveOverload';
 
 export const seedUser: User = {
   id: 'u1',
-  displayName: 'Semyon',
-  unitSystem: 'metric',
   overloadPolicy: DEFAULT_OVERLOAD_POLICY,
-  createdAt: '2026-01-01T00:00:00.000Z',
 };
 
 /* ------------------------------------------------------------------ */
@@ -44,7 +41,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_pullup_90',
-    name: 'Weighted 90° pull-ups',
+    name: 'Подтягивания 90° с весом',
+    aliases: ['Weighted 90° pull-ups'],
     muscleGroups: ['back', 'biceps'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -56,7 +54,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_pulldown_wide',
-    name: 'Wide pull-ups machine',
+    name: 'Тяга верхнего блока широким хватом',
+    aliases: ['Wide pull-ups machine'],
     muscleGroups: ['back'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -68,8 +67,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_row_stomach',
-    name: 'Pull to stomach',
-    aliases: ['pull to փոր', 'seated row'],
+    name: 'Тяга к животу',
+    aliases: ['Pull to stomach', 'pull to փոր', 'seated row'],
     muscleGroups: ['back'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -80,8 +79,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_brachialis',
-    name: 'Brachialis curls',
-    aliases: ['brachialis curls, close to body'],
+    name: 'Сгибания на брахиалис',
+    aliases: ['Brachialis curls', 'brachialis curls, close to body'],
     muscleGroups: ['biceps', 'forearms'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -93,7 +92,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_situp_weighted',
-    name: 'Weighted sit-ups',
+    name: 'Скручивания с весом',
+    aliases: ['Weighted sit-ups'],
     muscleGroups: ['core'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -104,7 +104,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_dips_weighted',
-    name: 'Weighted dips',
+    name: 'Отжимания на брусьях с весом',
+    aliases: ['Weighted dips'],
     muscleGroups: ['chest', 'triceps'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -116,7 +117,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_pullup_bodyweight',
-    name: 'Pull-ups, bodyweight',
+    name: 'Подтягивания, свой вес',
+    aliases: ['Pull-ups, bodyweight'],
     muscleGroups: ['back', 'biceps'],
     requiresWeight: false, // → no weight input renders at all
     countUnit: 'reps',
@@ -126,8 +128,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_pushups',
-    name: 'Push-ups',
-    aliases: ['wide knuckle push-ups'],
+    name: 'Отжимания',
+    aliases: ['Push-ups', 'wide knuckle push-ups'],
     muscleGroups: ['chest', 'triceps'],
     requiresWeight: false,
     countUnit: 'reps',
@@ -137,7 +139,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_boxing_bag',
-    name: 'Boxing bag',
+    name: 'Боксёрский мешок',
+    aliases: ['Boxing bag'],
     muscleGroups: ['cardio'],
     requiresWeight: false,
     // One row per round; `count` holds the round LENGTH in seconds.
@@ -165,7 +168,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_swim',
-    name: 'Swimming',
+    name: 'Плавание',
+    aliases: ['Swimming'],
     muscleGroups: ['cardio'],
     requiresWeight: false,
     countUnit: 'seconds',
@@ -179,8 +183,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_plank',
-    name: 'Plank',
-    aliases: ['abs plank', 'front hold'],
+    name: 'Планка',
+    aliases: ['Plank', 'abs plank', 'front hold'],
     muscleGroups: ['core'],
     requiresWeight: false,
     countUnit: 'seconds',
@@ -193,8 +197,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_dead_hang',
-    name: 'Dead hang',
-    aliases: ['hanging', 'bar hang', 'grip hang'],
+    name: 'Вис на перекладине',
+    aliases: ['Dead hang', 'hanging', 'bar hang', 'grip hang'],
     // Grip work first: a dead hang files under pull, where it is trained.
     muscleGroups: ['forearms', 'back'],
     requiresWeight: false,
@@ -209,7 +213,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_hollow_hold',
-    name: 'Hollow hold',
+    name: 'Лодочка',
+    aliases: ['Hollow hold'],
     muscleGroups: ['core'],
     requiresWeight: false,
     countUnit: 'seconds',
@@ -221,7 +226,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_hanging_leg_raise',
-    name: 'Hanging leg raises',
+    name: 'Подъёмы ног в висе',
+    aliases: ['Hanging leg raises'],
     muscleGroups: ['core'],
     requiresWeight: false,
     // Counted in reps, so no clock — `resolveTimerMode` would refuse one anyway.
@@ -243,8 +249,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_handstand',
-    name: 'Handstand hold',
-    aliases: ['handstand', 'wall handstand'],
+    name: 'Стойка на руках',
+    aliases: ['Handstand hold', 'handstand', 'wall handstand'],
     muscleGroups: ['calisthenics', 'shoulders', 'core'],
     requiresWeight: false,
     countUnit: 'seconds',
@@ -258,8 +264,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_front_lever',
-    name: 'Front lever hold',
-    aliases: ['front lever', 'lever'],
+    name: 'Передний вис',
+    aliases: ['Front lever hold', 'front lever', 'lever'],
     muscleGroups: ['calisthenics', 'back', 'core'],
     requiresWeight: false,
     countUnit: 'seconds',
@@ -273,8 +279,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_planche',
-    name: 'Planche hold',
-    aliases: ['planche', 'plunge'],
+    name: 'Планш',
+    aliases: ['Planche hold', 'planche', 'plunge'],
     muscleGroups: ['calisthenics', 'shoulders', 'chest'],
     requiresWeight: false,
     countUnit: 'seconds',
@@ -288,7 +294,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_l_sit',
-    name: 'L-sit',
+    name: 'Уголок',
+    aliases: ['L-sit'],
     muscleGroups: ['calisthenics', 'core'],
     requiresWeight: false,
     countUnit: 'seconds',
@@ -302,7 +309,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_muscle_up',
-    name: 'Muscle-up',
+    name: 'Выход силой',
+    aliases: ['Muscle-up'],
     muscleGroups: ['calisthenics', 'back', 'triceps'],
     requiresWeight: false,
     // The one rep-counted skill: a muscle-up is a repetition, not a hold.
@@ -317,7 +325,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_deadlift',
-    name: 'Deadlift',
+    name: 'Становая тяга',
+    aliases: ['Deadlift'],
     muscleGroups: ['back', 'hamstrings', 'glutes'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -330,8 +339,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_row_barbell',
-    name: 'Barbell row',
-    aliases: ['bent-over row'],
+    name: 'Тяга штанги в наклоне',
+    aliases: ['Barbell row', 'bent-over row'],
     muscleGroups: ['back', 'biceps'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -344,7 +353,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_face_pull',
-    name: 'Face pulls',
+    name: 'Тяга к лицу',
+    aliases: ['Face pulls'],
     // Traps lead, so this files under pull. The same two muscles listed the other
     // way round would be a lateral raise on push day — see `lib/muscles.ts`.
     muscleGroups: ['traps', 'shoulders'],
@@ -358,7 +368,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_shrug',
-    name: 'Shrugs',
+    name: 'Шраги',
+    aliases: ['Shrugs'],
     muscleGroups: ['traps'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -370,7 +381,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_hammer_curl',
-    name: 'Hammer curls',
+    name: 'Сгибания «молот»',
+    aliases: ['Hammer curls'],
     muscleGroups: ['biceps', 'forearms'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -382,7 +394,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_ohp',
-    name: 'Overhead press',
+    name: 'Жим стоя',
+    aliases: ['Overhead press'],
     muscleGroups: ['shoulders', 'triceps'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -395,7 +408,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_squat',
-    name: 'Back squat',
+    name: 'Приседания со штангой',
+    aliases: ['Back squat'],
     muscleGroups: ['quads', 'glutes'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -408,7 +422,8 @@ export const seedExercises: Exercise[] = [
   {
     ...base,
     id: 'ex_calf_raise',
-    name: 'Calf raises',
+    name: 'Подъёмы на носки',
+    aliases: ['Calf raises'],
     muscleGroups: ['calves'],
     requiresWeight: true,
     countUnit: 'reps',
@@ -429,7 +444,7 @@ export const seedExercisesById: Record<string, Exercise> = Object.fromEntries(
 export const seedRoutine: Routine = {
   id: 'r_pull',
   ownerId: 'u1',
-  name: 'Pull + swimming',
+  name: 'Тяга + плавание',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-08-08T00:00:00.000Z',
   items: [
@@ -468,7 +483,7 @@ export const seedRoutine: Routine = {
 export const seedRoutinePush: Routine = {
   id: 'r_push',
   ownerId: 'u1',
-  name: 'Push',
+  name: 'Жим',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-08-04T00:00:00.000Z',
   items: [
@@ -494,7 +509,7 @@ export const seedRoutinePush: Routine = {
 export const seedRoutineBoxing: Routine = {
   id: 'r_boxing',
   ownerId: 'u1',
-  name: 'Boxing (cardio)',
+  name: 'Бокс (кардио)',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-08-06T00:00:00.000Z',
   items: [
@@ -522,7 +537,7 @@ export const seedRoutineBoxing: Routine = {
 export const seedRoutineCalisthenics: Routine = {
   id: 'r_calisthenics',
   ownerId: 'u1',
-  name: 'Calisthenics skills',
+  name: 'Навыки калистеники',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-08-06T00:00:00.000Z',
   items: [
@@ -541,3 +556,55 @@ export const seedRoutines: Routine[] = [
   seedRoutineCalisthenics,
 ];
 
+/* ------------------------------------------------------------------ */
+/* The names this library used to ship under                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Seeded id → the ENGLISH name that id shipped with before 1.9.0.
+ *
+ * The library is Russian now because the app is, but a phone that installed an
+ * earlier build has the English rows on disk and a migration is the only thing
+ * that can reach them — the seeds are replaced wholesale on every launch after
+ * the first, so nothing else ever looks at a persisted name again.
+ *
+ * Matched EXACTLY, so a row the user has renamed themselves is left alone: the
+ * rename is only ever "this is still the name we gave it".
+ */
+export const SEEDED_ENGLISH_NAMES: Record<string, string> = {
+  ex_pullup_90: 'Weighted 90° pull-ups',
+  ex_pulldown_wide: 'Wide pull-ups machine',
+  ex_row_stomach: 'Pull to stomach',
+  ex_brachialis: 'Brachialis curls',
+  ex_situp_weighted: 'Weighted sit-ups',
+  ex_dips_weighted: 'Weighted dips',
+  ex_pullup_bodyweight: 'Pull-ups, bodyweight',
+  ex_pushups: 'Push-ups',
+  ex_boxing_bag: 'Boxing bag',
+  ex_swim: 'Swimming',
+  ex_plank: 'Plank',
+  ex_dead_hang: 'Dead hang',
+  ex_hollow_hold: 'Hollow hold',
+  ex_hanging_leg_raise: 'Hanging leg raises',
+  ex_handstand: 'Handstand hold',
+  ex_front_lever: 'Front lever hold',
+  ex_planche: 'Planche hold',
+  ex_l_sit: 'L-sit',
+  ex_muscle_up: 'Muscle-up',
+  ex_deadlift: 'Deadlift',
+  ex_row_barbell: 'Barbell row',
+  ex_face_pull: 'Face pulls',
+  ex_shrug: 'Shrugs',
+  ex_hammer_curl: 'Hammer curls',
+  ex_ohp: 'Overhead press',
+  ex_squat: 'Back squat',
+  ex_calf_raise: 'Calf raises',
+};
+
+/** The same, for the four shipped routines. */
+export const SEEDED_ENGLISH_ROUTINE_NAMES: Record<string, string> = {
+  r_pull: 'Pull + swimming',
+  r_push: 'Push',
+  r_boxing: 'Boxing (cardio)',
+  r_calisthenics: 'Calisthenics skills',
+};

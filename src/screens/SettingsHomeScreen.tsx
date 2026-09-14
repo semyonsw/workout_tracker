@@ -156,7 +156,7 @@ export function SettingsHomeScreen({
     setBusy(true);
     setStatus(null);
     try {
-      const outcome = await saveJsonFile(backupBaseName(), exportBackupText());
+      const outcome = await saveJsonFile(backupBaseName(), exportBackupText(), language);
       if (!outcome.saved) {
         setStatus({ tone: 'quiet', text: t('No folder picked, so nothing was saved.') });
         return;
@@ -181,7 +181,7 @@ export function SettingsHomeScreen({
         })}${adopted ? ` ${t('Automatic backups will go to that folder from now on.')}` : ''}`,
       });
     } catch (error) {
-      setStatus({ tone: 'quiet', text: describeError(error) });
+      setStatus({ tone: 'quiet', text: describeError(error, language) });
     } finally {
       setBusy(false);
     }
@@ -205,14 +205,14 @@ export function SettingsHomeScreen({
         setStatus({ tone: 'quiet', text: t('No file picked.') });
         return;
       }
-      const result = parseBackup(await readTextFile(file.uri));
+      const result = parseBackup(await readTextFile(file.uri), language);
       if (!result.ok) {
         setStatus({ tone: 'quiet', text: `${file.name}: ${result.error}` });
         return;
       }
       setPending({ file: file.name, envelope: result.envelope, counts: result.counts });
     } catch (error) {
-      setStatus({ tone: 'quiet', text: describeError(error) });
+      setStatus({ tone: 'quiet', text: describeError(error, language) });
     } finally {
       setBusy(false);
     }
@@ -272,12 +272,12 @@ export function SettingsHomeScreen({
         tone: 'ok',
         text: t('Backed up {name} to {folder} — {counts}.', {
           name: result.name ?? '',
-          folder: folderLabel(folder),
+          folder: folderLabel(folder, language),
           counts: describeCounts(onThisPhone(), language),
         }),
       });
     } catch (error) {
-      setStatus({ tone: 'quiet', text: describeError(error) });
+      setStatus({ tone: 'quiet', text: describeError(error, language) });
     } finally {
       setBusy(false);
     }
@@ -322,9 +322,9 @@ export function SettingsHomeScreen({
             <NavRow label={t('Expenses settings')} onPress={onOpenMoneySettings} />
           </ListCard>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
-            Each one holds only what its own section reads. Rest, plates and weekly targets are
-            training; the automatic tick is the daily tasks; what amounts are counted in is the
-            expenses.
+            {t(
+              'Each one holds only what its own section reads. Rest, plates and weekly targets are training; the automatic tick is the daily tasks; what amounts are counted in is the expenses.',
+            )}
           </Text>
 
           {/* ----------------------------------------------------------
@@ -346,7 +346,7 @@ export function SettingsHomeScreen({
           <View className="mx-lg overflow-hidden rounded-surface border border-hairline bg-surface">
             <SettingRow
               label={t('Last backup')}
-              value={describeBackupAge(settings.lastBackupAt)}
+              value={describeBackupAge(settings.lastBackupAt, undefined, language)}
               valueTone={settings.lastBackupAt == null ? 'muted' : 'faint'}
             />
             <Separator inset={0} />
@@ -357,7 +357,7 @@ export function SettingsHomeScreen({
                   ? 'Off'
                   : settings.autoBackupFolderUri == null
                     ? t('Needs a folder')
-                    : `${t('Every {days} days', { days: settings.autoBackupIntervalDays })} · ${folderLabel(settings.autoBackupFolderUri)}`
+                    : `${t('Every {days} days', { days: settings.autoBackupIntervalDays })} · ${folderLabel(settings.autoBackupFolderUri, language)}`
               }
               valueTone={
                 settings.autoBackupEnabled && settings.autoBackupFolderUri == null
@@ -433,19 +433,20 @@ export function SettingsHomeScreen({
           ) : null}
 
           <Text className="mx-lg mt-md text-label text-ink-faint">
-            A backup is plain JSON, so you can read it, keep it anywhere, and move it to another
-            phone. It holds all three sections — training, the daily tasks and the expenses — and
-            every setting. <Text className="text-ink-muted">Replace everything</Text> makes this
-            phone look like the file, so export first if there is anything here you would miss. A
-            backup written by an older version carries no tasks and no amounts, and restoring one
-            leaves both of those exactly where they are rather than emptying them. A workout in
-            progress is not part of a backup: it carries a running clock.
+            {t(
+              'A backup is plain JSON, so you can read it, keep it anywhere, and move it to another phone. It holds all three sections — training, the daily tasks and the expenses — and every setting.',
+            )}{' '}
+            <Text className="text-ink-muted">{t('Replace everything')}</Text>{' '}
+            {t(
+              'makes this phone look like the file, so export first if there is anything here you would miss. A backup written by an older version carries no tasks and no amounts, and restoring one leaves both of those exactly where they are rather than emptying them. A workout in progress is not part of a backup: it carries a running clock.',
+            )}
           </Text>
 
           <Text className="mx-lg mt-md text-label text-ink-faint">
-            <Text className="text-ink-muted">Reset every setting</Text> puts all three
-            sections&apos; settings back to their defaults at once. It does not touch a single thing
-            you have logged — not an exercise, not a routine, not an answered day, not an amount.
+            <Text className="text-ink-muted">{t('Reset every setting')}</Text>{' '}
+            {t(
+              'puts all three sections’ settings back to their defaults at once. It does not touch a single thing you have logged — not an exercise, not a routine, not an answered day, not an amount.',
+            )}
           </Text>
         </ScrollView>
       </View>

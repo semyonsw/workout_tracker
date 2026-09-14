@@ -54,9 +54,10 @@
  * what gets a value here: longer after a compound family, shorter after core.
  */
 
+import { t, type Language } from './i18n';
 import { defaultTargetCount, defaultTargetSets } from './draft';
 import { clusterLabel, clusterOf, CLUSTERS } from './muscles';
-import type { Exercise, ID, MuscleCluster, RoutineItem } from '../types/models';
+import type { Exercise, MuscleCluster, RoutineItem } from '../types/models';
 
 /** What the user asked the dice for. */
 export interface RandomSpec {
@@ -129,6 +130,7 @@ export function rollRoutine(
   exercises: readonly Exercise[],
   spec: RandomSpec = DEFAULT_RANDOM_SPEC,
   rand: () => number = Math.random,
+  lang: Language = 'en',
 ): RolledRoutine | null {
   const wanted = spec.clusters.length > 0 ? new Set(spec.clusters) : new Set(CLUSTERS);
 
@@ -184,7 +186,7 @@ export function rollRoutine(
     } satisfies Omit<RoutineItem, 'id'>;
   });
 
-  return { name: rolledName(picked), items, exercises: picked };
+  return { name: rolledName(picked, lang), items, exercises: picked };
 }
 
 /**
@@ -194,12 +196,12 @@ export function rollRoutine(
  * gives for its own cap: past three the line has stopped saying what day it is
  * and started listing the routine back to you.
  */
-export function rolledName(picked: readonly Exercise[]): string {
+export function rolledName(picked: readonly Exercise[], lang: Language = 'en'): string {
   const present = CLUSTERS.filter((cluster) =>
     picked.some((exercise) => clusterOf(exercise) === cluster),
   );
-  if (present.length === 0) return 'Random';
-  const named = present.slice(0, 3).map((cluster) => clusterLabel(cluster));
+  if (present.length === 0) return t('Random', lang);
+  const named = present.slice(0, 3).map((cluster) => clusterLabel(cluster, lang));
   const extra = present.length - named.length;
   return named.join(' + ') + (extra > 0 ? ` +${extra}` : '');
 }
@@ -245,9 +247,4 @@ export function drawableCount(
 function clamp(value: number, limits: { min: number; max: number }): number {
   if (!Number.isFinite(value)) return limits.min;
   return Math.min(limits.max, Math.max(limits.min, Math.round(value)));
-}
-
-/** Item ids, once the store has a stamp to hang them off. */
-export function withItemIds(items: Omit<RoutineItem, 'id'>[], stamp: string): RoutineItem[] {
-  return items.map((item, order) => ({ ...item, id: `ri_${stamp}_${order}` as ID, order }));
 }

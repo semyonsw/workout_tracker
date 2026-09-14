@@ -24,16 +24,34 @@
  */
 
 import type { Exercise } from '../types/models';
-import { MUSCLE_CLUSTER } from './muscles';
+import { LANGUAGES } from './i18n';
+import { MUSCLE_CLUSTER, clusterLabel, muscleLabel } from './muscles';
 
 function matchesName(exercise: Exercise, needle: string): boolean {
   if (exercise.name.toLowerCase().includes(needle)) return true;
   return (exercise.aliases ?? []).some((alias) => alias.toLowerCase().includes(needle));
 }
 
+/*
+ * Matched in BOTH languages, always — not in the one the app is set to.
+ *
+ * The stored muscle is the English IDENTIFIER (`back`), so a Russian screen
+ * offering «Поиск: упражнения, мышцы, дни» found nothing at all for «спина»
+ * until the label was matched too. Both languages rather than the current one
+ * because the alias list already works that way: what somebody types is what
+ * they have in their fingers, and switching the app's language is not a reason
+ * to stop finding a row by the word they have always used for it.
+ */
 function matchesMuscle(exercise: Exercise, needle: string): boolean {
   return exercise.muscleGroups.some(
-    (muscle) => muscle.includes(needle) || MUSCLE_CLUSTER[muscle].includes(needle),
+    (muscle) =>
+      muscle.includes(needle) ||
+      MUSCLE_CLUSTER[muscle].includes(needle) ||
+      LANGUAGES.some(
+        (lang) =>
+          muscleLabel(muscle, lang).toLowerCase().includes(needle) ||
+          clusterLabel(MUSCLE_CLUSTER[muscle], lang).toLowerCase().includes(needle),
+      ),
   );
 }
 

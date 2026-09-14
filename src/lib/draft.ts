@@ -231,9 +231,10 @@ export function summarizeLastSession(
   sets: SetHistory[],
   exercise: Exercise,
   variant: 'full' | 'short' = 'full',
+  lang: Language = 'en',
 ): string | null {
   if (sets.length === 0) return null;
-  const { lead, drops } = summarizeSessionSets(sets, exercise);
+  const { lead, drops } = summarizeSessionSets(sets, exercise, lang);
   return variant === 'short' || !drops ? lead : `${lead}${drops}`;
 }
 
@@ -273,7 +274,7 @@ export function formatTarget(
 
   if (unit === 'seconds' || unit === 'rounds') {
     const perSet = targetRepsMax ?? targetRepsMin ?? 0;
-    return `${targetSets} × ${formatDuration(perSet)}`;
+    return `${targetSets} × ${formatDuration(perSet, lang)}`;
   }
 
   const range =
@@ -368,6 +369,8 @@ export interface BuildDraftParams {
   bodyweightAtDate?: BodyweightLookup;
   /** Passed through to every entry's deload check. See `BuildEntryParams`. */
   availablePlatesKg?: readonly number[];
+  /** Passed through to every entry's prose. See `BuildEntryParams`. */
+  lang?: Language;
   /**
    * When the workout began. Null — the default — is a session that is only being
    * looked at; see `DraftSession.startedAt`.
@@ -420,6 +423,8 @@ export interface BuildEntryParams {
    */
   plannedSetCount?: number;
   now?: Date;
+  /** The language the prefilled prose on the card is written in. */
+  lang?: Language;
 }
 
 export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
@@ -434,6 +439,7 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
     targetRepsMin,
     targetRepsMax,
     now = new Date(),
+    lang = 'en',
   } = params;
 
   const previous = lastSessionSets(history, exercise.id);
@@ -512,8 +518,8 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
     sets,
     overload,
     overloadAccepted: false,
-    lastSessionSummary: summarizeLastSession(previous, exercise),
-    lastSessionShort: summarizeLastSession(previous, exercise, 'short'),
+    lastSessionSummary: summarizeLastSession(previous, exercise, 'full', lang),
+    lastSessionShort: summarizeLastSession(previous, exercise, 'short', lang),
     bests: exerciseBests(history, exercise, params.bodyweightAtDate),
     deload: evaluateDeload({
       exercise,
@@ -536,6 +542,7 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
     availablePlatesKg,
     startedAt = null,
     now = new Date(),
+    lang = 'en',
   } = params;
 
   const entries = [...routine.items]
@@ -580,6 +587,7 @@ export function buildDraftSession(params: BuildDraftParams): DraftSession {
         targetRepsMin: item.targetRepsMin,
         targetRepsMax: item.targetRepsMax,
         now,
+        lang,
       });
     })
     .filter((e): e is DraftEntry => e !== null);

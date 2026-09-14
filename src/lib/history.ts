@@ -44,7 +44,11 @@ interface WeightGroup {
  * Warm-ups and incomplete sets are dropped here, exactly as the overload engine
  * drops them, so the list and the nudge are reading the same history.
  */
-export function sessionRows(history: SetHistory[], exercise: Exercise): SessionRow[] {
+export function sessionRows(
+  history: SetHistory[],
+  exercise: Exercise,
+  lang: Language = 'en',
+): SessionRow[] {
   const bySession = new Map<ID, SetHistory[]>();
 
   for (const set of history) {
@@ -59,7 +63,7 @@ export function sessionRows(history: SetHistory[], exercise: Exercise): SessionR
 
   for (const [sessionId, sets] of bySession) {
     const ordered = [...sets].sort((a, b) => a.setIndex - b.setIndex);
-    const { lead, drops, topWeightKg } = summarizeSessionSets(ordered, exercise);
+    const { lead, drops, topWeightKg } = summarizeSessionSets(ordered, exercise, lang);
     rows.push({ sessionId, performedAt: ordered[0].performedAt, topWeightKg, lead, drops });
   }
 
@@ -93,6 +97,14 @@ export function summarizeSessionSets(
    * force `recomputeWorkout` to fabricate a library row it does not have.
    */
   exercise: ShorthandSubject,
+  /*
+   * The shorthand is a SENTENCE, so it has a language. It is also CACHED on the
+   * finished-workout record, which is what makes this a parameter rather than a
+   * module-level read: the record is built once, in the language in force at the
+   * time, and a later toggle repaints the screens that rebuild it rather than the
+   * rows already on disk.
+   */
+  lang: Language = 'en',
 ): { lead: string; drops: string | null; topWeightKg: number | null } {
   const sets = rawSets.filter((s) => !s.isWarmup);
   if (sets.length === 0) return { lead: '', drops: null, topWeightKg: null };
@@ -110,10 +122,10 @@ export function summarizeSessionSets(
 
   return {
     topWeightKg,
-    lead: formatGroup(lead, exercise, sets.length),
+    lead: formatGroup(lead, exercise, sets.length, lang),
     drops:
       dropGroups.length > 0
-        ? ` · ${dropGroups.map((g) => formatGroup(g, exercise, sets.length)).join(' · ')}`
+        ? ` · ${dropGroups.map((g) => formatGroup(g, exercise, sets.length, lang)).join(' · ')}`
         : null,
   };
 }
@@ -185,19 +197,24 @@ function groupByWeight(ordered: SetHistory[]): WeightGroup[] {
  * ("12 rounds · 3 min") because twelve identical clock values in a row is not a
  * record of anything.
  */
-function formatGroup(group: WeightGroup, exercise: ShorthandSubject, totalSets: number): string {
+function formatGroup(
+  group: WeightGroup,
+  exercise: ShorthandSubject,
+  totalSets: number,
+  lang: Language,
+): string {
   if (exercise.countUnit === 'rounds') {
-    return `${totalSets} rounds · ${formatDuration(group.counts[0])}`;
+    return `${totalSets} ${term('unit', 'rounds', lang)} · ${formatDuration(group.counts[0], lang)}`;
   }
   if (exercise.countUnit === 'seconds') {
-    return group.counts.map((c) => formatDuration(c)).join(' · ');
+    return group.counts.map((c) => formatDuration(c, lang)).join(' · ');
   }
   if (exercise.countUnit === 'meters') {
-    return `${group.counts.reduce((sum, c) => sum + c, 0)} m`;
+    return `${group.counts.reduce((sum, c) => sum + c, 0)} ${term('unit', 'm', lang)}`;
   }
 
   const counts = group.counts.join(' ');
   if (group.weightKg == null) return counts;
   const prefix = exercise.loadMode === 'added_bodyweight' ? '+' : '';
-  return `${prefix}${group.weightKg} kg · ${counts}`;
+  return `${prefix}${group.weightKg} ${term('unit', 'kg', lang)} · ${counts}`;
 }

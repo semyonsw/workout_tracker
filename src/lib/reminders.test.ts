@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  countReminders,
-  instantOn,
-  planReminders,
-  speakingTasks,
-  type ReminderInputs,
-} from './reminders';
+import { instantOn, planReminders, type ReminderInputs } from './reminders';
 import type { Task } from './tasks';
 
 /**
@@ -171,23 +165,14 @@ describe('what the language changes', () => {
 });
 
 describe('counting', () => {
-  it('counts alerts and the subjects behind them separately', () => {
+  it('arms one alert per asking day, plus the workout', () => {
     const alerts = plan([task({ schedule: { kind: 'weekdays', days: [0, 2, 4] } })], {
       enabled: true,
       days: [1],
       time: '18:00',
     });
-    // Three for the one task, one for the workout: four alerts, two subjects.
-    expect(countReminders(alerts)).toEqual({ alerts: 4, subjects: 2 });
-  });
-
-  it('names the tasks that would speak', () => {
-    const speaking = speakingTasks([
-      task({ id: 'a' }),
-      task({ id: 'b', reminder: null }),
-      task({ id: 'c', archivedAt: '2026-01-01T00:00:00.000Z' }),
-    ]);
-    expect(speaking.map((t) => t.id)).toEqual(['a']);
+    // Three for the one task, one for the workout.
+    expect(alerts).toHaveLength(4);
   });
 });
 

@@ -322,8 +322,9 @@ export function CreateExerciseScreen({
           />
         </View>
         <Text className="mx-lg mt-sm text-label text-ink-faint">
-          One line, shown on the card while you are doing this exercise. A seat height, a pin
-          number, the thing you keep forgetting.
+          {t(
+            'One line, shown on the card while you are doing this exercise. A seat height, a pin number, the thing you keep forgetting.',
+          )}
         </Text>
 
         {/* Muscles, through the hierarchy: cluster first, then what's inside it.
@@ -341,7 +342,7 @@ export function CreateExerciseScreen({
           {CLUSTERS.map((option) => (
             <SelectChip
               key={option}
-              label={clusterLabel(option)}
+              label={clusterLabel(option, lang)}
               selected={pickerCluster === option}
               onPress={() => setPickerCluster(option)}
             />
@@ -619,7 +620,7 @@ export function CreateExerciseScreen({
               <Separator />
               <SettingRow
                 label={t('Overload nudges')}
-                value="Off · the ladder owns the reps"
+                value={t('Off · the ladder owns the reps')}
                 valueTone="faint"
               />
             </>
@@ -628,7 +629,7 @@ export function CreateExerciseScreen({
               <Separator />
               <SettingRow
                 label={t('Overload nudges')}
-                value="Off · no load to add"
+                value={t('Off · no load to add')}
                 valueTone="faint"
               />
             </>
@@ -637,7 +638,7 @@ export function CreateExerciseScreen({
 
         {draft.requiresWeight ? null : (
           <Text className="mx-lg mt-xl text-label text-ink-faint">
-            Reps, time and metres swap the same two wells:{' '}
+            {t('Reps, time and metres swap the same two wells:')}{' '}
             <Text className="text-label text-ink-muted">
               {t('reps only · duration · distance + duration')}
             </Text>
@@ -888,7 +889,7 @@ function LadderSection({
             </View>
 
             <View className="mt-md">
-              <Kicker>Current maximum</Kicker>
+              <Kicker>{t('Current maximum')}</Kicker>
             </View>
           </View>
 

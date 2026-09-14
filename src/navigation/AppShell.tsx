@@ -106,6 +106,7 @@ import { recentSummaries, useWorkoutHistory } from '../state/workoutHistoryStore
 import { useMoney } from '../state/moneyStore';
 import { useTasks } from '../state/tasksStore';
 import { dayKey } from '../lib/days';
+import { useLanguage, usePlural, useT } from '../hooks/useT';
 import type { Direction, Interval } from '../lib/money';
 import { stepSection } from '../lib/sectionNav';
 import { seedUser } from '../data/seed';
@@ -169,6 +170,8 @@ type Route =
   | { name: 'moneyAmount'; amountId: ID | null; categoryId: ID | null; direction?: Direction };
 
 export function AppShell() {
+  const t = useT();
+  const lang = useLanguage();
   const [tab, setTab] = useState<TabName>('Workout');
   /**
    * A workout somebody tapped somewhere else, waiting for the training history to open
@@ -507,12 +510,12 @@ export function AppShell() {
         return {
           routineId: routine.id,
           name: routine.name,
-          focus: describeItemsFocus(items, exercisesById),
+          focus: describeItemsFocus(items, exercisesById, lang),
           exerciseCount: items.length,
           setCount: items.reduce((total, item) => total + item.targetSets, 0),
         };
       }),
-    [exercisesById, routines],
+    [exercisesById, routines, lang],
   );
 
   /**
@@ -530,7 +533,7 @@ export function AppShell() {
 
     const steps = sequence.routineIds.map((routineId, index) => ({
       key: `${routineId}-${index}`,
-      name: routinesById[routineId]?.name ?? 'Deleted routine',
+      name: routinesById[routineId]?.name ?? t('Deleted routine'),
       isCurrent: index === sequence.cursor,
     }));
 
@@ -551,7 +554,7 @@ export function AppShell() {
             }
           : null,
     };
-  }, [choices, exercisesById, routinesById, sequence, verdicts]);
+  }, [choices, exercisesById, routinesById, sequence, t, verdicts]);
 
   /**
    * Open a routine as a workout. It does NOT start it: the session is built with
@@ -611,9 +614,10 @@ export function AppShell() {
         bodyweightAtDate: (at) => bodyweightAt(settings.bodyweightLog, at),
         // For the deload suggestion, which must never name an unloadable weight.
         availablePlatesKg: platesInForce(settings),
+        lang,
       });
     },
-    [exercisesById, historyById, push, routinesById, session, startSession],
+    [exercisesById, historyById, lang, push, routinesById, session, startSession],
   );
 
   /**
@@ -745,10 +749,11 @@ export function AppShell() {
           targetSets: planned ?? 1,
           targetRepsMax: defaultTargetCount(exercise),
           plannedSetCount: planned ?? 1,
+          lang,
         }),
       );
     },
-    [historyById],
+    [historyById, lang],
   );
 
   /* ------------------------------------------------------------------ */
@@ -941,10 +946,10 @@ export function AppShell() {
         query={query}
         kicker={
           target === 'session'
-            ? 'Add to workout'
+            ? t('Add to workout')
             : target === 'history'
-              ? 'Add to that workout'
-              : 'Add exercise'
+              ? t('Add to that workout')
+              : t('Add exercise')
         }
         exercises={exercises}
         matches={matches}
@@ -1367,6 +1372,7 @@ function WorkoutHistory({
   onAddExercise: HistoryScreenProps['onAddExercise'];
   onBack: () => void;
 }) {
+  const t = useT();
   const [view, setView] = useState<'log' | 'graphs' | 'calendar'>('log');
 
   /*
@@ -1387,7 +1393,7 @@ function WorkoutHistory({
         options={VIEWS}
         value={view}
         onChange={setView}
-        accessibilityLabel="Show the log or the graphs"
+        accessibilityLabel={t('Show the log or the graphs')}
       />
     </View>
   );
@@ -1466,6 +1472,8 @@ function LibraryTab({
   onConfirmDelete: (exerciseId: ID) => void;
   routineUses: (exerciseId: ID) => number;
 }) {
+  const t = useT();
+  const countedRoutines = usePlural();
   const uses = deleting ? routineUses(deleting.id) : 0;
 
   return (
@@ -1476,15 +1484,22 @@ function LibraryTab({
 
       {deleting ? (
         <ConfirmSheet
-          title={`Delete “${deleting.name}”?`}
+          title={t('Delete “{title}”?', { title: deleting.name })}
           body={[
             uses > 0
-              ? `It's in ${uses} ${uses === 1 ? 'routine' : 'routines'}, and will be removed from ${uses === 1 ? 'it' : 'them'}.`
-              : "It isn't in any routine.",
-            'Sets you already logged stay in your history.',
+              ? t('It is in {count} {routines}, and will be removed from them.', {
+                  count: uses,
+                  routines: countedRoutines(uses, {
+                    one: t('routine'),
+                    few: 'программы',
+                    many: t('routines'),
+                  }),
+                })
+              : t('It is not in any routine.'),
+            t('Sets you already logged stay in your history.'),
           ].join(' ')}
-          confirmLabel="Delete it"
-          cancelLabel="Keep it"
+          confirmLabel={t('Delete it')}
+          cancelLabel={t('Keep it')}
           onConfirm={() => {
             onConfirmDelete(deleting.id);
             onCancelDelete();
@@ -1508,14 +1523,15 @@ function LibraryTab({
  * sentence and a button, not a flicker.
  */
 function Fallback({ onBack }: { onBack: () => void }) {
+  const t = useT();
   return (
     <View className="flex-1 items-center justify-center bg-bg px-xl">
-      <Text className="text-title font-medium text-ink">It's gone</Text>
+      <Text className="text-title font-medium text-ink">{t('It is gone')}</Text>
       <Text className="mt-sm text-center text-body text-ink-muted">
-        This was deleted while you were looking at it.
+        {t('This was deleted while you were looking at it.')}
       </Text>
       <View className="mt-xl w-full">
-        <PrimaryButton label="Back" variant="ghost" onPress={onBack} />
+        <PrimaryButton label={t('Back')} variant="ghost" onPress={onBack} />
       </View>
     </View>
   );

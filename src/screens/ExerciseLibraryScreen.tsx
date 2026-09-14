@@ -172,7 +172,7 @@ export function ExerciseLibraryScreen({
             <Pressable
               onPress={() => onCreate(trimmed)}
               accessibilityRole="button"
-              accessibilityLabel={`Create ${trimmed}`}
+              accessibilityLabel={t('Create “{name}”', { name: trimmed })}
               style={pressedStyle}
               className="mx-lg mt-xl h-row flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg"
             >

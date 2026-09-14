@@ -722,16 +722,16 @@ describe('duplicating a routine', () => {
     );
   });
 
-  it('counts rather than stacks the suffix: Back (copy), then Back (copy 2)', () => {
+  it('counts rather than stacks the suffix: (копия), then (копия 2)', () => {
     const source = useLibrary.getState().routines[0];
     const first = useLibrary.getState().duplicateRoutine(source.id);
     const second = useLibrary.getState().duplicateRoutine(source.id);
     // ...and copying the COPY still counts from the original's name.
     const third = useLibrary.getState().duplicateRoutine(first?.id ?? '');
 
-    expect(first?.name).toBe(`${source.name} (copy)`);
-    expect(second?.name).toBe(`${source.name} (copy 2)`);
-    expect(third?.name).toBe(`${source.name} (copy 3)`);
+    expect(first?.name).toBe(`${source.name} (копия)`);
+    expect(second?.name).toBe(`${source.name} (копия 2)`);
+    expect(third?.name).toBe(`${source.name} (копия 3)`);
   });
 
   it('is null for a routine that is not there, so a caller cannot navigate to nothing', () => {

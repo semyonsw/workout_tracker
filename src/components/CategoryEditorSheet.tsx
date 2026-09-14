@@ -76,7 +76,9 @@ export function CategoryEditorSheet({
         </View>
       </View>
 
-      {savable ? null : <Text className="mt-sm text-label text-ink-faint">Give it a name.</Text>}
+      {savable ? null : (
+        <Text className="mt-sm text-label text-ink-faint">{t('Give it a name.')}</Text>
+      )}
 
       <View className="mt-xl">
         <PrimaryButton

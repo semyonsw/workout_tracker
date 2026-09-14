@@ -427,7 +427,7 @@ export function HistoryScreen({
                 </View>
                 <View className="mx-lg mb-md">
                   <Segmented
-                    options={BALANCE_WINDOWS.map((w) => ({ value: w.value, label: w.label }))}
+                    options={BALANCE_WINDOWS.map((w) => ({ value: w.value, label: t(w.label) }))}
                     value={window}
                     onChange={(next) => {
                       tap();
@@ -817,12 +817,12 @@ function WorkoutRow({
                           onAddSet(exercise.exerciseId);
                         }}
                         accessibilityRole="button"
-                        accessibilityLabel={`Add a set to ${exercise.name}`}
+                        accessibilityLabel={t('Add a set to {name}', { name: exercise.name })}
                         style={pressedStyle}
                         className="h-hit flex-1 justify-center"
                       >
                         <Text className="text-label font-medium text-green-bright">
-                          + Add a set
+                          {t('+ Add a set')}
                         </Text>
                       </Pressable>
 
@@ -836,7 +836,9 @@ function WorkoutRow({
                             }
                           }}
                           accessibilityRole="button"
-                          accessibilityLabel={`Remove ${exercise.name} from this workout`}
+                          accessibilityLabel={t('Remove {name} from this workout', {
+                            name: exercise.name,
+                          })}
                           style={pressedStyle}
                           className="h-hit justify-center"
                         >
@@ -865,7 +867,9 @@ function WorkoutRow({
                 style={pressedStyle}
                 className="h-hit justify-center px-lg"
               >
-                <Text className="text-label font-medium text-green-bright">+ Add an exercise</Text>
+                <Text className="text-label font-medium text-green-bright">
+                  {t('+ Add an exercise')}
+                </Text>
               </Pressable>
             ) : null}
 
@@ -886,12 +890,14 @@ function WorkoutRow({
               }}
               accessibilityRole="button"
               accessibilityState={{ expanded: editingWorkout }}
-              accessibilityLabel={`Edit the name, date and length of ${workout.title}`}
+              accessibilityLabel={t('Edit the name, date and length of {title}', {
+                title: workout.title,
+              })}
               style={pressedStyle}
               className="h-hit justify-center px-lg"
             >
               <Text className="text-label font-medium text-green-bright">
-                {editingWorkout ? 'Done editing' : 'Edit name, date and length'}
+                {editingWorkout ? t('Done editing') : t('Edit name, date and length')}
               </Text>
             </Pressable>
 
@@ -941,7 +947,7 @@ function WorkoutRow({
                   <Separator />
                   <StepperRow
                     label={t('Took')}
-                    value={`${workout.durationMinutes} min`}
+                    value={t('{minutes} min', { minutes: workout.durationMinutes })}
                     onDecrease={() => {
                       tap();
                       onEditWorkout({
@@ -966,13 +972,15 @@ function WorkoutRow({
               onPress={onEditNumber}
               accessibilityRole="button"
               accessibilityLabel={
-                numbered ? `Change the number of workout ${number}` : "Set this workout's number"
+                numbered
+                  ? t('Change the number of workout {number}', { number })
+                  : t('Set this workout’s number')
               }
               style={pressedStyle}
               className="h-hit justify-center px-lg"
             >
               <Text className="text-label font-medium text-green-bright">
-                {numbered ? `Workout number: ${number}` : 'Set the workout number'}
+                {numbered ? t('Workout number: {number}', { number }) : t('Set the workout number')}
               </Text>
             </Pressable>
 
@@ -980,7 +988,7 @@ function WorkoutRow({
             <Pressable
               onPress={onDelete}
               accessibilityRole="button"
-              accessibilityLabel={`Delete the ${workout.title} workout`}
+              accessibilityLabel={t('Delete the {title} workout', { title: workout.title })}
               style={pressedStyle}
               className="h-hit justify-center px-lg"
             >
@@ -1019,7 +1027,7 @@ function ClusterRow({
 }) {
   const t = useT();
   const lang = useLanguage();
-  const totals = describeClusterTotals(row.totals, formatDuration);
+  const totals = describeClusterTotals(row.totals, (s) => formatDuration(s, lang), lang);
   /*
    * THE BAR IS MEASURED AGAINST THE TARGET WHERE THERE IS ONE, and against the
    * busiest cluster otherwise.
@@ -1354,9 +1362,9 @@ function describeTotal(exercise: CompletedExercise, t: Translate, lang: Language
   const { totalCount, setCount, countUnit } = exercise;
   if (setCount <= 1 || totalCount <= 0) return null;
 
-  if (countUnit === 'seconds') return t('{what} total', { what: formatDuration(totalCount) });
+  if (countUnit === 'seconds') return t('{what} total', { what: formatDuration(totalCount, lang) });
   if (countUnit === 'rounds') {
-    return `${t('{count} rounds', { count: setCount })} · ${formatDuration(totalCount)}`;
+    return `${t('{count} rounds', { count: setCount })} · ${formatDuration(totalCount, lang)}`;
   }
   return t('{what} total', {
     what: `${totalCount} ${term('unit', countUnit === 'meters' ? 'm' : 'reps', lang)}`,

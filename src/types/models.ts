@@ -61,18 +61,21 @@ export interface OverloadPolicy {
   regressionLookbackDays: number; // default 60
 }
 
+/**
+ * The owner of the library — two fields, because two is all anything reads.
+ *
+ * `displayName`, `unitSystem` and `createdAt` used to be here and were never
+ * read by a single line: the app has no screen that greets anybody, and the unit
+ * system is a SETTING the user toggles, which is the same argument the note
+ * below makes about bodyweight. A field nobody reads is a second home for a
+ * number, and a second home is the one that goes stale.
+ *
+ * NOTE: bodyweight is NOT here either, for exactly that reason — it lives in
+ * `settingsStore`, which is the only place the app can actually be told it.
+ */
 export interface User {
   id: ID;
-  displayName: string;
-  unitSystem: UnitSystem;
-  /**
-   * NOTE: bodyweight is NOT here. It used to be, unset by the seed and read by
-   * nothing, and it is a preference the user types — so it lives in
-   * `settingsStore` beside the unit system, which is the only place the app can
-   * actually be told it. Two homes for one number is one of them being stale.
-   */
   overloadPolicy: OverloadPolicy;
-  createdAt: ISODateTime;
 }
 
 /* ------------------------------------------------------------------ */

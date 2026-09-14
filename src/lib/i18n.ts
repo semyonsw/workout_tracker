@@ -939,6 +939,131 @@ const RU: Record<string, string> = {
   '{total} sets planned · not started': 'запланировано подходов: {total} · не начата',
   '{weight} {unit} by': '{weight} {unit} на',
   '{what} total': 'всего {what}',
+
+  /* --- 1.9.0: the strings the screens were still printing in English --- */
+  adjust: 'изменить',
+  '{name} (copy)': '{name} (копия)',
+  '{name} (copy {n})': '{name} (копия {n})',
+  Almost: 'Почти',
+  '5 seconds left.': 'Осталось 5 секунд.',
+  'Set logged — rest.': 'Подход записан — отдых.',
+  'Get set': 'Приготовьтесь',
+  'Rest ends in 5 seconds.': 'Отдых закончится через 5 секунд.',
+  'Rest over': 'Отдых окончен',
+  'Next set.': 'Следующий подход.',
+  'Timer finished': 'Таймер закончился',
+  'Rest is over, or a timed set rang its bell.': 'Отдых окончен или прозвенел подход на время.',
+  'A tick {seconds} seconds before a timer ends.': 'Сигнал за {seconds} с до конца таймера.',
+  'A task, or a workout, at the time you asked to be reminded.':
+    'Задача или тренировка — в то время, о котором вы просили напомнить.',
+  'Add to workout': 'Добавить в тренировку',
+  'Add to that workout': 'Добавить в ту тренировку',
+  'Show the log or the graphs': 'Показать журнал или графики',
+  'It is in {count} {routines}, and will be removed from them.':
+    'Входит в {count} {routines} — и будет оттуда удалено.',
+  'It is not in any routine.': 'Не входит ни в одну программу.',
+  'Sets you already logged stay in your history.': 'Записанные подходы останутся в истории.',
+  'It is gone': 'Его больше нет',
+  'This was deleted while you were looking at it.': 'Это удалили, пока вы на него смотрели.',
+  Yesterday: 'Вчера',
+  '{days} {daysWord} ago': '{days} {daysWord} назад',
+  '{count} sessions at {weight} {unit} without a rep. One session at {suggested} {unit} resets it.':
+    '{count} тренировок на {weight} {unit} без прибавки. Одна тренировка на {suggested} {unit} это сбросит.',
+  'That is not valid JSON — the file or the paste is incomplete.':
+    'Это не валидный JSON — файл или вставленный текст неполный.',
+  'That file holds something other than a backup.': 'В этом файле не резервная копия.',
+  'That backup was written by a newer version of the app (format {version}). Update the app first.':
+    'Эта копия записана более новой версией приложения (формат {version}). Сначала обновите приложение.',
+  'That file has no exercises, routines or workouts in it.':
+    'В этом файле нет ни упражнений, ни программ, ни тренировок.',
+  'That backup is empty — there is nothing in it to restore.':
+    'Эта копия пуста — восстанавливать нечего.',
+  'the folder you picked': 'выбранная папка',
+  'This device has no writable app folder.': 'На этом устройстве нет папки для записи.',
+  'Something went wrong reaching the file system.':
+    'Что-то пошло не так при обращении к файловой системе.',
+  'The log could not be read, so a backup would be missing it. Nothing is lost — close the app and open it again.':
+    'Журнал не удалось прочитать, поэтому копия была бы неполной. Ничего не потеряно — закройте приложение и откройте снова.',
+  Random: 'Случайная',
+  '{weight} set': 'подход {weight}',
+  '{name} did {done} {sets}, not {planned}': '{name}: {done} {sets}, а не {planned}',
+  '{head}, and {count} {others} changed too': '{head}, и ещё {count} {others} изменилось',
+  '{name} · new max {max} · {plan} next time': '{name} · новый максимум {max} · дальше {plan}',
+  '{name} · {plan} next time': '{name} · дальше {plan}',
+  '{head}, and {count} {others} moved up too': '{head}, и ещё {count} {others} поднялось',
+  other: 'другое',
+  others: 'других',
+  'One line, shown on the card while you are doing this exercise. A seat height, a pin number, the thing you keep forgetting.':
+    'Одна строка, видна на карточке во время упражнения. Высота сиденья, номер фиксатора — то, что вы всё время забываете.',
+  'Off · the ladder owns the reps': 'Выкл · повторения задаёт лестница',
+  'Off · no load to add': 'Выкл · нечего добавлять к весу',
+  'Reps, time and metres swap the same two wells:':
+    'Повторения, время и метры меняют одни и те же два поля:',
+  'Current maximum': 'Текущий максимум',
+  'No workout in progress': 'Нет активной тренировки',
+  'Nothing to log': 'Нечего записывать',
+  'This workout has no exercises in it right now.': 'Сейчас в этой тренировке нет упражнений.',
+  'Each one holds only what its own section reads. Rest, plates and weekly targets are training; the automatic tick is the daily tasks; what amounts are counted in is the expenses.':
+    'В каждом — только то, что читает его раздел. Отдых, блины и недельные цели — тренировки; автоматическая отметка — ежедневные задачи; в чём считаются суммы — расходы.',
+  'A backup is plain JSON, so you can read it, keep it anywhere, and move it to another phone. It holds all three sections — training, the daily tasks and the expenses — and every setting.':
+    'Копия — это обычный JSON: её можно прочитать, хранить где угодно и перенести на другой телефон. В ней все три раздела — тренировки, ежедневные задачи и расходы — и все настройки.',
+  'Replace everything': 'Заменить всё',
+  'makes this phone look like the file, so export first if there is anything here you would miss. A backup written by an older version carries no tasks and no amounts, and restoring one leaves both of those exactly where they are rather than emptying them. A workout in progress is not part of a backup: it carries a running clock.':
+    'делает телефон таким, как файл, — поэтому сначала выгрузите то, что жалко потерять. В копии из старой версии нет ни задач, ни сумм, и восстановление такой копии оставит и то и другое как есть, а не очистит. Идущая тренировка в копию не входит: в ней работают часы.',
+  'Reset every setting': 'Сбросить все настройки',
+  'puts all three sections’ settings back to their defaults at once. It does not touch a single thing you have logged — not an exercise, not a routine, not an answered day, not an amount.':
+    'разом возвращает настройки всех трёх разделов к исходным. Ничего из записанного это не трогает — ни упражнение, ни программу, ни отвеченный день, ни сумму.',
+  'Add a set to {name}': 'Добавить подход — {name}',
+  '+ Add a set': '+ Добавить подход',
+  '+ Add an exercise': '+ Добавить упражнение',
+  'Edit the name, date and length of {title}': 'Изменить название, дату и длительность — {title}',
+  'Edit name, date and length': 'Изменить название, дату и длительность',
+  'Change the number of workout {number}': 'Изменить номер тренировки {number}',
+  'Set this workout’s number': 'Задать номер этой тренировки',
+  'Workout number: {number}': 'Номер тренировки: {number}',
+  'Set the workout number': 'Задать номер тренировки',
+  'Delete the {title} workout': 'Удалить тренировку «{title}»',
+  'A label, not a conversion. Every amount is stored as a plain number, so changing this changes what is printed after each figure and nothing else — no rate, no rewriting of what you already recorded. Up to four characters; points and tokens are as valid here as a currency.':
+    'Это подпись, а не пересчёт. Каждая сумма хранится обычным числом, поэтому меняется только то, что печатается после цифры, — ни курса, ни переписывания записанного. До четырёх символов; баллы и токены здесь так же уместны, как валюта.',
+  'Opens on': 'Открывается на',
+  'The window and the direction the expenses section starts at. Both still change on that screen; this is only where it begins.':
+    'Период и направление, с которых открывается раздел расходов. И то и другое по-прежнему меняется на самом экране; здесь — только начало.',
+  'Which range the ⟲ in the corner of the expenses opens on.':
+    'На каком диапазоне открывается ⟲ в углу расходов.',
+  'There are no routines to put in a sequence yet. Make one in Routines, at the foot of the workout screen, first.':
+    'Пока нет программ, которые можно поставить в последовательность. Сначала создайте программу в разделе «Программы», внизу экрана тренировки.',
+  'Nothing recorded this month': 'В этом месяце ничего не записано',
+  '{done} of {asked} done · {days} {dayWord}': '{done} из {asked} сделано · {days} {dayWord}',
+  'The fuller the square, the more of that day was done. Tap one to open it and answer its tasks.':
+    'Чем полнее квадрат, тем больше сделано в тот день. Нажмите, чтобы открыть день и ответить на его задачи.',
+  '{day}, nothing asked': '{day}, ничего не спрашивалось',
+  '{day}, {done} of {asked}': '{day}, {done} из {asked}',
+  '{from} to {to} · {done} of {asked} answered done':
+    '{from} — {to} · отвечено «сделано»: {done} из {asked}',
+  'A line needs two days to have a direction. Answer today and tomorrow and it draws itself.':
+    'Чтобы у линии было направление, нужно два дня. Ответьте сегодня и завтра — и она нарисуется.',
+  'Days that asked for nothing are left out rather than plotted as zero — a day off is not a day you failed. A task you marked missed on purpose leaves the denominator.':
+    'Дни, в которые ничего не спрашивалось, не рисуются нулём, а просто выпадают — выходной это не провал. Задача, отмеченная как пропущенная намеренно, уходит из знаменателя.',
+  'Max {max} · {total} reps · one rep is added every session you meet it':
+    'Максимум {max} · {total} повт · по одному повторению за каждую выполненную тренировку',
+  'Superset with the one above': 'Суперсет с упражнением выше',
+  'Open its history': 'Открыть его историю',
+  'Nothing in {window}.': 'Ничего за {window}.',
+  '4 weeks': '4 недели',
+  '12 weeks': '12 недель',
+  All: 'Всё',
+  'unit:rounds': 'кругов',
+  'unit:sec': 'с',
+  'My gym': 'Мой зал',
+  'Morning Bible/Narek reading': 'Утреннее чтение Библии / Нарека',
+  'In-Work Task Report': 'Отчёт по рабочим задачам',
+  'Gym / Boxing': 'Зал / бокс',
+  'Productivity/Day Tasks': 'Продуктивность / задачи дня',
+  'Evening Bible reading': 'Вечернее чтение Библии',
+  "Plan tomorrow's tasks": 'Запланировать задачи на завтра',
+  'Book reading before sleep': 'Чтение книги перед сном',
+  'Sleep before midnight': 'Лечь спать до полуночи',
+  'Track expenses': 'Записать расходы',
 };
 
 /** Test hook: the strings this build can translate. Not read by the app. */
