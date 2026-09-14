@@ -105,7 +105,7 @@ import {
 } from '../lib/tasks';
 import type { Language } from '../lib/i18n';
 import { useTasks } from '../state/tasksStore';
-import { glass, palette } from '../theme/tokens';
+import { glass, glowRepeating, palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
 interface TasksScreenProps {
@@ -404,15 +404,14 @@ function TaskRow({
       style={{
         backgroundColor: done ? glass.green : glass.raised,
         borderColor: done ? glass.greenEdge : palette.hairline,
-        // A done row is the one lit surface in the list. The glow is the app's
-        // one glow at a third of its strength: enough that a finished day reads
-        // as a block of light while scrolling, never enough to be a fill.
+        // A done row is a lit surface, and `glowRepeating` rather than `glow` is
+        // the whole difference between one row you can find and nine rows that
+        // merge into a green wall — see `theme/tokens.ts`. `boxShadow`, never
+        // `elevation`: elevation draws Android's own far wider shadow and turns
+        // this thin line of light into a band thicker than the border it is on.
         ...(done
           ? {
-              shadowColor: palette.greenBright,
-              shadowOpacity: 0.18,
-              shadowRadius: 12,
-              elevation: 3,
+              boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 6, color: glowRepeating }],
             }
           : {}),
         opacity: dimmed ? 0.4 : missed ? 0.62 : 1,
@@ -472,10 +471,10 @@ function Mark({ mark }: { mark: TaskMark | null }) {
         style={{
           backgroundColor: palette.green,
           borderColor: palette.greenBright,
-          shadowColor: palette.greenBright,
-          shadowOpacity: 0.55,
-          shadowRadius: 8,
-          elevation: 4,
+          // Same rule as the row it sits in: one of these per done task, so it
+          // takes the repeating value at a tight radius. A 30 dp circle needs a
+          // smaller spread than a 64 dp row to bloom by the same amount.
+          boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 5, color: glowRepeating }],
         }}
         className="h-[30px] w-[30px] items-center justify-center rounded-pill border"
       >

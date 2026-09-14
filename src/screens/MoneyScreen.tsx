@@ -125,7 +125,7 @@ import {
 } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useSettings } from '../state/settingsStore';
-import { glass, palette } from '../theme/tokens';
+import { glass, glowRepeating, palette } from '../theme/tokens';
 import type { ID } from '../types/models';
 
 interface MoneyScreenProps {
@@ -629,11 +629,9 @@ function AccountChip({
         selected
           ? {
               // The chip that is selected decides what every figure under it
-              // means, so it is the one lit control on the screen.
-              shadowColor: palette.green,
-              shadowOpacity: 0.35,
-              shadowRadius: 10,
-              elevation: 4,
+              // means, so it is the one lit control on the screen. `boxShadow`
+              // and not `elevation` — see `theme/tokens.ts`.
+              boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 8, color: glowRepeating }],
             }
           : { backgroundColor: glass.sunken },
       ]}

@@ -50,7 +50,7 @@ import {
 import { TREND_RANGES, TREND_RANGE_LABELS, type TrendRange } from '../lib/trends';
 import { useSettings } from '../state/settingsStore';
 import { useTasks } from '../state/tasksStore';
-import { greenSteps, palette } from '../theme/tokens';
+import { glowRepeating, greenSteps, palette } from '../theme/tokens';
 
 /*
  * A function rather than a constant, because the labels are translated: a
@@ -303,10 +303,10 @@ function MonthCell({
             ? {
                 borderWidth: 1,
                 borderColor: palette.greenBright,
-                shadowColor: palette.greenBright,
-                shadowOpacity: 0.45,
-                shadowRadius: 8,
-                elevation: 6,
+                // `boxShadow`, not `elevation`: Android's elevation draws a far
+                // wider shadow than the radius asked for, which on a 40 dp cell
+                // is a smudge rather than a ring. See `theme/tokens.ts`.
+                boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 6, color: glowRepeating }],
               }
             : selected
               ? { borderWidth: 1, borderColor: palette.inkMuted }

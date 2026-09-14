@@ -146,6 +146,26 @@ export const greenSteps = [
 export const glow = 'rgba(63,169,108,0.6)';
 
 /**
+ * THE SAME GLOW, FOR A MARK THAT REPEATS.
+ *
+ * `glow` is sized for exactly one card on a screen: at 0.6 and 18 dp of blur it
+ * is findable from a metre away, which is the whole point on a bench. Nine done
+ * tasks in a column at that value is nine halos overlapping into a green wall —
+ * a row's own edge stops being a line you can see, and the list reads as lit
+ * rather than as a list of which rows are lit.
+ *
+ * So a repeating mark gets this instead: half the alpha and half the spread, a
+ * thin line of light along the border rather than a bloom around the whole row.
+ * The rule for choosing is not "how important is this" but "how MANY of these
+ * can be on screen at once" — one, `glow`; a column of them, this.
+ *
+ * Both are `boxShadow` and never `elevation`. Android's elevation draws its own
+ * opaque, much wider shadow that ignores the radius asked for, which is exactly
+ * how this got thick enough to need fixing.
+ */
+export const glowRepeating = 'rgba(63,169,108,0.3)';
+
+/**
  * The app's ONLY shadow. It belongs to the timer pill and nothing else — the
  * clock has to read as the layer above the list. Spec: `0 14px 36px rgba(0,0,0,0.65)`.
  */
