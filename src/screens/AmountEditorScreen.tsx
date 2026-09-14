@@ -8,6 +8,7 @@
  *   │ │ 2,400▎                                   │ │
  *   │ └──────────────────────────────────────────┘ │
  *   │ DIRECTION      ╭ Expense ╮╭ Income ╮         │
+ *   │ SUBSECTION     💵 Cash   💳 Online           │
  *   │ CATEGORY   🧊 Food  💡 me  🚌 Transport …    │
  *   │ WHEN           ╭ A day ╮╭ Whole month ╮      │
  *   │                ‹ 12 September 2026 ›         │
@@ -16,12 +17,20 @@
  *   │ Delete this amount                           │
  *   └──────────────────────────────────────────────┘
  *
- * ── FIVE FIELDS, AND THE FIRST ONE IS THE KEYBOARD ────────────────────────
+ * ── SIX FIELDS, AND THE FIRST ONE IS THE KEYBOARD ─────────────────────────
  *
  * The amount is what you came to type, so it is the only thing focused on
  * arrival and the only thing at `title-xl`. Everything under it has a sensible
- * answer already — expense, the category you tapped in from, today — so the
- * fastest path through this screen is a number and `Save`.
+ * answer already — expense, the subsection and the category you tapped in from,
+ * today — so the fastest path through this screen is a number and `Save`.
+ *
+ * ── THE SUBSECTION IS WHERE THE MONEY PHYSICALLY WAS ──────────────────────
+ *
+ * Cash or Online, and it arrives filled in from the chip the money screen was
+ * reading, so it is a field you correct on the rare occasion rather than one you
+ * answer every time. Changing it MOVES the amount between two balances that are
+ * each somebody's real pocket, which is why it is a row of chips you can see and
+ * not something hidden behind the note.
  *
  * ── `A DAY` OR `WHOLE MONTH` ──────────────────────────────────────────────
  *
@@ -77,6 +86,8 @@ interface AmountEditorScreenProps {
   amount: Amount | null;
   /** Which category a new amount lands in. Ignored when editing. */
   categoryId: ID | null;
+  /** Which subsection a new amount lands in. Ignored when editing. */
+  accountId: ID | null;
   /**
    * Which way a NEW amount points, decided by whatever opened this screen.
    *
@@ -92,11 +103,13 @@ interface AmountEditorScreenProps {
 export function AmountEditorScreen({
   amount,
   categoryId,
+  accountId,
   direction: initialDirection = 'expense',
   onBack,
 }: AmountEditorScreenProps) {
   const t = useT();
   const lang = useLanguage();
+  const accounts = useMoney((s) => s.accounts);
   const categories = useMoney((s) => s.categories);
   const currency = useSettings((s) => s.currencyCode);
   const addAmount = useMoney((s) => s.addAmount);
@@ -106,12 +119,20 @@ export function AmountEditorScreen({
   const live = categories.filter(
     (category) => category.archivedAt === null || category.id === amount?.categoryId,
   );
+  /* An archived subsection stays selectable while an amount still sits in it —
+     otherwise editing that amount would silently move it somewhere else. */
+  const liveAccounts = accounts.filter(
+    (account) => account.archivedAt === null || account.id === amount?.accountId,
+  );
 
   const today = dayKey(new Date());
   const [digits, setDigits] = useState(amount ? String(amount.value) : '');
   const [direction, setDirection] = useState<Direction>(amount?.direction ?? initialDirection);
   const [category, setCategory] = useState<ID | null>(
     amount?.categoryId ?? categoryId ?? live[0]?.id ?? null,
+  );
+  const [account, setAccount] = useState<ID | null>(
+    amount?.accountId ?? accountId ?? liveAccounts[0]?.id ?? null,
   );
   const [span, setSpan] = useState<'day' | 'month'>(amount?.when.kind ?? 'day');
   const [day, setDay] = useState(amount?.when.kind === 'day' ? amount.when.date : today);
@@ -124,7 +145,7 @@ export function AmountEditorScreen({
   const [deleting, setDeleting] = useState(false);
 
   const value = Number(digits.replace(/\D/g, '')) || 0;
-  const savable = value > 0 && category !== null;
+  const savable = value > 0 && category !== null && account !== null;
   const noun = direction === 'expense' ? t('expense') : t('income');
 
   const whenOf = (): AmountWhen => {
@@ -134,8 +155,15 @@ export function AmountEditorScreen({
   };
 
   const save = () => {
-    if (!savable || category === null) return;
-    const draft = { categoryId: category, direction, value, when: whenOf(), note };
+    if (!savable || category === null || account === null) return;
+    const draft = {
+      categoryId: category,
+      accountId: account,
+      direction,
+      value,
+      when: whenOf(),
+      note,
+    };
     if (amount) updateAmount(amount.id, draft);
     else addAmount(draft);
     onBack();
@@ -196,6 +224,38 @@ export function AmountEditorScreen({
             onChange={setDirection}
             accessibilityLabel={t('Money out, or money in')}
           />
+        </View>
+
+        <Kicker className="mx-lg mb-sm mt-xl">{t('Subsection')}</Kicker>
+        <View className="mx-lg flex-row flex-wrap">
+          {liveAccounts.map((option) => {
+            const selected = option.id === account;
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => setAccount(option.id)}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={option.name}
+                style={pressedStyle}
+                className={[
+                  'mb-sm mr-sm h-[36px] flex-row items-center rounded-pill px-md',
+                  selected ? 'bg-green' : 'border border-hairline bg-surface',
+                ].join(' ')}
+              >
+                <Text className="mr-sm text-label">{option.glyph}</Text>
+                <Text
+                  className={[
+                    'text-label',
+                    selected ? 'font-semibold text-ink' : 'font-medium text-ink-muted',
+                  ].join(' ')}
+                >
+                  {option.name}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         <Kicker className="mx-lg mb-sm mt-xl">{t('Category')}</Kicker>

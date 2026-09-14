@@ -31,6 +31,27 @@
  * because "what do I have" is not a question about September. Everything below
  * it is windowed; it is not.
  *
+ * ── AND IT IS ONE SUBSECTION'S BALANCE, NOT THE WHOLE LOG'S ───────────────
+ *
+ * Money is kept in more than one place — notes in a pocket, a figure in a
+ * banking app — and the two do not add up to anything anybody spends. So an
+ * amount belongs to an ACCOUNT (`Cash`, `Online`, and whatever else the user
+ * adds), and the screen reads ONE of them at a time: its balance, its two
+ * totals, its category grid. Nothing here ever sums across accounts, because
+ * "how much cash do I have" is the question that has an answer.
+ *
+ * ── AN ACCOUNT'S `opening` IS THE MONEY THAT WAS ALREADY THERE ────────────
+ *
+ * You do not start the app on the day you started having money. Filing what is
+ * already in your pocket as an `income` would put a fictional 40,000 into
+ * September's incomes and into every chart drawn from them — the balance would
+ * be right and everything beside it would be a lie.
+ *
+ * So `opening` is a field on the account, edited by TAPPING THE BALANCE, and it
+ * is in no direction, no category, no month and no series. `openingFor` is the
+ * arithmetic that lets the user type what they HAVE rather than the correction:
+ * the screen asks for a balance and this file works out the opening behind it.
+ *
  * Amounts are whole AMD. There are no sub-units in circulation, so an integer is
  * the honest type and `0.1 + 0.2` never gets a chance to happen.
  */
@@ -55,6 +76,29 @@ export type AmountWhen =
   /** `month` is 0-based, as `Date` uses it. */
   | { kind: 'month'; year: number; month: number };
 
+/**
+ * A subsection of the money: where the money physically is.
+ *
+ * `Cash` and `Online` ship; more can be added. Independent of every other one —
+ * an amount names exactly one, and no total crosses the boundary.
+ */
+export interface MoneyAccount {
+  id: ID;
+  name: string;
+  /** One emoji, same as a category's. */
+  glyph: string;
+  order: number;
+  /**
+   * What this account held before anything was logged into it, in whole AMD.
+   *
+   * Signed: an account can legitimately open below zero (money owed). It is not
+   * an amount, has no day and no direction, and appears in no chart — see the
+   * file header.
+   */
+  opening: number;
+  archivedAt: string | null;
+}
+
 export interface MoneyCategory {
   id: ID;
   name: string;
@@ -68,6 +112,8 @@ export interface MoneyCategory {
 export interface Amount {
   id: ID;
   categoryId: ID;
+  /** Which subsection the money moved in or out of. */
+  accountId: ID;
   direction: Direction;
   /** Whole AMD, always positive; `direction` carries the sign. */
   value: number;
@@ -239,6 +285,36 @@ export function balanceOf(amounts: readonly Amount[]): number {
     balance += amount.direction === 'expense' ? -amount.value : amount.value;
   }
   return balance;
+}
+
+/** Just this subsection's amounts, in the order they were given. */
+export function inAccount(amounts: readonly Amount[], accountId: ID): Amount[] {
+  return amounts.filter((amount) => amount.accountId === accountId);
+}
+
+/**
+ * What one subsection holds: what was already there, plus everything logged.
+ *
+ * The figure at the top of the money screen, and the only balance the app ever
+ * shows. There is deliberately no "all accounts" total — see the file header.
+ */
+export function balanceOfAccount(account: MoneyAccount, amounts: readonly Amount[]): number {
+  return account.opening + balanceOf(inAccount(amounts, account.id));
+}
+
+/**
+ * The `opening` that would make this account's balance read `wanted`.
+ *
+ * The user types what they HAVE — the big figure on the screen is what they are
+ * correcting — and the difference lands on the opening, which is the one field
+ * that carries money nobody logged. Nothing already recorded moves.
+ */
+export function openingFor(
+  account: MoneyAccount,
+  amounts: readonly Amount[],
+  wanted: number,
+): number {
+  return Math.round(wanted) - balanceOf(inAccount(amounts, account.id));
 }
 
 /** `categoryId` → total, for one direction inside the window. Missing = 0. */

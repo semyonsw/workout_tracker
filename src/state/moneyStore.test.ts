@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { balanceOf } from '../lib/money';
+import { balanceOf, balanceOfAccount } from '../lib/money';
 import { seedTasks, useTasks } from './tasksStore';
-import { sanitizeMoney, seedCategories, useMoney } from './moneyStore';
+import { sanitizeMoney, seedAccounts, seedCategories, useMoney } from './moneyStore';
 
 /**
  * The money store.
@@ -16,7 +16,9 @@ import { sanitizeMoney, seedCategories, useMoney } from './moneyStore';
  */
 
 afterEach(() => {
-  useMoney.getState().importMoney({ categories: seedCategories, amounts: [] });
+  useMoney
+    .getState()
+    .importMoney({ accounts: seedAccounts, categories: seedCategories, amounts: [] });
   useTasks.getState().importTasks({ tasks: seedTasks('2026-01-01'), log: {} });
 });
 
@@ -104,6 +106,7 @@ describe('sanitizing', () => {
 describe('recording an amount', () => {
   const draft = {
     categoryId: 'transport',
+    accountId: 'cash',
     direction: 'expense' as const,
     value: 400,
     when: { kind: 'day' as const, date: '2026-09-12' },
@@ -136,6 +139,7 @@ describe('archiving a category', () => {
   it('leaves its amounts in the totals — that is the whole point of archiving', () => {
     useMoney.getState().addAmount({
       categoryId: 'transport',
+      accountId: 'cash',
       direction: 'expense',
       value: 6000,
       when: { kind: 'month', year: 2026, month: 8 },
@@ -148,5 +152,81 @@ describe('archiving a category', () => {
     expect(useMoney.getState().categories.find((c) => c.id === 'transport')?.archivedAt).toBeTypeOf(
       'string',
     );
+  });
+});
+
+/**
+ * The subsections, in the store.
+ *
+ * The migration is the one that matters: a ledger written before accounts
+ * existed names none, and dropping those amounts would empty a log somebody has
+ * been keeping for months.
+ */
+describe('subsections', () => {
+  it('seeds Cash and Online when a stored value has none', () => {
+    const value = sanitizeMoney({ categories: seedCategories, amounts: [] });
+    expect(value.accounts.map((account) => account.id)).toEqual(['cash', 'online']);
+  });
+
+  it('files an amount from before subsections existed under the first one', () => {
+    const value = sanitizeMoney({
+      categories: seedCategories,
+      amounts: [
+        {
+          id: 'a',
+          categoryId: 'food',
+          direction: 'expense',
+          value: 400,
+          when: { kind: 'day', date: '2026-09-12' },
+        },
+      ] as never,
+    });
+    expect(value.amounts).toHaveLength(1);
+    expect(value.amounts[0].accountId).toBe('cash');
+  });
+
+  it('sends an amount pointing at a subsection that is gone to the first one too', () => {
+    const value = sanitizeMoney({
+      accounts: seedAccounts,
+      categories: seedCategories,
+      amounts: [
+        {
+          id: 'a',
+          categoryId: 'food',
+          accountId: 'wallet-that-left',
+          direction: 'expense',
+          value: 400,
+          when: { kind: 'day', date: '2026-09-12' },
+        },
+      ] as never,
+    });
+    expect(value.amounts[0].accountId).toBe('cash');
+  });
+
+  it('moves the opening and nothing else when a balance is set', () => {
+    useMoney.getState().addAmount({
+      categoryId: 'food',
+      accountId: 'cash',
+      direction: 'expense',
+      value: 1000,
+      when: { kind: 'day', date: '2026-09-12' },
+      note: '',
+    });
+    useMoney.getState().setAccountBalance('cash', 40000);
+
+    const account = useMoney.getState().accounts.find((row) => row.id === 'cash');
+    if (!account) throw new Error('the seed no longer ships a cash account');
+    expect(account.opening).toBe(41000);
+    expect(balanceOfAccount(account, useMoney.getState().amounts)).toBe(40000);
+    // The expense is untouched, and it is still an expense.
+    expect(useMoney.getState().amounts).toHaveLength(1);
+    expect(useMoney.getState().amounts[0].value).toBe(1000);
+  });
+
+  it('refuses to archive the last live subsection — nothing could be recorded', () => {
+    useMoney.getState().archiveAccount('online');
+    useMoney.getState().archiveAccount('cash');
+    const live = useMoney.getState().accounts.filter((row) => row.archivedAt === null);
+    expect(live.map((row) => row.id)).toEqual(['cash']);
   });
 });

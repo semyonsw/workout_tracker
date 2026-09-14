@@ -158,7 +158,7 @@ type Route =
      and the only thing they share is where the tap came from. */
   | { name: 'workoutHistory' }
   | { name: 'tasksHistory' }
-  | { name: 'moneyHistory' }
+  | { name: 'moneyHistory'; accountId: ID }
   /* One settings screen per section, pushed from the section list. */
   | { name: 'workoutSettings' }
   | { name: 'taskSettings' }
@@ -166,8 +166,14 @@ type Route =
   | { name: 'taskDetail'; taskId: ID }
   /* The window travels with the tap, so the category opens on the one the tile
      was read through rather than resetting to this month. */
-  | { name: 'moneyCategory'; categoryId: ID; interval: Interval; anchor: string }
-  | { name: 'moneyAmount'; amountId: ID | null; categoryId: ID | null; direction?: Direction };
+  | { name: 'moneyCategory'; categoryId: ID; accountId: ID; interval: Interval; anchor: string }
+  | {
+      name: 'moneyAmount';
+      amountId: ID | null;
+      categoryId: ID | null;
+      accountId: ID | null;
+      direction?: Direction;
+    };
 
 export function AppShell() {
   const t = useT();
@@ -482,6 +488,7 @@ export function AppShell() {
      PUSHED route needs to resolve its subject — the tab roots read the stores
      themselves, like `SettingsScreen` does. */
   const tasks = useTasks((s) => s.tasks);
+  const moneyAccounts = useMoney((s) => s.accounts);
   const categories = useMoney((s) => s.categories);
   const amounts = useMoney((s) => s.amounts);
 
@@ -1162,15 +1169,26 @@ export function AppShell() {
 
   if (top?.name === 'moneyCategory') {
     const category = categories.find((row) => row.id === top.categoryId);
-    if (!category) return <Fallback onBack={pop} />;
+    const account = moneyAccounts.find((row) => row.id === top.accountId);
+    if (!category || !account) return <Fallback onBack={pop} />;
     return (
       <CategoryDetailScreen
         category={category}
+        account={account}
         interval={top.interval}
         anchor={top.anchor}
         onBack={pop}
-        onOpenAmount={(amountId) => push({ name: 'moneyAmount', amountId, categoryId: null })}
-        onAddAmount={() => push({ name: 'moneyAmount', amountId: null, categoryId: category.id })}
+        onOpenAmount={(amountId) =>
+          push({ name: 'moneyAmount', amountId, categoryId: null, accountId: null })
+        }
+        onAddAmount={() =>
+          push({
+            name: 'moneyAmount',
+            amountId: null,
+            categoryId: category.id,
+            accountId: account.id,
+          })
+        }
       />
     );
   }
@@ -1182,6 +1200,7 @@ export function AppShell() {
       <AmountEditorScreen
         amount={amount}
         categoryId={top.categoryId}
+        accountId={top.accountId}
         direction={top.direction}
         onBack={pop}
       />
@@ -1240,7 +1259,9 @@ export function AppShell() {
   }
 
   if (top?.name === 'moneyHistory') {
-    return <MoneyHistoryScreen onBack={pop} />;
+    const account = moneyAccounts.find((row) => row.id === top.accountId);
+    if (!account) return <Fallback onBack={pop} />;
+    return <MoneyHistoryScreen account={account} onBack={pop} />;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1295,13 +1316,13 @@ export function AppShell() {
 
           {tab === 'Expenses' ? (
             <MoneyScreen
-              onOpenCategory={(categoryId, interval, anchor) =>
-                push({ name: 'moneyCategory', categoryId, interval, anchor })
+              onOpenCategory={(categoryId, accountId, interval, anchor) =>
+                push({ name: 'moneyCategory', categoryId, accountId, interval, anchor })
               }
-              onAddAmount={(categoryId, direction) =>
-                push({ name: 'moneyAmount', amountId: null, categoryId, direction })
+              onAddAmount={(categoryId, accountId, direction) =>
+                push({ name: 'moneyAmount', amountId: null, categoryId, accountId, direction })
               }
-              onOpenHistory={() => push({ name: 'moneyHistory' })}
+              onOpenHistory={(accountId) => push({ name: 'moneyHistory', accountId })}
             />
           ) : null}
 

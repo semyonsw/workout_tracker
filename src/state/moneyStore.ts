@@ -14,6 +14,15 @@
  * the chips on the editor, and leaves every figure it ever contributed to alone.
  * The category screen says so in as many words.
  *
+ * ── AN ACCOUNT IS A SUBSECTION, AND IT IS ARCHIVED THE SAME WAY ───────────
+ *
+ * `Cash` and `Online` ship, more can be added, and the last live one cannot be
+ * archived: every amount names an account, so a log with none of them has
+ * nowhere to put the next one. An account also carries `opening` — the money
+ * that was already there — which is the only figure in this store that nobody
+ * logged. `setAccountBalance` is how it is edited, and it is the reason the
+ * money screen never has to ask anybody to invent an income.
+ *
  * ── THE SEED IS EIGHT EMPTY CATEGORIES ────────────────────────────────────
  *
  * No amounts ship, exactly as no training history ships. The categories do,
@@ -27,14 +36,35 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { dayKey } from '../lib/days';
-import type { Amount, AmountWhen, Direction, MoneyCategory } from '../lib/money';
+import {
+  openingFor,
+  type Amount,
+  type AmountWhen,
+  type Direction,
+  type MoneyAccount,
+  type MoneyCategory,
+} from '../lib/money';
 import type { ID } from '../types/models';
 import { tickTaskSource } from './tasksStore';
 
 export interface MoneyValue {
+  accounts: MoneyAccount[];
   categories: MoneyCategory[];
   amounts: Amount[];
 }
+
+/**
+ * The two places money is kept, and the reason there are exactly two of them.
+ *
+ * Cash is what is in a pocket and Online is what a banking app says — the two
+ * numbers anybody actually knows off the top of their head. Both open at zero,
+ * because the app cannot know what is in a pocket and a guessed balance is worse
+ * than an empty one: the screen asks for it the first time the figure is tapped.
+ */
+export const seedAccounts: MoneyAccount[] = [
+  ['cash', 'Cash', '💵'],
+  ['online', 'Online', '💳'],
+].map(([id, name, glyph], order) => ({ id, name, glyph, order, opening: 0, archivedAt: null }));
 
 export const seedCategories: MoneyCategory[] = [
   ['food', 'Food', '🧊'],
@@ -46,6 +76,24 @@ export const seedCategories: MoneyCategory[] = [
   ['family', 'Family', '👪'],
   ['clothes', 'Clothes', '👕'],
 ].map(([id, name, glyph], order) => ({ id, name, glyph, order, archivedAt: null }));
+
+function sanitizeAccount(raw: unknown, index: number): MoneyAccount | null {
+  const value = raw as Partial<MoneyAccount> | undefined;
+  if (!value || typeof value.id !== 'string' || value.id === '') return null;
+  const name = typeof value.name === 'string' ? value.name.trim() : '';
+  if (name === '') return null;
+  // Signed and whole: an account can open below zero, and a NaN from a hand-edited
+  // backup would otherwise poison every balance drawn from it.
+  const opening = Math.round(Number(value.opening));
+  return {
+    id: value.id,
+    name,
+    glyph: typeof value.glyph === 'string' && value.glyph !== '' ? value.glyph : '•',
+    order: Number.isFinite(value.order) ? Number(value.order) : index,
+    opening: Number.isFinite(opening) ? opening : 0,
+    archivedAt: typeof value.archivedAt === 'string' ? value.archivedAt : null,
+  };
+}
 
 function sanitizeCategory(raw: unknown, index: number): MoneyCategory | null {
   const value = raw as Partial<MoneyCategory> | undefined;
@@ -76,10 +124,27 @@ function sanitizeWhen(raw: unknown): AmountWhen | null {
   return null;
 }
 
-function sanitizeAmount(raw: unknown, known: ReadonlySet<ID>): Amount | null {
+/**
+ * `fallbackAccount` is what makes accounts a MIGRATION rather than a data loss.
+ *
+ * Every amount written before subsections existed names no account. Dropping
+ * those would empty a ledger somebody has been keeping for months, so they land
+ * in the first account — Cash — which is where money recorded by a person who
+ * had only one place to put it actually was.
+ */
+function sanitizeAmount(
+  raw: unknown,
+  known: ReadonlySet<ID>,
+  accounts: ReadonlySet<ID>,
+  fallbackAccount: ID,
+): Amount | null {
   const value = raw as Partial<Amount> | undefined;
   if (!value || typeof value.id !== 'string' || value.id === '') return null;
   if (typeof value.categoryId !== 'string' || !known.has(value.categoryId)) return null;
+  const accountId =
+    typeof value.accountId === 'string' && accounts.has(value.accountId)
+      ? value.accountId
+      : fallbackAccount;
   const when = sanitizeWhen(value.when);
   if (!when) return null;
   // Whole AMD, always positive. `direction` carries the sign, so a negative
@@ -89,6 +154,7 @@ function sanitizeAmount(raw: unknown, known: ReadonlySet<ID>): Amount | null {
   return {
     id: value.id,
     categoryId: value.categoryId,
+    accountId,
     direction: (value.direction === 'income' ? 'income' : 'expense') as Direction,
     value: amount,
     when,
@@ -99,6 +165,17 @@ function sanitizeAmount(raw: unknown, known: ReadonlySet<ID>): Amount | null {
 
 /** The one validator. Total: `unknown` in, a complete value out. */
 export function sanitizeMoney(input: Partial<MoneyValue> | undefined | null): MoneyValue {
+  const rawAccounts = Array.isArray(input?.accounts) ? input.accounts : [];
+  const sanitized = rawAccounts
+    .map(sanitizeAccount)
+    .filter((account): account is MoneyAccount => account !== null)
+    .sort((a, b) => a.order - b.order)
+    .map((account, order) => ({ ...account, order }));
+  // A value from before subsections existed, or one whose accounts were all junk.
+  // There is no screen that can render zero accounts, so the seed is the floor.
+  const accounts =
+    sanitized.length > 0 ? sanitized : seedAccounts.map((account) => ({ ...account }));
+
   const rawCategories = Array.isArray(input?.categories) ? input.categories : [];
   const categories = rawCategories
     .map(sanitizeCategory)
@@ -107,16 +184,19 @@ export function sanitizeMoney(input: Partial<MoneyValue> | undefined | null): Mo
     .map((category, order) => ({ ...category, order }));
 
   const known = new Set(categories.map((category) => category.id));
+  const accountIds = new Set(accounts.map((account) => account.id));
+  const fallback = accounts[0].id;
   const rawAmounts = Array.isArray(input?.amounts) ? input.amounts : [];
   const amounts = rawAmounts
-    .map((amount) => sanitizeAmount(amount, known))
+    .map((amount) => sanitizeAmount(amount, known, accountIds, fallback))
     .filter((amount): amount is Amount => amount !== null);
 
-  return { categories, amounts };
+  return { accounts, categories, amounts };
 }
 
 export interface AmountDraft {
   categoryId: ID;
+  accountId: ID;
   direction: Direction;
   value: number;
   when: AmountWhen;
@@ -127,6 +207,11 @@ interface MoneyState extends MoneyValue {
   addAmount: (draft: AmountDraft) => ID | null;
   updateAmount: (id: ID, draft: AmountDraft) => void;
   deleteAmount: (id: ID) => void;
+  addAccount: (name: string, glyph: string) => ID | null;
+  updateAccount: (id: ID, patch: { name?: string; glyph?: string }) => void;
+  /** The tap on the big figure: say what you HAVE, the opening absorbs the rest. */
+  setAccountBalance: (id: ID, balance: number) => void;
+  archiveAccount: (id: ID) => void;
   addCategory: (name: string, glyph: string) => ID | null;
   updateCategory: (id: ID, patch: { name?: string; glyph?: string }) => void;
   archiveCategory: (id: ID) => void;
@@ -136,6 +221,7 @@ interface MoneyState extends MoneyValue {
 export const useMoney = create<MoneyState>()(
   persist(
     (set) => ({
+      accounts: seedAccounts,
       categories: seedCategories,
       amounts: [],
 
@@ -182,6 +268,70 @@ export const useMoney = create<MoneyState>()(
       deleteAmount: (id) =>
         set((state) => ({ amounts: state.amounts.filter((amount) => amount.id !== id) })),
 
+      addAccount: (name, glyph) => {
+        const trimmed = name.trim();
+        if (trimmed === '') return null;
+        const id = `acc_${Date.now().toString(36)}`;
+        set((state) => ({
+          accounts: [
+            ...state.accounts,
+            {
+              id,
+              name: trimmed,
+              glyph: glyph || '•',
+              order: state.accounts.length,
+              opening: 0,
+              archivedAt: null,
+            },
+          ],
+        }));
+        return id;
+      },
+
+      updateAccount: (id, patch) =>
+        set((state) => ({
+          accounts: state.accounts.map((account) => {
+            if (account.id !== id) return account;
+            const name = patch.name?.trim();
+            return {
+              ...account,
+              name: name !== undefined && name !== '' ? name : account.name,
+              glyph: patch.glyph !== undefined && patch.glyph !== '' ? patch.glyph : account.glyph,
+            };
+          }),
+        })),
+
+      /*
+       * The user types the balance; `openingFor` works out the opening behind it.
+       * Nothing already logged moves — the correction lands on the one field that
+       * carries money nobody recorded, which is exactly what it is for.
+       */
+      setAccountBalance: (id, balance) =>
+        set((state) => {
+          const account = state.accounts.find((row) => row.id === id);
+          if (!account || !Number.isFinite(balance)) return {};
+          const opening = openingFor(account, state.amounts, balance);
+          return {
+            accounts: state.accounts.map((row) => (row.id === id ? { ...row, opening } : row)),
+          };
+        }),
+
+      /*
+       * Archived like a category and for the same reason — its amounts are in
+       * every total they ever reached. The last live account cannot go: there
+       * would be nowhere to record anything, and nothing to show.
+       */
+      archiveAccount: (id) =>
+        set((state) => {
+          const live = state.accounts.filter((account) => account.archivedAt === null);
+          if (live.length <= 1) return {};
+          return {
+            accounts: state.accounts.map((account) =>
+              account.id === id ? { ...account, archivedAt: new Date().toISOString() } : account,
+            ),
+          };
+        }),
+
       addCategory: (name, glyph) => {
         const trimmed = name.trim();
         if (trimmed === '') return null;
@@ -226,9 +376,19 @@ export const useMoney = create<MoneyState>()(
     }),
     {
       name: 'money',
-      version: 1,
+      /*
+       * 2 — subsections. A stored value from 1 has no `accounts` and no
+       * `accountId` anywhere; `sanitizeMoney` seeds the two and files every
+       * existing amount under Cash, so the bump is documentation rather than a
+       * migration function.
+       */
+      version: 2,
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ categories: state.categories, amounts: state.amounts }),
+      partialize: (state) => ({
+        accounts: state.accounts,
+        categories: state.categories,
+        amounts: state.amounts,
+      }),
       merge: (persisted, current) => ({
         ...current,
         ...sanitizeMoney(persisted as Partial<MoneyValue> | undefined),

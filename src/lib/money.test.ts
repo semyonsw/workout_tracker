@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   type Amount,
+  type MoneyAccount,
   amountsIn,
   balanceOf,
+  balanceOfAccount,
+  inAccount,
+  openingFor,
   byCategory,
   describeAmount,
   describeInterval,
@@ -29,6 +33,7 @@ function day(date: string, value: number, over: Partial<Amount> = {}): Amount {
   return {
     id: `a${seq}`,
     categoryId: 'transport',
+    accountId: 'cash',
     direction: 'expense',
     value,
     when: { kind: 'day', date },
@@ -174,5 +179,52 @@ describe('the figure', () => {
     expect(formatMoney(0, 'AMD')).toBe('0 AMD');
     expect(formatMoney(28970, 'USD')).toBe('28,970 USD');
     expect(formatMoney(-1500, 'AMD')).toBe('-1,500 AMD');
+  });
+});
+
+/**
+ * The subsections.
+ *
+ * Two piles of money that never touch, and an `opening` that is the money nobody
+ * logged. The test worth keeping is the LAST one: setting a balance must move
+ * only the opening, because the alternative — a correction that quietly edits
+ * what was already recorded, or one that lands as an income — is exactly what
+ * this field exists to avoid.
+ */
+describe('a subsection', () => {
+  const cash: MoneyAccount = {
+    id: 'cash',
+    name: 'Cash',
+    glyph: '💵',
+    order: 0,
+    opening: 40000,
+    archivedAt: null,
+  };
+  const amounts: Amount[] = [
+    day('2026-09-04', 1000),
+    day('2026-09-05', 2500, { accountId: 'online' }),
+    day('2026-09-06', 9000, { direction: 'income' }),
+  ];
+
+  it('holds what it opened with, plus only its own amounts', () => {
+    expect(inAccount(amounts, 'cash')).toHaveLength(2);
+    expect(balanceOfAccount(cash, amounts)).toBe(40000 - 1000 + 9000);
+  });
+
+  it('is not touched by what another subsection spent', () => {
+    const online: MoneyAccount = { ...cash, id: 'online', name: 'Online', opening: 0 };
+    expect(balanceOfAccount(online, amounts)).toBe(-2500);
+  });
+
+  it('turns a balance the user typed into the opening behind it', () => {
+    const opening = openingFor(cash, amounts, 50000);
+    expect(balanceOfAccount({ ...cash, opening }, amounts)).toBe(50000);
+    // And nothing logged moved to get there.
+    expect(amounts.map((a) => a.value)).toEqual([1000, 2500, 9000]);
+  });
+
+  it('takes a balance below zero — an account can hold less than nothing', () => {
+    const opening = openingFor(cash, amounts, -500);
+    expect(balanceOfAccount({ ...cash, opening }, amounts)).toBe(-500);
   });
 });

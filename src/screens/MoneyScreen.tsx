@@ -3,8 +3,9 @@
  *
  *   ┌──────────────────────────────────────────────┐
  *   │ EXPENSES                                 ⟲   │
- *   │              OVERALL BALANCE                 │
- *   │                9,020 AMD                     │
+ *   │        ( 💵 Cash )( 💳 Online )( + )          │
+ *   │                   CASH                       │
+ *   │                9,020 AMD                     │  ← tap to set
  *   │          ‹  September 2026 ▾  ›              │
  *   │ ┌──────────────────┬───────────────────────┐ │
  *   │ │ EXPENSES         │ INCOMES               │ │
@@ -16,6 +17,25 @@
  *   │ └───────────────┘ └────────────────────────┘ │
  *   │ ╭──────────── Add expense ───────────────╮   │
  *   └──────────────────────────────────────────────┘
+ *
+ * ── THE SUBSECTION IS THE FIRST THING ON THE SCREEN ───────────────────────
+ *
+ * `Cash` and `Online` are two different piles of money and neither of them is
+ * the sum. The chip row picks ONE, and everything under it — the balance, the
+ * two totals, the grid — is that one's. Nothing on this screen adds them up,
+ * because "how much do I have" is only answerable about a pocket or an account,
+ * never about both at once.
+ *
+ * A LONG PRESS on a chip renames or archives it, which is the same
+ * long-press-for-the-rare-thing the category tiles use.
+ *
+ * ── AND THE BALANCE IS A BUTTON ───────────────────────────────────────────
+ *
+ * Tapping it asks what the subsection actually holds and sets it (see
+ * `components/BalanceSheet.tsx`). The money already in a pocket on the day the
+ * app is installed is not an income, and the only other way to enter it would be
+ * to invent one — a figure nobody earned, sitting in September's incomes and in
+ * every chart drawn from them, forever.
  *
  * ── THE BALANCE DOES NOT MOVE WHEN THE WINDOW DOES ────────────────────────
  *
@@ -67,6 +87,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
+import { BalanceSheet } from '../components/BalanceSheet';
 import { CategoryEditorSheet } from '../components/CategoryEditorSheet';
 import { Icon } from '../components/Icon';
 import { SectionTopBar } from '../components/SectionTopBar';
@@ -81,12 +102,14 @@ import {
   intervalLabel,
   type Direction,
   type Interval,
+  type MoneyAccount,
   type MoneyCategory,
-  balanceOf,
+  balanceOfAccount,
   byCategory,
   describeInterval,
   formatMoney,
   formatValue,
+  inAccount,
   shiftAnchor,
   totalsIn,
 } from '../lib/money';
@@ -104,19 +127,27 @@ interface MoneyScreenProps {
    * Reached by LONG PRESS now — see the header — because the tap belongs to the
    * thing you came here to do.
    */
-  onOpenCategory: (categoryId: ID, interval: Interval, anchor: string) => void;
-  /** The editor, opened on a category and a direction it does not have to be told twice. */
-  onAddAmount: (categoryId: ID | null, direction: Direction) => void;
+  onOpenCategory: (categoryId: ID, accountId: ID, interval: Interval, anchor: string) => void;
+  /**
+   * The editor, opened on a category, a subsection and a direction it does not
+   * have to be told twice.
+   */
+  onAddAmount: (categoryId: ID | null, accountId: ID, direction: Direction) => void;
   /** The ⟲ in the corner: the lines, the balance and where it went. */
-  onOpenHistory: () => void;
+  onOpenHistory: (accountId: ID) => void;
 }
 
 export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: MoneyScreenProps) {
   const t = useT();
   const lang = useLanguage();
+  const accounts = useMoney((s) => s.accounts);
   const categories = useMoney((s) => s.categories);
   const amounts = useMoney((s) => s.amounts);
   const addCategory = useMoney((s) => s.addCategory);
+  const addAccount = useMoney((s) => s.addAccount);
+  const updateAccount = useMoney((s) => s.updateAccount);
+  const archiveAccount = useMoney((s) => s.archiveAccount);
+  const setAccountBalance = useMoney((s) => s.setAccountBalance);
 
   /*
    * The window and the direction START where the settings say and are then this
@@ -136,12 +167,34 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
   const [naming, setNaming] = useState(false);
   /** The category a long press is asking about. Null = no sheet. */
   const [holding, setHolding] = useState<MoneyCategory | null>(null);
+  /*
+   * Which subsection is being read. An ID rather than the account itself, so a
+   * rename or an archive elsewhere cannot leave this screen holding a stale copy.
+   */
+  const [accountId, setAccountId] = useState<ID | null>(null);
+  const [addingAccount, setAddingAccount] = useState(false);
+  /** The subsection a long press is asking about, and the one being renamed. */
+  const [heldAccount, setHeldAccount] = useState<MoneyAccount | null>(null);
+  const [renamingAccount, setRenamingAccount] = useState<MoneyAccount | null>(null);
+  const [settingBalance, setSettingBalance] = useState(false);
 
-  const balance = useMemo(() => balanceOf(amounts), [amounts]);
-  const totals = useMemo(() => totalsIn(amounts, interval, anchor), [amounts, interval, anchor]);
+  const liveAccounts = accounts.filter((account) => account.archivedAt === null);
+  /*
+   * The selected one, or the first — which covers both the first render and the
+   * one after the selected subsection has been archived. The store guarantees at
+   * least one live account, so this is never undefined in practice; the fallback
+   * to `accounts[0]` is what makes that true for the type as well.
+   */
+  const account =
+    liveAccounts.find((row) => row.id === accountId) ?? liveAccounts[0] ?? accounts[0];
+
+  /* Every figure below reads THIS subsection's amounts and no others. */
+  const mine = useMemo(() => inAccount(amounts, account.id), [amounts, account.id]);
+  const balance = useMemo(() => balanceOfAccount(account, amounts), [account, amounts]);
+  const totals = useMemo(() => totalsIn(mine, interval, anchor), [mine, interval, anchor]);
   const perCategory = useMemo(
-    () => byCategory(amounts, direction, interval, anchor),
-    [amounts, direction, interval, anchor],
+    () => byCategory(mine, direction, interval, anchor),
+    [mine, direction, interval, anchor],
   );
   const live = categories.filter((category) => category.archivedAt === null);
   // `All time` has no next or previous window to step to.
@@ -153,7 +206,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
 
       <SectionTopBar
         title={t('Expenses')}
-        onOpenHistory={onOpenHistory}
+        onOpenHistory={() => onOpenHistory(account.id)}
         historyLabel={t('Expense history')}
       />
 
@@ -162,15 +215,53 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
         contentContainerStyle={{ paddingTop: 16, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="items-center">
-          <Kicker>{t('Overall balance')}</Kicker>
+        {/* The subsections. WRAPPING and not a horizontal `ScrollView`: the tab
+            bar's swipe (`components/SwipePager.tsx`) claims sideways drags on
+            capture, so a scrolling chip row would change section under the thumb
+            instead of scrolling. Chips that run out of room drop to a second
+            line, which is also the only arrangement where every one of them is
+            visible without a gesture. */}
+        <View className="mx-lg flex-row flex-wrap items-center justify-center">
+          {liveAccounts.map((row) => (
+            <AccountChip
+              key={row.id}
+              account={row}
+              selected={row.id === account.id}
+              onPress={() => setAccountId(row.id)}
+              onLongPress={() => {
+                tap();
+                setHeldAccount(row);
+              }}
+            />
+          ))}
+          <Pressable
+            onPress={() => setAddingAccount(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t('Add subsection')}
+            style={pressedStyle}
+            className="mb-sm h-hit flex-row items-center rounded-pill border border-dashed border-hairline px-md"
+          >
+            <Icon name="plus" size={16} color={palette.inkMuted} />
+          </Pressable>
+        </View>
+
+        {/* The balance IS the editor — see the header. `button`, not text, and it
+            says so out loud for a screen reader. */}
+        <Pressable
+          onPress={() => setSettingBalance(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`${account.name}. ${formatMoney(balance, currency)}. ${t('Set what you have here.')}`}
+          style={pressedStyle}
+          className="mt-lg items-center"
+        >
+          <Kicker>{account.name}</Kicker>
           <View className="mt-xs flex-row items-baseline">
             <Text className="text-display font-semibold tabular-nums text-ink">
               {formatValue(balance)}
             </Text>
             <Text className="ml-sm text-title font-semibold text-ink-muted">{currency}</Text>
           </View>
-        </View>
+        </Pressable>
 
         <View className="mx-lg mt-lg flex-row items-center justify-center">
           <Pressable
@@ -236,7 +327,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
                 category={category}
                 total={perCategory[category.id] ?? 0}
                 currency={currency}
-                onPress={() => onAddAmount(category.id, direction)}
+                onPress={() => onAddAmount(category.id, account.id, direction)}
                 onLongPress={() => {
                   tap();
                   setHolding(category);
@@ -263,7 +354,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
         <View className="mx-lg mt-xl">
           <PrimaryButton
             label={direction === 'expense' ? t('Add expense') : t('Add income')}
-            onPress={() => onAddAmount(null, direction)}
+            onPress={() => onAddAmount(null, account.id, direction)}
           />
         </View>
       </ScrollView>
@@ -290,6 +381,84 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
         </Sheet>
       ) : null}
 
+      {settingBalance ? (
+        <BalanceSheet
+          title={`${account.glyph}  ${account.name}`}
+          balance={balance}
+          currency={currency}
+          onSave={(next) => {
+            setAccountBalance(account.id, next);
+            setSettingBalance(false);
+          }}
+          onDismiss={() => setSettingBalance(false)}
+        />
+      ) : null}
+
+      {addingAccount ? (
+        <CategoryEditorSheet
+          title={t('Add subsection')}
+          onSave={(name, glyph) => {
+            const id = addAccount(name, glyph);
+            // Land on what you just made — otherwise the only sign it worked is
+            // one more chip in a row of them.
+            if (id) setAccountId(id);
+            setAddingAccount(false);
+          }}
+          onDismiss={() => setAddingAccount(false)}
+        />
+      ) : null}
+
+      {renamingAccount ? (
+        <CategoryEditorSheet
+          title={t('Edit subsection')}
+          name={renamingAccount.name}
+          glyph={renamingAccount.glyph}
+          onSave={(name, glyph) => {
+            updateAccount(renamingAccount.id, { name, glyph });
+            setRenamingAccount(null);
+          }}
+          onDismiss={() => setRenamingAccount(null)}
+        />
+      ) : null}
+
+      {/* The long press on a subsection. `Archive` only exists while there is
+          another one to fall back to: every amount names an account, so the last
+          live one has nowhere to hand its money to. */}
+      {heldAccount ? (
+        <Sheet
+          title={`${heldAccount.glyph}  ${heldAccount.name}`}
+          onDismiss={() => setHeldAccount(null)}
+        >
+          <View className="overflow-hidden rounded-surface bg-surface-alt">
+            <SheetRow
+              label={t('Edit subsection')}
+              detail={t('Its name and its glyph')}
+              onPress={() => {
+                const held = heldAccount;
+                setHeldAccount(null);
+                setRenamingAccount(held);
+              }}
+            />
+            {liveAccounts.length > 1 ? (
+              <>
+                <Separator inset={16} />
+                <SheetRow
+                  label={t('Archive this subsection')}
+                  detail={t('It leaves the row. Everything recorded in it stays recorded.')}
+                  onPress={() => {
+                    const held = heldAccount;
+                    setHeldAccount(null);
+                    archiveAccount(held.id);
+                    if (held.id === accountId) setAccountId(null);
+                  }}
+                />
+              </>
+            ) : null}
+          </View>
+          <TextButton label={t('Cancel')} onPress={() => setHeldAccount(null)} />
+        </Sheet>
+      ) : null}
+
       {naming ? (
         <CategoryEditorSheet
           title={t('Add category')}
@@ -313,7 +482,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
               onPress={() => {
                 const category = holding;
                 setHolding(null);
-                onOpenCategory(category.id, interval, anchor);
+                onOpenCategory(category.id, account.id, interval, anchor);
               }}
             />
             <Separator inset={16} />
@@ -327,7 +496,11 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
               onPress={() => {
                 const category = holding;
                 setHolding(null);
-                onAddAmount(category.id, direction === 'expense' ? 'income' : 'expense');
+                onAddAmount(
+                  category.id,
+                  account.id,
+                  direction === 'expense' ? 'income' : 'expense',
+                );
               }}
             />
           </View>
@@ -379,6 +552,54 @@ function DirectionTile({
         ].join(' ')}
       >
         {formatMoney(value, currency)}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * One subsection, as a pill. Glyph and name; the balance is the big figure above.
+ *
+ * Selected is the same `green` fill the segmented controls use — this is a choice
+ * that changes what the rest of the screen contains, so it has to be readable
+ * without a tap.
+ */
+function AccountChip({
+  account,
+  selected,
+  onPress,
+  onLongPress,
+}: {
+  account: MoneyAccount;
+  selected: boolean;
+  onPress: () => void;
+  onLongPress: () => void;
+}) {
+  const t = useT();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={280}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={account.name}
+      accessibilityHint={t('Long press to edit the subsection')}
+      style={pressedStyle}
+      className={[
+        'mb-sm mr-sm h-hit flex-row items-center rounded-pill px-md',
+        selected ? 'bg-green' : 'border border-hairline bg-surface',
+      ].join(' ')}
+    >
+      <Text className="mr-sm text-label">{account.glyph}</Text>
+      <Text
+        className={[
+          'text-label',
+          selected ? 'font-semibold text-ink' : 'font-medium text-ink-muted',
+        ].join(' ')}
+      >
+        {account.name}
       </Text>
     </Pressable>
   );

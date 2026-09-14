@@ -2,7 +2,7 @@
   "expo": {
     "name": "semyonsw",
     "slug": "workout-tracker",
-    "version": "1.9.0",
+    "version": "1.10.0",
     "orientation": "portrait",
     "scheme": "workouttracker",
     "platforms": [
@@ -22,7 +22,7 @@
     ],
     "android": {
       "package": "com.semyonsw.workouttracker",
-      "versionCode": 31,
+      "versionCode": 32,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#060807"

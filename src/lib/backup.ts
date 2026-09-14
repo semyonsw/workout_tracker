@@ -13,7 +13,7 @@
  *     "sequence":  { "isActive": false, "routineIds": [], "cursor": 0 },
  *     "numbering": { "workoutId": "d_session_x", "number": 91 },
  *     "tasks":     { "tasks": [ ... ], "log": { ... } },
- *     "money":     { "categories": [ ... ], "amounts": [ ... ] }
+ *     "money":     { "accounts": [ ... ], "categories": [ ... ], "amounts": [ ... ] }
  *   }
  *
  * ONE FILE, ALL THREE LOGS. Training, the daily tasks and the money — because

@@ -28,6 +28,7 @@ function day(date: string, value: number, over: Partial<Amount> = {}): Amount {
   return {
     id: `a${seq}`,
     categoryId: 'food',
+    accountId: 'cash',
     direction: 'expense',
     value,
     when: { kind: 'day', date },
@@ -47,6 +48,7 @@ function month(
   return {
     id: `m${seq}`,
     categoryId: 'rent',
+    accountId: 'cash',
     direction: 'expense',
     value,
     when: { kind: 'month', year, month: monthIndex },

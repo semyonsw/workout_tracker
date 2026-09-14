@@ -4,7 +4,7 @@
  *   ┌──────────────────────────────────────────────┐
  *   │ ‹ Money                                      │
  *   │ Transport                                    │
- *   │ September 2026 · 10,300 AMD                  │
+ *   │ 💵 Cash · September 2026 · 10,300 AMD        │
  *   │ ┌────┐ ┌───────────────────────────────────┐ │
  *   │ │ 🚌 │ │ Transport                         │ │
  *   │ └────┘ └───────────────────────────────────┘ │
@@ -34,6 +34,11 @@
  * The window comes from `MoneyScreen` rather than being picked again here: this
  * screen is that screen's tile, opened. Landing on a different window from the
  * one you tapped through is the kind of small lie that makes a total untrustable.
+ *
+ * THE SUBSECTION TRAVELS THE SAME WAY, and for the same reason: the tile said
+ * `Transport 10,300` about Cash, so this screen is about Cash. A list that
+ * quietly included the card spending would not add up to the figure that was
+ * tapped.
  */
 
 import { useMemo, useState } from 'react';
@@ -55,8 +60,10 @@ import {
 import {
   type Amount,
   type Interval,
+  type MoneyAccount,
   type MoneyCategory,
   amountsIn,
+  inAccount,
   describeAmount,
   describeCount,
   describeInterval,
@@ -70,6 +77,8 @@ import type { ID } from '../types/models';
 
 interface CategoryDetailScreenProps {
   category: MoneyCategory;
+  /** The subsection the tile was read through. Only its amounts are listed. */
+  account: MoneyAccount;
   /** The window the money screen was reading through when this was tapped. */
   interval: Interval;
   anchor: string;
@@ -80,6 +89,7 @@ interface CategoryDetailScreenProps {
 
 export function CategoryDetailScreen({
   category,
+  account,
   interval,
   anchor,
   onBack,
@@ -96,8 +106,8 @@ export function CategoryDetailScreen({
   const [archiving, setArchiving] = useState(false);
 
   const rows = useMemo(
-    () => amountsIn(amounts, category.id, interval, anchor),
-    [amounts, category.id, interval, anchor],
+    () => amountsIn(inAccount(amounts, account.id), category.id, interval, anchor),
+    [amounts, account.id, category.id, interval, anchor],
   );
   const total = rows.reduce(
     (sum, row) => sum + (row.direction === 'expense' ? row.value : -row.value),
@@ -116,7 +126,7 @@ export function CategoryDetailScreen({
       >
         <Text className="mx-lg mt-sm text-title font-semibold text-ink">{category.name}</Text>
         <Text className="mx-lg mt-xs text-label text-ink-muted">
-          {describeInterval(interval, anchor, lang)} ·{' '}
+          {account.glyph} {account.name} · {describeInterval(interval, anchor, lang)} ·{' '}
           <Text className="tabular-nums text-green-bright">
             {formatMoney(Math.abs(total), currency)}
           </Text>

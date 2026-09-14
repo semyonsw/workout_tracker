@@ -19,6 +19,11 @@
  * `tailwind.config.js` — so the glyph is doing the work a colour chip would do
  * in another app, which is why it gets a 56-square of its own rather than
  * sitting inside the name field.
+ *
+ * The money screen's SUBSECTIONS are a glyph and a name too, so they arrive here
+ * rather than at a second sheet that would be this one with two words changed.
+ * That is why the two fields are announced as `Name` and `Glyph` and not as a
+ * category's: the title says which thing is being named.
  */
 
 import { useState } from 'react';
@@ -60,7 +65,7 @@ export function CategoryEditorSheet({
             placeholderTextColor={palette.inkFaint}
             cursorColor={palette.greenBright}
             selectionColor={palette.greenBright}
-            accessibilityLabel={t('Category glyph')}
+            accessibilityLabel={t('Glyph')}
             className="w-full text-center text-[22px] text-ink"
           />
         </View>
@@ -71,7 +76,7 @@ export function CategoryEditorSheet({
             placeholder={t('Name')}
             onChangeText={setName}
             autoFocus={initialName === ''}
-            accessibilityLabel={t('Category name')}
+            accessibilityLabel={t('Name')}
           />
         </View>
       </View>

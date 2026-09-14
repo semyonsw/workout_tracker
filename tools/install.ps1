@@ -64,8 +64,11 @@ $App = @{
         @{ Title  = 'Putting the app on your phone'
            Action = {
                param($PyExe)
+               # Sorted as VERSIONS and not as names: by name, 1.9.0 sorts after
+               # 1.10.0 and the phone would be handed the older APK.
                $apk = Get-ChildItem -Path (Join-Path $Root 'workout-tracker-*.apk') -ErrorAction SilentlyContinue |
-                      Sort-Object Name -Descending | Select-Object -First 1
+                      Sort-Object { [version]($_.BaseName -replace '^workout-tracker-', '') } -Descending |
+                      Select-Object -First 1
                if (-not $apk) {
                    Info 'no .apk in this folder - the signed build lives on the GitHub Releases page.'
                    OK 'skipping the phone step (nothing to install from here)'

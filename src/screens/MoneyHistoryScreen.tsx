@@ -2,7 +2,7 @@
  * MoneyHistoryScreen — the two lines and the share, behind the ⟲.
  *
  *   ┌──────────────────────────────────────────────┐
- *   │ ‹ EXPENSE HISTORY                            │
+ *   │ ‹ EXPENSE HISTORY · CASH                     │
  *   │ (Week)(Month)(3 months)(Year)(All)           │
  *   │ (Expenses)(Incomes)                          │
  *   │ EXPENSES OVER TIME                           │
@@ -21,6 +21,11 @@
  * which meant the answer to the second question was four scrolls under the answer
  * to the first, and the two controls sat close enough together to look like one
  * control that was behaving strangely.
+ *
+ * THE SUBSECTION IS NOT ONE OF THE TWO QUESTIONS. It came with the tap — these
+ * are the lines for the chip the money screen was reading — because a chart
+ * whose total disagrees with the screen it was opened from is a chart nobody can
+ * use, and that is exactly what summing Cash and Online here would produce.
  *
  * So the filter stays on the section and the series moved behind the glyph, which
  * is the same glyph in the same corner as the training log's and the daily tasks'.
@@ -45,7 +50,13 @@ import {
   summarizeMoneyTrend,
 } from '../lib/moneyTrends';
 import { TREND_RANGES, TREND_RANGE_LABELS, type TrendRange } from '../lib/trends';
-import { formatMoney, formatValue, type Direction } from '../lib/money';
+import {
+  formatMoney,
+  formatValue,
+  inAccount,
+  type Direction,
+  type MoneyAccount,
+} from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useSettings } from '../state/settingsStore';
 import { useLanguage, useT, type Translate } from '../hooks/useT';
@@ -62,11 +73,19 @@ function directions(t: Translate) {
   ];
 }
 
-export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
+export function MoneyHistoryScreen({
+  account,
+  onBack,
+}: {
+  /** The subsection the ⟲ was tapped in. Every line here is drawn from it alone. */
+  account: MoneyAccount;
+  onBack: () => void;
+}) {
   const t = useT();
   const lang = useLanguage();
   const categories = useMoney((s) => s.categories);
-  const amounts = useMoney((s) => s.amounts);
+  const all = useMoney((s) => s.amounts);
+  const amounts = useMemo(() => inAccount(all, account.id), [all, account.id]);
   const currency = useSettings((s) => s.currencyCode);
   /*
    * Seeded from the setting, then the chips own it — the same rule the task
@@ -104,7 +123,11 @@ export function MoneyHistoryScreen({ onBack }: { onBack: () => void }) {
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker={t('Expense history')} onBack={onBack} bordered={false} />
+      <ScreenHeader
+        kicker={`${t('Expense history')} · ${account.name}`}
+        onBack={onBack}
+        bordered={false}
+      />
 
       <ScrollView
         className="flex-1"

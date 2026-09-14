@@ -366,6 +366,22 @@ const RU: Record<string, string> = {
   'A tap on the tile adds an expense': 'Нажатие на плитку добавляет расход',
   'A tap on the tile adds an income': 'Нажатие на плитку добавляет доход',
   'Add category': 'Добавить категорию',
+  /* --- the subsections: where the money physically is ----------------
+     `Cash` and `Online` themselves are NOT here: an account's name is user data
+     the moment it can be renamed, exactly like a category's, and a catalogue
+     entry for one would rename it back on every render. */
+  Subsection: 'Раздел',
+  'Add subsection': 'Добавить раздел',
+  'Edit subsection': 'Изменить раздел',
+  'Its name and its glyph': 'Название и значок',
+  'Archive this subsection': 'Убрать этот раздел в архив',
+  'It leaves the row. Everything recorded in it stays recorded.':
+    'Он исчезнет из строки. Всё, что в нём записано, останется записанным.',
+  'Long press to edit the subsection': 'Долгое нажатие — изменить раздел',
+  'Set what you have here.': 'Указать, сколько здесь денег.',
+  'What you have': 'Сколько у вас есть',
+  'This sets the balance directly. Nothing is recorded as an income, and no month, category or chart moves.':
+    'Баланс задаётся напрямую. Ничего не записывается как доход, и ни месяц, ни категория, ни график не меняются.',
   Add: 'Добавить',
   'The window before': 'Предыдущий период',
   'The window after': 'Следующий период',
@@ -531,6 +547,7 @@ const RU: Record<string, string> = {
   Category: 'Категория',
   'Category glyph': 'Значок категории',
   'Category name': 'Название категории',
+  Glyph: 'Значок',
   'Choose a backup folder': 'Выбрать папку для копий',
   Close: 'Закрыть',
   'Complete set': 'Отметить подход',

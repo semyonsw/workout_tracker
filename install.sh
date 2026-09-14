@@ -373,7 +373,9 @@ else
 fi
 
 step 'Putting the app on your phone'
-APK="$(ls -1 "$ROOT"/workout-tracker-*.apk 2>/dev/null | sort | tail -1)"
+# `sort -V`, not `sort`: plain sort puts 1.10.0 BEFORE 1.9.0 and would push the
+# older APK to the phone the first time a minor version reached double digits.
+APK="$(ls -1 "$ROOT"/workout-tracker-*.apk 2>/dev/null | sort -V | tail -1)"
 if [ -z "${APK:-}" ]; then
     info 'no .apk in this folder - the signed build lives on the GitHub Releases page.'
     ok 'skipping the phone step (nothing to install from here)'
