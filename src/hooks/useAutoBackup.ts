@@ -21,10 +21,11 @@
  * disk, a provider that has gone away. That is not sloppiness — a backup that
  * cannot write must not become a modal in front of a user who came here to train,
  * and the *visible* consequence is already correct without any error handling at
- * all: `lastBackupAt` does not move, the Settings row keeps saying how old the last
- * copy is, and the Finish sheet starts mentioning it once it is properly stale.
- * The failure reports itself, in the one place that is honest, at the one time the
- * user can act on it.
+ * all: `lastBackupAt` does not move and the Settings row keeps saying how old the
+ * last copy is — `Yesterday` turning into `12 days ago` is the failure reporting
+ * itself, in the one place that is honest about it. (There was once a second
+ * report, on the Finish sheet, and this used to cite it; it is not in the app and
+ * the helper behind it has been deleted rather than left waiting for a caller.)
  *
  * A failed write also does NOT stamp the clock, so the next launch tries again.
  */

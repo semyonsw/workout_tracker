@@ -16,7 +16,8 @@
  *   up next          ╭──────────────────────────────────╮
  *                    │ UP NEXT                          │
  *                    │ Weighted 90° pull-ups            │
- *                    │ +32 KG × 5 REPS     SET 3 OF 4   │
+ *                    │ +32 KG              SET 3 OF 4   │
+ *                    │ 5 REPS                      ±    │
  *                    ╰──────────────────────────────────╯
  *
  * ── WHY ONE COMPONENT AND NOT TWO CLOCKS ────────────────────────────────────
@@ -45,28 +46,16 @@
  */
 
 import type { ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { describeSetPosition, type FocusTarget } from '../lib/focusPlan';
-import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
+import { workCeiling } from '../lib/focusType';
 import { useLanguage, useT } from '../hooks/useT';
-import { glow as GLOW, palette, timerShadow } from '../theme/tokens';
+import { FocusNumbers, workLines } from './FocusNumbers';
+import { focusGlow, palette, size, space, timerShadow } from '../theme/tokens';
 import type { PillTone } from './TimerPill';
 import type { UnitSystem } from '../types/models';
-
-/**
- * The halo behind a focus-mode numeral.
- *
- * The app's one glow, at a wider radius than `SetRow`'s 16: these numerals are
- * twice the size, and a bloom that does not grow with the glyph reads as a
- * sharper edge rather than a lit one. Inline because a text glow is
- * `textShadow*`, which NativeWind has no utility for.
- */
-export const FOCUS_GLOW = {
-  textShadowColor: GLOW,
-  textShadowOffset: { width: 0, height: 0 },
-  textShadowRadius: 26,
-} as const;
 
 interface FocusClockBlockProps {
   /** Every colour in the block. `pillTone(inverted)` — see the file header. */
@@ -179,7 +168,7 @@ export function FocusClockBlock({
           numberOfLines={1}
           style={[
             { color: tone.clock, fontWeight: '600', fontVariant: ['tabular-nums'] },
-            glow ? FOCUS_GLOW : null,
+            glow ? focusGlow : null,
           ]}
           className={variant === 'count' ? 'text-focus-count' : 'text-focus-clock'}
         >
@@ -226,9 +215,11 @@ export function FocusClockBlock({
  *
  * This block is the reason focus mode exists rather than a bigger timer pill:
  * when rest ends you have to already know what to walk to, without touching the
- * phone. So the same figures the clock replaced come back at `display` size in
- * ink — one step down from the 56 dp green they were at while they were the work,
- * which is the app's existing "this is a fact now" rule doing its normal job.
+ * phone — from wherever you are standing, not from 30 cm. So the same figures the
+ * clock replaced come back STACKED and near the clock's own size
+ * (`FocusNumbers`), in ink rather than green: still the biggest thing on the
+ * screen after the countdown, and no longer the instruction, which is the app's
+ * existing "this is a fact now" rule doing its normal job.
  *
  * A NEW EXERCISE IS A DIFFERENT EVENT, and it moves four channels at once, none of
  * them colour alone: the label's words, the label's colour, the block's ground,
@@ -264,19 +255,36 @@ export function FocusUpNext({
 }) {
   const t = useT();
   const lang = useLanguage();
+  const { width, height: screen } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  /* What the SHEET has, which is what the numbers are being budgeted against —
+     the status bar and the gesture bar are not space anything can be drawn in. */
+  const height = screen - insets.top - insets.bottom;
   const { exercise } = target.entry;
+  const lineCount = workLines(target, unitSystem, lang).length;
 
   const body = (
     <>
-      <Text
-        numberOfLines={1}
-        className={[
-          'text-micro font-semibold uppercase',
-          isNewExercise ? 'text-green-bright' : 'text-ink-faint',
-        ].join(' ')}
-      >
-        {isNewExercise ? t('next exercise') : t('up next')}
-      </Text>
+      {/* The set position rides with the LABEL rather than with the numbers: it is
+          chrome, it is the longest word on the block in Russian, and beside the
+          numbers it was taking 100 dp off the one thing this block is for. */}
+      <View className="flex-row items-baseline">
+        <Text
+          numberOfLines={1}
+          className={[
+            'flex-1 text-micro font-semibold uppercase',
+            isNewExercise ? 'text-green-bright' : 'text-ink-faint',
+          ].join(' ')}
+        >
+          {isNewExercise ? t('next exercise') : t('up next')}
+        </Text>
+        <Text
+          numberOfLines={1}
+          className="ml-md text-micro font-semibold uppercase tabular-nums text-ink-faint"
+        >
+          {describeSetPosition(target, lang)}
+        </Text>
+      </View>
 
       <Text
         numberOfLines={2}
@@ -288,36 +296,28 @@ export function FocusUpNext({
         {exercise.name}
       </Text>
 
-      <View className="mt-sm flex-row items-baseline">
-        {exercise.requiresWeight ? (
-          <>
-            <Text className="text-display font-semibold tabular-nums text-ink">
-              {formatWeight(target.set.weightKg, unitSystem, exercise.loadMode)}
-            </Text>
-            <Text className="ml-xs text-label font-semibold uppercase text-ink-muted">
-              {unitLabel(unitSystem, lang)}
-            </Text>
-            <Text className="mx-sm text-label text-ink-faint">×</Text>
-          </>
-        ) : null}
-
-        <Text className="text-display font-semibold tabular-nums text-ink">
-          {formatCount(target.set.count, exercise.countUnit)}
-        </Text>
-        <Text className="ml-xs text-label font-semibold uppercase text-ink-muted">
-          {countUnitLabel(exercise.countUnit, lang)}
-        </Text>
-
-        <View className="flex-1" />
-        <Text className="text-micro font-semibold uppercase tabular-nums text-ink-faint">
-          {describeSetPosition(target, lang)}
-        </Text>
+      {/* THE TWO NUMBERS, at the size the clock above them is read at — stacked,
+          because that is what lets them be that size at all (`FocusNumbers`). */}
+      <View className="mt-sm flex-row items-center">
+        <View className="flex-1">
+          <FocusNumbers
+            target={target}
+            unitSystem={unitSystem}
+            tone="fact"
+            ceiling={workCeiling(height, 'rest', lineCount, isOpen, isNewExercise)}
+            /* The screen's gutter, the card's own padding, and — only when the
+               block is a button — the ± beside them with its margin. */
+            width={width - space.lg * 4 - (onPress ? size.hit + space.md : 0)}
+          />
+        </View>
         {/* The affordance, and only when there is one: `±` is the same mark the
             LIFT state uses for the same panel, so the gesture is learned once
             rather than twice. `×` while it is open, because the block is then the
             way back out of it. */}
         {onPress ? (
-          <Text className="ml-md text-title text-ink-faint">{isOpen ? '×' : '±'}</Text>
+          <View className="ml-md h-hit w-hit shrink-0 items-center justify-center">
+            <Text className="text-title text-ink-faint">{isOpen ? '×' : '±'}</Text>
+          </View>
         ) : null}
       </View>
 

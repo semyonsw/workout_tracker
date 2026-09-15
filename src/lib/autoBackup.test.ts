@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   AUTO_BACKUP_KEEP,
   autoBackupBaseName,
-  BACKUP_STALE_DAYS,
-  backupIsStale,
   daysSince,
   describeBackupAge,
   rotateBackups,
@@ -87,17 +85,6 @@ describe('the age of the last backup', () => {
     expect(describeBackupAge(daysAgo(0), NOW)).toBe('Today');
     expect(describeBackupAge(daysAgo(1), NOW)).toBe('Yesterday');
     expect(describeBackupAge(daysAgo(12), NOW)).toBe('12 days ago');
-  });
-
-  it('is stale only well past one missed interval', () => {
-    /*
-     * At a weekly cadence, a backup eight days old is a phone that was off. Nagging
-     * about that is how a warning becomes furniture — so the Finish sheet stays
-     * quiet until three weeks.
-     */
-    expect(backupIsStale({ lastAt: daysAgo(8) }, NOW)).toBe(false);
-    expect(backupIsStale({ lastAt: daysAgo(BACKUP_STALE_DAYS) }, NOW)).toBe(true);
-    expect(backupIsStale({ lastAt: undefined }, NOW)).toBe(true);
   });
 });
 

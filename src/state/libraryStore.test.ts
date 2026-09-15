@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { routineUsageCount, useLibrary } from './libraryStore';
 import { defaultTargetSets } from '../lib/draft';
@@ -199,6 +199,31 @@ describe('add and delete', () => {
 });
 
 describe('appendToRoutine', () => {
+  /*
+   * A ROUTINE ITEM'S ID IS ITS REACT KEY AND ITS HANDLE FOR THE REORDER.
+   *
+   * It used to be the clock and nothing else, and the clock repeats: anything
+   * that appends twice inside one millisecond appends one id twice. Two rows
+   * sharing an id share a key, and `lib/reorder.ts` resolves a row by `indexOf`,
+   * so a drag would move the first of the pair and leave a hole where the other
+   * one was — which is what a duplicate id looks like from the gym floor.
+   */
+  it('never gives two items the same id, however fast they arrive', () => {
+    const routineId = seedRoutines[0].id;
+    const reps = seedExercises.find((e) => e.countUnit === 'reps');
+    if (!reps) throw new Error('no rep exercise in the fixtures');
+
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    try {
+      for (let n = 0; n < 5; n += 1) useLibrary.getState().appendToRoutine(routineId, reps.id);
+    } finally {
+      clock.mockRestore();
+    }
+
+    const items = useLibrary.getState().routines.find((r) => r.id === routineId)?.items ?? [];
+    expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+  });
+
   it('defaults a rep exercise to 4 sets of 10', () => {
     const routineId = seedRoutines[0].id;
     const reps = seedExercises.find((e) => e.countUnit === 'reps');

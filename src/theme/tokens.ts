@@ -176,3 +176,19 @@ export const timerShadow = {
   shadowRadius: 18,
   elevation: 16,
 } as const;
+
+/**
+ * The halo behind a focus-mode numeral.
+ *
+ * The app's one glow, at a wider radius than `SetRow`'s 16: these numerals are
+ * twice the size and more, and a bloom that does not grow with the glyph reads as
+ * a sharper edge rather than a lit one. A token rather than a constant in a
+ * component because two of them now draw glowing numerals — the clock's get-ready
+ * count and the working numbers — and a glow that drifted apart between them
+ * would be two different lights on one screen.
+ */
+export const focusGlow = {
+  textShadowColor: glow,
+  textShadowOffset: { width: 0, height: 0 },
+  textShadowRadius: 26,
+} as const;

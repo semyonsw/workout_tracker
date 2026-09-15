@@ -59,16 +59,6 @@ export const AUTO_BACKUP_KEEP = 4;
 /** The cadence range. */
 export const AUTO_BACKUP_INTERVAL_LIMITS = { min: 1, max: 30, step: 1 } as const;
 
-/**
- * When a backup is old enough to say so out loud, in days.
- *
- * The Finish sheet is the one screen the user reliably reaches — it is the last tap
- * of every workout — so it is where a stale backup gets mentioned. Three weeks
- * rather than eight days: at a weekly cadence, a backup one interval late is a
- * phone that was off, and nagging about that is how a warning becomes furniture.
- */
-export const BACKUP_STALE_DAYS = 21;
-
 const MS_PER_DAY = 86_400_000;
 
 /** A finite, positive instant, or null. */
@@ -111,15 +101,6 @@ export function shouldBackUpNow(state: AutoBackupState, now: Date = new Date()):
   const days = daysSince(state.lastAt, now);
   if (days == null) return true;
   return days >= Math.max(AUTO_BACKUP_INTERVAL_LIMITS.min, Math.round(state.intervalDays));
-}
-
-/** Has it been long enough to be worth mentioning where the user will see it? */
-export function backupIsStale(
-  state: Pick<AutoBackupState, 'lastAt'>,
-  now: Date = new Date(),
-): boolean {
-  const days = daysSince(state.lastAt, now);
-  return days == null || days >= BACKUP_STALE_DAYS;
 }
 
 /**

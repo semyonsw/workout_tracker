@@ -9,7 +9,6 @@ import {
   describeReminder,
   describeSchedule,
   describeTaskRow,
-  isSpent,
   reorderWithinVisible,
   streakOf,
   summarizeTaskTrend,
@@ -423,14 +422,6 @@ describe('a one-day task', () => {
     expect(asksOn(once, '2026-09-14')).toBe(true);
     expect(asksOn(once, '2026-09-15')).toBe(false);
     expect(asksOn(once, '2026-09-21')).toBe(false);
-  });
-
-  it('is spent once its day has gone, and not before', () => {
-    expect(isSpent(once, '2026-09-13')).toBe(false);
-    expect(isSpent(once, '2026-09-14')).toBe(false);
-    expect(isSpent(once, '2026-09-15')).toBe(true);
-    // A repeating task is never spent, whatever the date.
-    expect(isSpent(task(), '2030-01-01')).toBe(false);
   });
 
   it('names its day rather than a schedule', () => {

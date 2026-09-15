@@ -9,7 +9,8 @@
  *   │  SET 2 OF 4                                  │
  *   │  Weighted 90° pull-ups                       │
  *   │                                              │
- *   │  +32 kg × 5 reps                        ±    │  ← 56 dp, green, glowing
+ *   │  +32 KG                                 ±    │  ← up to 120 dp, green
+ *   │  5 REPS                                      │     and glowing
  *   │  last: +32 kg · 5 4                          │
  *   │                                              │
  *   │                undo last set                 │
@@ -23,9 +24,14 @@
  *
  * The two facts you need mid-workout are WHAT AM I DOING and HOW LONG UNTIL I DO
  * IT, and each of them owns the screen while it is the answer. In LIFT that is the
- * working numbers at 56 dp; in REST it is the countdown at 120. The other fact
- * never disappears — it demotes to a block under the hairline at a size the app
- * already uses.
+ * working numbers, in REST the countdown, and both are drawn at the same 120 dp:
+ * the clock is replaced by the set at the size the clock was, so the answer
+ * changes without the screen moving. The other fact never disappears — it demotes
+ * to a block under the hairline, its numbers still far bigger than any list's.
+ *
+ * The numbers are STACKED and their size is measured rather than fixed — see
+ * `components/FocusNumbers.tsx` and `lib/focusType.ts`. One line of
+ * `+120 kg × 12 reps` was what held them to 56.
  *
  * ── WHY THIS EXISTS AT ALL, WHEN NOTHING IN IT IS NEW ───────────────────────
  *
@@ -91,15 +97,16 @@ import type { DraftSet } from '../lib/draft';
 import { describeSetPosition, focusPlan, focusTarget, type FocusTarget } from '../lib/focusPlan';
 import { tap } from '../lib/feedback';
 import { isTimed as isTimedExercise } from '../lib/setTimer';
+import { workCeiling } from '../lib/focusType';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useRestTimer } from '../hooks/useRestTimer';
 import { useSetTimer } from '../hooks/useSetTimer';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
 import { useLanguage, usePlural, useT } from '../hooks/useT';
-import { palette } from '../theme/tokens';
-import { FOCUS_GLOW } from './FocusClock';
+import { palette, size, space } from '../theme/tokens';
 import { FocusBottom, FocusDone, FocusFinish } from './FocusControls';
+import { FocusNumbers, workLines } from './FocusNumbers';
 import { FocusHold } from './FocusHold';
 import { FocusNudge } from './FocusNudge';
 import { FocusRest } from './FocusRest';
@@ -488,11 +495,11 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
  * session screen that row's numbers now open focus mode, and this is the editor
  * they open into. Every other row keeps `QuickAdjust` exactly as it was.
  *
- * The numbers are GREEN, the size the app reserves for the work, and glowing — the
- * same glow the set row's ring carries, at the wider radius a 56 dp glyph needs.
- * They go to `ink` the moment they stop being what you are about to do and become
- * what you just did: the app's existing "this is a fact now" rule, and the whole
- * argument for the up-next block being ink rather than green.
+ * The numbers are GREEN and glowing at whatever size the screen can give them,
+ * which on an ordinary set is the countdown's own 120 dp. They go to `ink` the
+ * moment they stop being what you are about to do and become what you just did:
+ * the app's existing "this is a fact now" rule, and the whole argument for the
+ * up-next block being ink rather than green.
  */
 function Lift({
   target,
@@ -513,7 +520,13 @@ function Lift({
 }) {
   const t = useT();
   const lang = useLanguage();
+  const { width, height: screen } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  /* The sheet's height, not the screen's: the status bar and the gesture bar are
+     padding, and budgeting against them over-sizes every line on a tall phone. */
+  const height = screen - insets.top - insets.bottom;
   const { exercise } = target.entry;
+  const lineCount = workLines(target, unitSystem, lang).length;
 
   return (
     <>
@@ -545,28 +558,22 @@ function Lift({
           ]
             .filter(Boolean)
             .join(' ')}
-          className="mt-xl flex-row items-baseline px-lg"
+          className="mt-lg flex-row items-center px-lg"
         >
-          {exercise.requiresWeight ? (
-            <>
-              <WorkNumber
-                value={formatWeight(target.set.weightKg, unitSystem, exercise.loadMode)}
-              />
-              <WorkUnit label={unitLabel(unitSystem, lang)} />
-              <Text className="mx-sm text-title text-ink-faint">×</Text>
-            </>
-          ) : null}
-
-          <WorkNumber value={formatCount(target.set.count, exercise.countUnit)} />
-          <WorkUnit label={countUnitLabel(exercise.countUnit, lang)} />
-
-          <View className="flex-1" />
-          {/* WHAT GIVES WAY WHEN THE LINE IS TOO LONG. `+120 kg × 12 reps` plus
-              this box is wider than the gutter on a 360 dp phone, and something
-              has to lose. The numerals never do, and neither does the ± — it is a
-              44 dp target and half a target is worse than none — so the two UNITS
-              shrink and ellipsize, which is the part of the line the design says
-              you never have to read. */}
+          <View className="flex-1">
+            <FocusNumbers
+              target={target}
+              unitSystem={unitSystem}
+              tone="work"
+              ceiling={workCeiling(height, 'lift', lineCount, nudgeOpen)}
+              /* The gutter on both sides, and the ± box beside them. Whatever is
+                 left is what `lib/focusType.ts` gets to fill. */
+              width={width - space.lg * 2 - size.hit}
+            />
+          </View>
+          {/* The ± never gives way: it is a 44 dp target and half a target is
+              worse than none. The numbers shrink instead, and they do it by the
+              width they are actually given rather than by an ellipsis. */}
           <View className="h-hit w-hit shrink-0 items-center justify-center">
             <Text className="text-title text-ink-faint">±</Text>
           </View>
@@ -594,35 +601,6 @@ function Lift({
         <FocusDone onPress={onDone} label={t('done')} />
       </FocusBottom>
     </>
-  );
-}
-
-/** One of the two 56 dp numerals. Tabular, unscaled, and glowing. */
-function WorkNumber({ value }: { value: string }) {
-  return (
-    <Text
-      allowFontScaling={false}
-      numberOfLines={1}
-      style={[FOCUS_GLOW, { fontVariant: ['tabular-nums'] }]}
-      className="text-focus-work font-semibold text-green-bright"
-    >
-      {value}
-    </Text>
-  );
-}
-
-/**
- * `kg` / `reps` beside them — `title`, and `green` rather than `green-bright`.
- *
- * The units stay at 22 while the numerals take 56: a five-character weight with
- * its unit at the same size does not fit the gutter, and the unit is the one part
- * of the line you never have to read.
- */
-function WorkUnit({ label }: { label: string }) {
-  return (
-    <Text numberOfLines={1} className="ml-xs shrink text-title font-semibold uppercase text-green">
-      {label}
-    </Text>
   );
 }
 

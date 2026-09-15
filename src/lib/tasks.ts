@@ -155,17 +155,6 @@ export function asksOn(task: Task, day: string): boolean {
 }
 
 /**
- * A one-day task whose day has been and gone.
- *
- * Not archived and not deleted — the month grid still draws the square and the
- * history still counts it — it simply has nothing left to ask. The editor uses
- * this to tell the user which of their one-off rows are finished.
- */
-export function isSpent(task: Task, today: string): boolean {
-  return task.schedule.kind === 'once' && task.schedule.day < today;
-}
-
-/**
  * One-day tasks whose day has not arrived yet, soonest first.
  *
  * ── WHY THIS EXISTS: A TASK YOU CANNOT SEE IS A TASK YOU DID NOT WRITE DOWN ──

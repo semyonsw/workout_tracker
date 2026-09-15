@@ -209,7 +209,6 @@ const RU: Record<string, string> = {
   'Sets each': 'Подходов в каждом',
   Roll: 'Собрать',
   'Rolling…': 'Собираем…',
-  'Pick at least one group.': 'Выберите хотя бы одну группу.',
   'There is nothing in the library for those groups yet.':
     'В базе пока нет упражнений для этих групп.',
   'Nothing to roll — the library is empty.': 'Нечего собирать — база упражнений пуста.',
@@ -329,7 +328,6 @@ const RU: Record<string, string> = {
     'Уведомления для приложения выключены, поэтому ничего не придёт.',
   Reminders: 'Напоминания',
   'Reminds at {time}': 'Напомнит в {time}',
-  'No reminder': 'Без напоминания',
 
   /* --- the session ------------------------------------------------- */
   'Start workout': 'Начать тренировку',

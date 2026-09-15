@@ -222,6 +222,25 @@ export function copyName(
   return first;
 }
 
+/**
+ * An id nothing in `taken` already claims, stamped with the clock.
+ *
+ * The clock alone is not unique — `Date.now()` has millisecond resolution, and
+ * anything that mints two ids inside one millisecond mints one id twice. For a
+ * routine ITEM that is not an abstract worry: two items sharing an id share a
+ * React key, and the reorder resolves a row by `indexOf`, so the list would move
+ * the wrong row and leave a hole where the right one was.
+ */
+function freshId(prefix: string, taken: readonly string[]): string {
+  const claimed = new Set(taken);
+  const base = `${prefix}_${Date.now().toString(36)}`;
+  if (!claimed.has(base)) return base;
+  for (let n = 1; n < 1000; n += 1) {
+    if (!claimed.has(`${base}${n.toString(36)}`)) return `${base}${n.toString(36)}`;
+  }
+  return base;
+}
+
 /** A `r_…` id nothing in `taken` already claims. */
 function freshStamp(taken: readonly string[]): string {
   const claimed = new Set(taken);
@@ -513,7 +532,10 @@ export const useLibrary = create<LibraryState>()(
                   items: [
                     ...routine.items,
                     {
-                      id: `ri_${Date.now().toString(36)}`,
+                      id: freshId(
+                        'ri',
+                        routine.items.map((item) => item.id),
+                      ),
                       exerciseId: exercise.id,
                       order: routine.items.length,
                       targetSets: sets,

@@ -67,11 +67,13 @@ module.exports = {
       // (`components/FocusMode.tsx`) — the full-screen sheet where one fact owns
       // the screen and there is no list, no pill and no header competing with it.
       //
-      // `focus-work` is the set you are about to do: one step above `display` and
-      // less than half the clock, so the hierarchy between "what am I doing" and
-      // "how long until I do it" is never in doubt. Sized on the worst realistic
-      // line — `+120 kg × 12 reps` with its units left at `title` — which lands at
-      // 314 of the 328 dp a 360 dp phone has inside the gutter.
+      // `focus-work` was the set you are about to do, on ONE line, and 56 was the
+      // largest size its worst line could take: `+120 kg × 12 reps` with its units
+      // at `title` lands at 314 of the 328 dp a 360 dp phone has inside its
+      // gutter. Those numbers are two lines now and their size is measured per
+      // screen (`lib/focusType.ts`), which is what let them grow to the clock's
+      // own 120. This step survives for the one thing left at a fixed 56: the
+      // `Session complete` headline, which is words rather than a number.
       'focus-work': ['56px', { lineHeight: '60px', letterSpacing: '-1.6px' }],
       // `focus-clock` is the countdown. `PillClock` keeps 84 on the session
       // screen, where four controls share the row with it; this is the largest
