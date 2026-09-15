@@ -4,6 +4,7 @@ import {
   type Amount,
   type MoneyAccount,
   amountsIn,
+  amountsOnDay,
   balanceOf,
   balanceOfAccount,
   inAccount,
@@ -226,5 +227,45 @@ describe('a subsection', () => {
   it('takes a balance below zero — an account can hold less than nothing', () => {
     const opening = openingFor(cash, amounts, -500);
     expect(balanceOfAccount({ ...cash, opening }, amounts)).toBe(-500);
+  });
+});
+
+/**
+ * ── ONE DAY, WHOLE ─────────────────────────────────────────────────────────
+ *
+ * The day view's list. Every category, both directions, in the order the
+ * amounts were written down — and never a whole-month amount, which is the same
+ * rule the rest of this file is one long argument for.
+ */
+describe('a single day', () => {
+  const rows: Amount[] = [
+    day('2026-09-12', 400, { createdAt: '2026-09-12T09:00:00.000Z', note: 'taxi to the gym' }),
+    day('2026-09-12', 2600, {
+      categoryId: 'food',
+      createdAt: '2026-09-12T20:00:00.000Z',
+      note: 'groceries',
+    }),
+    day('2026-09-12', 15000, { direction: 'income', createdAt: '2026-09-12T12:00:00.000Z' }),
+    day('2026-09-13', 900),
+    month(2026, 8, 6000, { note: 'metro pass' }),
+  ];
+
+  it('is every category and both directions, oldest first', () => {
+    expect(amountsOnDay(rows, '2026-09-12').map((row) => row.value)).toEqual([400, 15000, 2600]);
+  });
+
+  it('keeps the note, which is the whole reason the day view exists', () => {
+    expect(amountsOnDay(rows, '2026-09-12')[0].note).toBe('taxi to the gym');
+  });
+
+  it('holds no whole-month amount — it is on no day at all', () => {
+    const everything = [...rows, month(2026, 8, 100)];
+    for (const row of amountsOnDay(everything, '2026-09-12')) {
+      expect(row.when.kind).toBe('day');
+    }
+  });
+
+  it('is empty on a day nothing was recorded on', () => {
+    expect(amountsOnDay(rows, '2026-09-14')).toEqual([]);
   });
 });

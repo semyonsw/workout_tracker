@@ -1261,7 +1261,17 @@ export function AppShell() {
   if (top?.name === 'moneyHistory') {
     const account = moneyAccounts.find((row) => row.id === top.accountId);
     if (!account) return <Fallback onBack={pop} />;
-    return <MoneyHistoryScreen account={account} onBack={pop} />;
+    return (
+      <MoneyHistoryScreen
+        account={account}
+        onBack={pop}
+        /* A row of the day list is an amount, and the editor is where an amount
+           is read and corrected — the same route the category screen pushes. */
+        onOpenAmount={(amountId) =>
+          push({ name: 'moneyAmount', amountId, categoryId: null, accountId: null })
+        }
+      />
+    );
   }
 
   /* ------------------------------------------------------------------ */

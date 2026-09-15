@@ -682,6 +682,8 @@ const RU: Record<string, string> = {
   None: 'Нет',
   'Not enough yet': 'Пока мало данных',
   'Nothing finished yet': 'Пока ничего не завершено',
+  'Nothing recorded on this day. A whole-month amount is on no day at all, so it is not here either.':
+    'В этот день ничего не записано. У суммы за целый месяц дня нет вовсе, поэтому здесь её тоже не будет.',
   'Nothing left to rest for': 'Отдыхать больше не за чем',
   'Nothing recorded in this range. Put something in and the line draws itself.':
     'За этот период ничего не записано. Внесите сумму — и линия построится сама.',
@@ -800,6 +802,7 @@ const RU: Record<string, string> = {
   'Up to three months the line is one point a day; past that it is one a month. A whole-month amount has no day to sit on, so it only appears once the buckets are months.':
     'До трёх месяцев линия строится по дням, дальше — по месяцам. У суммы за месяц нет своего дня, поэтому она появляется, только когда деления — месяцы.',
   Use: 'Применить',
+  'Spent {spent} · received {received}': 'Потрачено {spent} · получено {received}',
   'Use this sequence': 'Использовать последовательность',
   'Warm-up': 'Разминка',
   'Weight per workout': 'Вес за тренировку',
@@ -860,6 +863,7 @@ const RU: Record<string, string> = {
   'most on {label}, {value}': 'больше всего {label}, {value}',
   next: 'следующая',
   'next exercise': 'следующее упражнение',
+  'no note': 'без заметки',
   'no rest': 'без отдыха',
   'no target, no drain line, no bell': 'без цели, без полосы, без сигнала',
   'no workout': 'тренировок нет',
@@ -1010,6 +1014,7 @@ const RU: Record<string, string> = {
   '{head}, and {count} {others} moved up too': '{head}, и ещё {count} {others} поднялось',
   other: 'другое',
   others: 'других',
+  'One day at a time': 'По одному дню',
   'One line, shown on the card while you are doing this exercise. A seat height, a pin number, the thing you keep forgetting.':
     'Одна строка, видна на карточке во время упражнения. Высота сиденья, номер фиксатора — то, что вы всё время забываете.',
   'Off · the ladder owns the reps': 'Выкл · повторения задаёт лестница',

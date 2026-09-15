@@ -382,3 +382,30 @@ export function describeCount(count: number, lang: Language = 'en'): string {
     }),
   });
 }
+
+/**
+ * Everything recorded on ONE day, oldest first.
+ *
+ * ── WHY THIS IS NOT `amountsIn(…, 'day', …)` ──────────────────────────────
+ *
+ * That one answers "this CATEGORY, in this window", which is the question the
+ * category screen was opened with. The day view asks the opposite one — what did
+ * a day consist of — so it crosses every category and both directions, and the
+ * category becomes a thing each row STATES rather than a thing the list was
+ * filtered by. A day read as eight separate category screens is not a day.
+ *
+ * Oldest first, and that disagrees with every other list of amounts in the app on
+ * purpose: those are windows onto months, where the newest thing is the thing you
+ * just did. A single day is short enough to read end to end, and reading it in the
+ * order it happened is what turns a list of figures back into a morning and an
+ * afternoon.
+ *
+ * A whole-month amount is absent, because it is on no day at all — `inInterval`
+ * makes the same call and the file header argues it. The day view says so in a
+ * footnote rather than quietly dropping it.
+ */
+export function amountsOnDay(amounts: readonly Amount[], day: string): Amount[] {
+  return amounts
+    .filter((amount) => amount.when.kind === 'day' && amount.when.date === day)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}

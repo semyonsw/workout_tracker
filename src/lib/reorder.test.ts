@@ -5,6 +5,7 @@ import {
   liftIndex,
   liftedSlotHeight,
   moveToIndex,
+  rowOffsetMode,
   rowShift,
   type CardLayout,
 } from './reorder';
@@ -299,5 +300,26 @@ describe('liftedSlotHeight', () => {
 
   it('is zero for an unmeasured row, so nothing moves on a guess', () => {
     expect(liftedSlotHeight(['a', 'b'], 'a', { b: { y: 84, height: 80 } })).toBe(0);
+  });
+});
+
+/**
+ * ── AND EVERY ROW GOES BACK WHERE THE LAYOUT PUTS IT ───────────────────────
+ *
+ * The gap is supposed to exist only while a finger is holding a row in the air.
+ * One that outlived the drop is the bug the routine editor and the session both
+ * had: a hole between two exercises, and the last row drawn over the footer.
+ */
+describe('a row after the drop', () => {
+  it('carries no offset at all once nothing is lifted', () => {
+    expect(rowOffsetMode(false, false)).toBe('none');
+  });
+
+  it('follows the finger while it is the row in the air', () => {
+    expect(rowOffsetMode(true, true)).toBe('finger');
+  });
+
+  it('moves by a slot while some other row is up', () => {
+    expect(rowOffsetMode(false, true)).toBe('slot');
   });
 });

@@ -1,17 +1,43 @@
 /**
- * MoneyHistoryScreen — the two lines and the share, behind the ⟲.
+ * MoneyHistoryScreen — one day in full, then the two lines and the share.
  *
  *   ┌──────────────────────────────────────────────┐
  *   │ ‹ EXPENSE HISTORY · CASH                     │
- *   │ (Week)(Month)(3 months)(Year)(All)           │
- *   │ (Expenses)(Incomes)                          │
+ *   │ ONE DAY AT A TIME                            │
+ *   │ ‹        12 September 2026        ›          │
+ *   │ 🚌 Transport                    400 AMD    › │
+ *   │    taxi to the gym                           │
+ *   │ 🧊 Food                       2,600 AMD    › │
+ *   │    no note                                   │
+ *   │ Spent 3,000 AMD · received 0 AMD             │
  *   │ EXPENSES OVER TIME                           │
+ *   │ (Expenses)(Incomes)                          │
+ *   │ (Week)(Month)(3 months)(Year)(All)           │
  *   │  ╱╲    ╱╲                                    │
  *   │ ╱  ╲__╱  ╲___                                │
  *   │ BALANCE OVER THE SAME RANGE                  │
  *   │ WHERE IT WENT                                │
  *   │ 🚌 Transport        10,300 AMD      36%      │
  *   └──────────────────────────────────────────────┘
+ *
+ * ── THE DAY LIST IS WHERE A NOTE FINALLY GETS READ ────────────────────────
+ *
+ * Every amount can carry a sentence saying what it was for, and for three
+ * releases the only place one appeared was inside one category's own list, in
+ * whatever window that screen had been opened with. So reading back a single
+ * Tuesday — what did I actually spend this on — meant opening eight categories
+ * and reassembling the day in your head, and the notes were in practice
+ * write-only.
+ *
+ * The day list is that Tuesday, whole: every category, both directions, in the
+ * order the amounts were written down, each with its note on a line of its own.
+ * It is deliberately the FIRST thing on this screen and not a fourth chart,
+ * because "what was that 2,600" is a question with an exact answer sitting in
+ * the log, and everything below it is a shape rather than an answer.
+ *
+ * It does NOT follow the direction chips. Those pick which line is drawn; a day
+ * is not a direction, and hiding the morning's income behind a chip meant for a
+ * chart would make the day's own total unreadable against its rows.
  *
  * ── THE WINDOW AND THE RANGE ARE STILL TWO QUESTIONS ───────────────────────
  *
@@ -35,13 +61,15 @@
  */
 
 import { useMemo, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
+import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TrendChart } from '../components/TrendChart';
-import { GlassCard, Kicker, SelectChip, Separator } from '../components/primitives';
-import { dayKey } from '../lib/days';
+import { pressedStyle } from '../components/motion';
+import { GlassCard, Kicker, SelectChip, Separator, TextButton } from '../components/primitives';
+import { dayKey, formatLongDay, shiftDay } from '../lib/days';
 import { tap } from '../lib/feedback';
 import {
   categoryShares,
@@ -51,17 +79,21 @@ import {
 } from '../lib/moneyTrends';
 import { TREND_RANGES, TREND_RANGE_LABELS, type TrendRange } from '../lib/trends';
 import {
+  amountsOnDay,
   formatMoney,
   formatValue,
   inAccount,
+  type Amount,
   type Direction,
   type MoneyAccount,
+  type MoneyCategory,
 } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
-import { glowRepeating } from '../theme/tokens';
+import { glowRepeating, palette } from '../theme/tokens';
 import { useSettings } from '../state/settingsStore';
 import { useLanguage, useT, type Translate } from '../hooks/useT';
 import { plural, t as translate, type Language } from '../lib/i18n';
+import type { ID } from '../types/models';
 
 /*
  * A function rather than a constant, because the labels are translated: a
@@ -77,10 +109,13 @@ function directions(t: Translate) {
 export function MoneyHistoryScreen({
   account,
   onBack,
+  onOpenAmount,
 }: {
   /** The subsection the ⟲ was tapped in. Every line here is drawn from it alone. */
   account: MoneyAccount;
   onBack: () => void;
+  /** A row of the day list, opened in the editor it was written in. */
+  onOpenAmount: (amountId: ID) => void;
 }) {
   const t = useT();
   const lang = useLanguage();
@@ -101,6 +136,24 @@ export function MoneyHistoryScreen({
   );
 
   const today = dayKey(new Date());
+  /*
+   * Which day the list below is reading. Its own state and not the chart's range:
+   * they answer different questions, and a day that moved when the range chips
+   * were touched would be the one control on this screen that did two things.
+   */
+  const [day, setDay] = useState(today);
+  const dayRows = useMemo(() => amountsOnDay(amounts, day), [amounts, day]);
+  const dayTotals = useMemo(
+    () =>
+      dayRows.reduce(
+        (sums, row) => ({
+          spent: sums.spent + (row.direction === 'expense' ? row.value : 0),
+          received: sums.received + (row.direction === 'income' ? row.value : 0),
+        }),
+        { spent: 0, received: 0 },
+      ),
+    [dayRows],
+  );
   const series = useMemo(
     () => moneyTrendSeries(amounts, direction, range, today, lang),
     [amounts, direction, lang, range, today],
@@ -135,6 +188,89 @@ export function MoneyHistoryScreen({
         contentContainerStyle={{ paddingTop: 16, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
+        <Kicker className="mx-lg mb-sm">{t('One day at a time')}</Kicker>
+
+        {/* THE DAY. Both directions, every category, and the note on its own line —
+            see the file header. The chevrons step ONE day, like the window picker
+            on the money screen, so where a tap lands is never a surprise; `Today`
+            is the way back from a walk into last month. */}
+        <View className="mx-lg flex-row items-center">
+          <Pressable
+            onPress={() => {
+              tap();
+              setDay((current) => shiftDay(current, -1));
+            }}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={t('The day before')}
+            style={pressedStyle}
+            className="h-hit w-[32px] items-center justify-center"
+          >
+            <Icon name="chevron-left" size={20} color={palette.inkMuted} />
+          </Pressable>
+          <Text className="flex-1 text-center text-body font-medium tabular-nums text-ink">
+            {formatLongDay(day, lang)}
+          </Text>
+          <Pressable
+            onPress={() => {
+              tap();
+              setDay((current) => shiftDay(current, 1));
+            }}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={t('The day after')}
+            style={pressedStyle}
+            className="h-hit w-[32px] items-center justify-center"
+          >
+            <Icon name="chevron-right" size={20} color={palette.inkMuted} />
+          </Pressable>
+        </View>
+
+        {dayRows.length > 0 ? (
+          <>
+            <GlassCard className="mx-lg mt-sm">
+              {dayRows.map((row, index) => (
+                <View key={row.id}>
+                  {index > 0 ? <Separator /> : null}
+                  <DayRow
+                    amount={row}
+                    category={namesById[row.categoryId] ?? null}
+                    currency={currency}
+                    onPress={() => onOpenAmount(row.id)}
+                  />
+                </View>
+              ))}
+            </GlassCard>
+            <Text className="mx-lg mt-sm text-label tabular-nums text-ink-faint">
+              {t('Spent {spent} · received {received}', {
+                spent: money(dayTotals.spent),
+                received: money(dayTotals.received),
+              })}
+            </Text>
+          </>
+        ) : (
+          <Text className="mx-lg mt-sm text-label text-ink-faint">
+            {t(
+              'Nothing recorded on this day. A whole-month amount is on no day at all, so it is not here either.',
+            )}
+          </Text>
+        )}
+
+        {day !== today ? (
+          <View className="mx-lg">
+            <TextButton
+              label={t('Today')}
+              onPress={() => {
+                tap();
+                setDay(today);
+              }}
+            />
+          </View>
+        ) : null}
+
+        <Kicker className="mx-lg mb-sm mt-xxl">
+          {direction === 'expense' ? t('Expenses over time') : t('Incomes over time')}
+        </Kicker>
         <View className="mx-lg flex-row flex-wrap">
           {directions(t).map((option) => (
             <SelectChip
@@ -148,10 +284,6 @@ export function MoneyHistoryScreen({
             />
           ))}
         </View>
-
-        <Kicker className="mx-lg mb-sm mt-xxl">
-          {direction === 'expense' ? t('Expenses over time') : t('Incomes over time')}
-        </Kicker>
         <View className="mx-lg flex-row flex-wrap">
           {TREND_RANGES.map((option) => (
             <SelectChip
@@ -253,6 +385,68 @@ function bucketNoun(range: TrendRange, count: number, lang: Language): string {
       ? { one: translate('month', lang), few: 'месяца', many: translate('months', lang) }
       : { one: translate('day', lang), few: 'дня', many: translate('days', lang) };
   return plural(count, lang, forms);
+}
+
+/**
+ * ONE AMOUNT, ON THE DAY IT WAS RECORDED — the glyph, the category, and the NOTE.
+ *
+ * The note is why this row exists. It was written at the till, it is the only
+ * record of what the 2,600 actually was, and until now the single screen that
+ * showed it was one category's own list in one window — so reading back a
+ * Tuesday meant opening eight categories and reassembling it by hand.
+ *
+ * So the note is a LINE OF ITS OWN and not a tail on the meta line: it is a
+ * sentence a person wrote, it is the longest thing in the row, and truncating it
+ * to fit beside a date would hide exactly the half that says why. Two lines of it,
+ * then an ellipsis — the editor is one tap away and holds the rest.
+ *
+ * A row with no note says `no note` in `ink-faint` rather than collapsing. An
+ * amount nobody explained is a fact about that amount, and a list whose rows
+ * changed height depending on it would be harder to scan than one that does not.
+ */
+function DayRow({
+  amount,
+  category,
+  currency,
+  onPress,
+}: {
+  amount: Amount;
+  /** Null once the category has been archived — the amount outlives it. */
+  category: MoneyCategory | null;
+  /** Passed down rather than read here: the lib formats, the screen decides. */
+  currency: string;
+  onPress: () => void;
+}) {
+  const t = useT();
+  const note = amount.note.trim();
+  const name = category?.name ?? t('Archived');
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${name}. ${formatMoney(amount.value, currency)}. ${note === '' ? t('no note') : note}`}
+      style={pressedStyle}
+      className="justify-center px-lg py-md"
+    >
+      <View className="flex-row items-center">
+        <Text className="mr-sm text-label">{category?.glyph ?? '•'}</Text>
+        <Text numberOfLines={1} className="flex-1 text-body text-ink">
+          {name}
+        </Text>
+        <Text className="ml-md text-body tabular-nums text-ink">
+          {amount.direction === 'income' ? '+' : ''}
+          {formatMoney(amount.value, currency)}
+        </Text>
+        <Icon name="chevron-right" size={16} color={palette.inkFaint} />
+      </View>
+      <Text
+        numberOfLines={2}
+        className={`ml-[22px] mt-[2px] text-label ${note === '' ? 'text-ink-faint' : 'text-ink-muted'}`}
+      >
+        {note === '' ? t('no note') : note}
+      </Text>
+    </Pressable>
+  );
 }
 
 /**

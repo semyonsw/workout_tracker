@@ -43,6 +43,8 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, type LayoutChangeEvent } from 'react-native';
 
+import { rowOffsetMode } from '../lib/reorder';
+
 /** How firmly a displaced row travels. Critically damped, no overshoot. */
 const SPRING = { stiffness: 240, damping: 26, mass: 1 } as const;
 
@@ -68,6 +70,7 @@ export function ReorderRow({
   children,
 }: ReorderRowProps) {
   const offset = useRef(new Animated.Value(0)).current;
+  const mode = rowOffsetMode(lifted, dragging);
 
   useEffect(() => {
     /*
@@ -88,6 +91,19 @@ export function ReorderRow({
      * on screen with an old offset still applied.
      */
     if (!dragging) {
+      /*
+       * `stopAnimation` BEFORE the reset, and it is not belt and braces.
+       *
+       * The spring above runs on the native side. A `setValue` while it is still
+       * in flight is two messages racing — the reset and the spring's next frame —
+       * and when the frame wins, the row keeps the offset it was drawn with and
+       * the list is left with a hole in it where that row should be and a row
+       * sitting on top of whatever is under it. That is the gap this file's
+       * whole point was to remove, made permanent, and it was the reorder bug:
+       * intermittent, because a race is, and surviving until something else
+       * happened to re-render the screen.
+       */
+      offset.stopAnimation(() => offset.setValue(0));
       offset.setValue(0);
       return;
     }
@@ -103,10 +119,23 @@ export function ReorderRow({
       // While a row is in the air NOTHING in the list is tappable: a finger
       // sliding a row across a circle must not answer a task.
       pointerEvents={dragging ? 'none' : 'auto'}
+      /*
+       * AND THE OFFSET ONLY EXISTS WHILE SOMETHING IS LIFTED.
+       *
+       * With nothing in the air the row is drawn where the layout puts it, full
+       * stop — no transform, no animated node attached to it, nothing that a
+       * value left behind on the native side could still be saying. The reset
+       * above is the tidy path; this is the one that cannot be raced, and both
+       * are here because the failure it prevents is a list that keeps a gap in
+       * it until the screen is left and come back to. `lib/reorder.ts` holds the
+       * three-way choice and the test that remembers why there are three.
+       */
       style={
-        lifted
+        mode === 'finger'
           ? { transform: [{ translateY: dragY }], zIndex: 2, elevation: 2 }
-          : { transform: [{ translateY: offset }] }
+          : mode === 'slot'
+            ? { transform: [{ translateY: offset }] }
+            : undefined
       }
       onLayout={onLayout}
     >

@@ -213,3 +213,29 @@ export function liftedSlotHeight(
 
   return own.height;
 }
+
+/* ------------------------------------------------------------------ */
+/* Putting the rows back                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What a row's vertical offset is, right now: the finger, a slot, or NOTHING.
+ *
+ * Three words for a two-branch ternary, in `lib/` and with a test on it, because
+ * the third one is a bug the app shipped. A row that is only getting out of the
+ * way is moved by a native spring, and a drop resets that spring's value — so
+ * for a while the row with nothing lifted still CARRIED the animated offset, and
+ * a reset that lost its race with the spring's last frame left the row drawn a
+ * slot away from where the list had laid it out. On screen: a permanent hole in
+ * the routine, and the last exercise sitting on top of `Add exercise`, in the
+ * editor, in the session and in the list, until the screen was left and reopened.
+ *
+ * `none` is the fix and it is not an optimisation: with nothing in the air the
+ * row has no transform at all, so there is no value left anywhere that could
+ * still be displacing it. The reset stays as the tidy path; this is the one that
+ * cannot be raced.
+ */
+export function rowOffsetMode(lifted: boolean, dragging: boolean): 'finger' | 'slot' | 'none' {
+  if (lifted) return 'finger';
+  return dragging ? 'slot' : 'none';
+}
