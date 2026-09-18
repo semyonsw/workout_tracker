@@ -81,7 +81,8 @@ export type IconName =
    * else's money.
    */
   | 'money'
-  | 'flame';
+  | 'flame'
+  | 'backspace';
 
 interface IconProps {
   name: IconName;
@@ -112,6 +113,7 @@ const STROKE: Record<IconName, number> = {
   dice: 2,
   money: 2,
   flame: 2,
+  backspace: 2,
 };
 
 /**
@@ -178,6 +180,14 @@ const PATHS: Record<IconName, string[]> = {
   // A banknote, seen flat: the note's edge and the coin printed on it. It reads
   // at 15px, which is the size the Settings map draws it at.
   money: ['M3 6.5h18v11H3z', 'M12 9.6a2.4 2.4 0 100 4.8 2.4 2.4 0 000-4.8z'],
+  // The keypad's delete key. A glyph rather than the `⌫` character: that
+  // codepoint is not in every Roboto build Android ships, and a missing one
+  // renders as a tofu box on the one key whose whole job is to be recognised
+  // without a label.
+  backspace: [
+    'M20.5 5.5H9.4L3.2 12l6.2 6.5h11.1a1.6 1.6 0 001.6-1.6V7.1a1.6 1.6 0 00-1.6-1.6z',
+    'M12.6 9.6l4.8 4.8M17.4 9.6l-4.8 4.8',
+  ],
   // A flame, drawn as an outline in the app's own green rather than as an
   // emoji: the streak badge has three temperatures and all three are the same
   // hue at different alphas, which a coloured glyph would break.

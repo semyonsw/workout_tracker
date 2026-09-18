@@ -153,9 +153,39 @@ interface MoneyScreenProps {
    * particular day rather than about a range.
    */
   onOpenHistory: (accountId: ID, anchor: string) => void;
+  /**
+   * WHICH SUBSECTION, WHICH WINDOW, WHICH DIRECTION — held by the shell.
+   *
+   * These were four `useState`s in this file, and that was right until the ⟲
+   * started pushing a screen: a pushed route replaces the tab root entirely, so
+   * coming back from the expense history re-mounted this screen and re-seeded
+   * the anchor from the clock. You walked back to July, opened the history, came
+   * back, and the app was showing September as though you had never moved.
+   *
+   * `navigation/AppShell.tsx` holds them for exactly the reason it already holds
+   * the tasks' pinned day, and drops them on the way OUT of the section, so
+   * "leave and come back" still lands on this month.
+   */
+  window: MoneyWindow;
+  onChangeWindow: (patch: Partial<MoneyWindow>) => void;
 }
 
-export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: MoneyScreenProps) {
+/** What the money section is currently reading. See `MoneyScreenProps.window`. */
+export interface MoneyWindow {
+  /** Null until a subsection has been chosen; the first live one is then used. */
+  accountId: ID | null;
+  interval: Interval;
+  anchor: string;
+  direction: Direction;
+}
+
+export function MoneyScreen({
+  onOpenCategory,
+  onAddAmount,
+  onOpenHistory,
+  window: view,
+  onChangeWindow,
+}: MoneyScreenProps) {
   const t = useT();
   const lang = useLanguage();
   const accounts = useMoney((s) => s.accounts);
@@ -168,29 +198,22 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
   const setAccountBalance = useMoney((s) => s.setAccountBalance);
 
   /*
-   * The window and the direction START where the settings say and are then this
-   * screen's own. Reading them live would mean a section that snapped back to the
-   * month every time the settings screen was visited, which is not what a default
-   * is.
+   * The window, the direction and the subsection are the SHELL's — see the
+   * prop. They start where the settings say; reading the settings live would
+   * mean a section that snapped back to the month every time the settings screen
+   * was visited, which is not what a default is.
    */
   const bars = useBarInsets();
   const currency = useSettings((s) => s.currencyCode);
-  const [interval, setInterval] = useState<Interval>(
-    () => useSettings.getState().moneyDefaultInterval,
-  );
-  const [anchor, setAnchor] = useState(() => dayKey(new Date()));
-  const [direction, setDirection] = useState<Direction>(
-    () => useSettings.getState().moneyDefaultDirection,
-  );
+  const { interval, anchor, direction, accountId } = view;
+  const setInterval = (next: Interval) => onChangeWindow({ interval: next });
+  const setAnchor = (next: string) => onChangeWindow({ anchor: next });
+  const setDirection = (next: Direction) => onChangeWindow({ direction: next });
+  const setAccountId = (next: ID | null) => onChangeWindow({ accountId: next });
   const [picking, setPicking] = useState(false);
   const [naming, setNaming] = useState(false);
   /** The category a long press is asking about. Null = no sheet. */
   const [holding, setHolding] = useState<MoneyCategory | null>(null);
-  /*
-   * Which subsection is being read. An ID rather than the account itself, so a
-   * rename or an archive elsewhere cannot leave this screen holding a stale copy.
-   */
-  const [accountId, setAccountId] = useState<ID | null>(null);
   const [addingAccount, setAddingAccount] = useState(false);
   /** The subsection a long press is asking about, and the one being renamed. */
   const [heldAccount, setHeldAccount] = useState<MoneyAccount | null>(null);
@@ -348,8 +371,9 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             {steppable ? <Icon name="chevron-left" size={20} color={palette.inkMuted} /> : null}
           </Pressable>
 
-          <Pressable
+          <BubblePressable
             onPress={() => setPicking(true)}
+            radius="pill"
             accessibilityRole="button"
             accessibilityLabel={`${describeInterval(interval, anchor, lang)}. ${t('Change the time interval.')}`}
             style={(state) => [
@@ -374,7 +398,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
               {describeInterval(interval, anchor, lang)}
             </Text>
             <Icon name="chevron-down" size={13} color={palette.inkMuted} />
-          </Pressable>
+          </BubblePressable>
 
           <Pressable
             onPress={() => setAnchor(shiftAnchor(interval, anchor, 1))}
@@ -687,10 +711,12 @@ function AccountChip({
   const t = useT();
 
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={280}
+      radius="pill"
+      bubbleColor={selected ? palette.ink : palette.greenBright}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={account.name}
@@ -732,7 +758,7 @@ function AccountChip({
       >
         {account.name}
       </Text>
-    </Pressable>
+    </BubblePressable>
   );
 }
 
@@ -767,10 +793,11 @@ function CategoryTile({
   const t = useT();
 
   return (
-    <Pressable
+    <BubblePressable
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={280}
+      radius={radius.card}
       accessibilityRole="button"
       accessibilityLabel={`${category.name}, ${formatMoney(total, currency)}`}
       accessibilityHint={t('Long press to edit the category')}
@@ -826,7 +853,7 @@ function CategoryTile({
       >
         {total > 0 ? `${Math.round(share * 100)}%` : '\u2014'}
       </Text>
-    </Pressable>
+    </BubblePressable>
   );
 }
 

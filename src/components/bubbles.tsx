@@ -105,12 +105,35 @@ export function BubblePressable({
   bubbleColor = palette.greenBright,
   bubbles = true,
   onPressIn,
+  onPressOut,
   onLayout,
   children,
   style,
   ...rest
 }: BubblePressableProps) {
   const [live, setLive] = useState<Bubble[]>([]);
+  /**
+   * WHETHER A FINGER IS DOWN, TRACKED HERE RATHER THAN BY `Pressable`.
+   *
+   * `Pressable` accepts `style` as a callback taking `{ pressed }`, and this
+   * component used to hand that callback straight down. It never arrived:
+   * `jsxImportSource: 'nativewind'` wraps every React Native component at the
+   * JSX call site, and NativeWind's wrapper resolves `style` so it can merge
+   * `className` into it — a FUNCTION is not something it can merge, so it goes
+   * on the floor.
+   *
+   * That was invisible for a long time because every caller in the app put its
+   * layout in `className` and only the press dim in `style`: the dim silently
+   * stopped working and nothing moved. The moment a caller put real layout in
+   * there — `flexDirection`, a height, a background — the control rendered as
+   * bare unstyled children, which is exactly what the glass redesign's rows,
+   * chips and keypad keys did.
+   *
+   * So the callback is resolved HERE, into a plain object, before NativeWind
+   * ever sees it. One extra render per press, which is what `Pressable` does
+   * internally for the same feature anyway.
+   */
+  const [pressed, setPressed] = useState(false);
   const nextKey = useRef(0);
   /** Measured on layout, so a bubble knows how far it has to grow to cover. */
   const box = useRef({ width: 0, height: 0 });
@@ -148,7 +171,12 @@ export function BubblePressable({
       {...rest}
       onPressIn={(event) => {
         if (bubbles) burst(event);
+        setPressed(true);
         onPressIn?.(event);
+      }}
+      onPressOut={(event) => {
+        setPressed(false);
+        onPressOut?.(event);
       }}
       onLayout={(event) => {
         const { width, height } = event.nativeEvent.layout;
@@ -158,7 +186,7 @@ export function BubblePressable({
         // wrapped in a bubble.
         onLayout?.(event);
       }}
-      style={style}
+      style={typeof style === 'function' ? style({ pressed }) : style}
     >
       {children}
 

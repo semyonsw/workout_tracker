@@ -344,7 +344,11 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                 accessibilityState={{ disabled: isToday }}
                 // 25% rather than absent: a chevron that vanishes on today would
                 // shift the dial sideways every time you step back a day.
-                style={(state) => [pressedStyle(state), isToday ? { opacity: 0.25 } : null]}
+                //
+                // A plain object and not the `pressedStyle` callback — see
+                // `components/bubbles.tsx` on why a function in this prop never
+                // reaches the native view.
+                style={isToday ? { opacity: 0.25 } : undefined}
                 className="h-[34px] w-[44px] items-center justify-center"
               >
                 <Icon name="chevron-right" size={20} color={palette.inkMuted} />

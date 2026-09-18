@@ -468,6 +468,12 @@ export function FloatingAction({
         // pill would otherwise land on the nav pill it is supposed to clear.
         bottom: bottom + insets.bottom,
         borderRadius: RADIUS.pill,
+        // A routine called `Pull (Tension on Back)` is 21 characters, and
+        // `Open Pull (Tension on Back)` at 16/600 is wider than a 360 dp phone.
+        // The pill floats OVER the list, so it must not be allowed to span it:
+        // past three quarters of the width it stops reading as a layer and
+        // starts reading as a bar that has come loose.
+        maxWidth: '76%',
         boxShadow: [...(filled ? halo.floating : []), ...elevation.e2],
         opacity: asleep ? 0.55 : 1,
       }}
@@ -530,7 +536,9 @@ export function FloatingAction({
         <Text
           allowFontScaling={false}
           numberOfLines={1}
-          style={{ color: filled ? palette.ink : palette.inkMuted }}
+          // `shrink`, so the label ellipsises inside the capped pill instead
+          // of pushing the icon out of it.
+          style={{ color: filled ? palette.ink : palette.inkMuted, flexShrink: 1 }}
           className="text-body font-semibold"
         >
           {label}

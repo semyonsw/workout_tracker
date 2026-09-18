@@ -75,7 +75,7 @@ import { TaskSettingsScreen } from '../screens/TaskSettingsScreen';
 import { MoneySettingsScreen } from '../screens/MoneySettingsScreen';
 import { AmountEditorScreen } from '../screens/AmountEditorScreen';
 import { CategoryDetailScreen } from '../screens/CategoryDetailScreen';
-import { MoneyScreen } from '../screens/MoneyScreen';
+import { MoneyScreen, type MoneyWindow } from '../screens/MoneyScreen';
 import { MoneyHistoryScreen } from '../screens/MoneyHistoryScreen';
 import { TaskDetailScreen } from '../screens/TaskDetailScreen';
 import { TasksScreen } from '../screens/TasksScreen';
@@ -234,6 +234,29 @@ export function AppShell() {
    */
   const [pinnedTaskDay, setPinnedTaskDay] = useState<string | null>(null);
   const taskDay = pinnedTaskDay ?? dayKey(new Date());
+  /**
+   * What the expenses section is reading: the subsection, the window and the
+   * direction.
+   *
+   * Lifted here for the same reason `pinnedTaskDay` is, and it took the same
+   * bug to find out: a pushed route replaces the tab root, so opening the ⟲ from
+   * July and coming back re-mounted `MoneyScreen` and re-seeded its anchor from
+   * the clock. The window you were reading is a place you walked to inside the
+   * section, and a detour into that section's own past must not lose it.
+   *
+   * `leaveSection` below drops it, so the old behaviour — leave the section,
+   * come back to this month — is exactly preserved.
+   */
+  const [moneyWindow, setMoneyWindow] = useState<MoneyWindow>(() => ({
+    accountId: null,
+    interval: useSettings.getState().moneyDefaultInterval,
+    anchor: dayKey(new Date()),
+    direction: useSettings.getState().moneyDefaultDirection,
+  }));
+  const changeMoneyWindow = useCallback(
+    (patch: Partial<MoneyWindow>) => setMoneyWindow((current) => ({ ...current, ...patch })),
+    [],
+  );
   const [stack, setStack] = useState<Route[]>([]);
   const [query, setQuery] = useState('');
   /*
@@ -390,6 +413,13 @@ export function AppShell() {
   const selectTab = useCallback(
     (next: TabName) => {
       if (tab === 'Tasks' && next !== 'Tasks') setPinnedTaskDay(null);
+      /* Same rule, same reason: the window is somewhere you walked to inside the
+         section, not somewhere the app should still be standing next time it is
+         opened. Pushing a screen — the history, a category, the keypad — is not
+         leaving, so the window survives the trip that needed it. */
+      if (tab === 'Expenses' && next !== 'Expenses') {
+        setMoneyWindow((current) => ({ ...current, anchor: dayKey(new Date()) }));
+      }
       setTab(next);
     },
     [tab],
@@ -1364,6 +1394,10 @@ export function AppShell() {
 
           {tab === 'Expenses' ? (
             <MoneyScreen
+              /* The window lives here so a trip into the section's own past
+                 comes back to the day it left from. See `moneyWindow`. */
+              window={moneyWindow}
+              onChangeWindow={changeMoneyWindow}
               onOpenCategory={(categoryId, accountId, interval, anchor) =>
                 push({ name: 'moneyCategory', categoryId, accountId, interval, anchor })
               }

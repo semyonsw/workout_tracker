@@ -226,21 +226,37 @@ export function SettingRow({
   valueTone?: 'muted' | 'faint';
   onPress?: () => void;
 }) {
-  const body = (
-    <View className="h-row flex-row items-center px-lg">
-      <Text className="flex-1 text-body font-medium text-ink">{label}</Text>
-      {value ? (
-        <Text
-          className={[
-            'text-body font-medium tabular-nums',
-            valueTone === 'faint' ? 'text-ink-faint' : 'text-ink-muted',
-          ].join(' ')}
-        >
-          {value}
+  const body =
+    (
+      /*
+       * `min-h` rather than a fixed 56, and both halves clamped.
+       *
+       * `Back up automatically` against `Every 7 days · Downloads` is the worst
+       * case and it used to break the label mid-word and then clip it: the label
+       * had `flex-1` and the value had nothing, so a long value took whatever it
+       * wanted and the label wrapped into a box that could not grow. The value is
+       * the one that should give way — it is a fact, and the label is what the
+       * row IS — so it ellipsises at half the row and the row grows if the label
+       * still needs two lines.
+       */
+      <View className="min-h-[56px] flex-row items-center px-lg py-sm">
+        <Text numberOfLines={2} className="flex-1 pr-md text-body font-medium text-ink">
+          {label}
         </Text>
-      ) : null}
-    </View>
-  );
+        {value ? (
+          <Text
+            numberOfLines={1}
+            style={{ maxWidth: '52%' }}
+            className={[
+              'shrink text-body font-medium tabular-nums',
+              valueTone === 'faint' ? 'text-ink-faint' : 'text-ink-muted',
+            ].join(' ')}
+          >
+            {value}
+          </Text>
+        ) : null}
+      </View>
+    );
 
   if (!onPress) return body;
   return (

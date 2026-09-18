@@ -588,9 +588,7 @@ function Key({ value, onPress }: { value: string | 'back'; onPress: () => void }
     >
       <SpecularEdge color="rgba(236,241,238,0.1)" radius={radius.row} />
       {back ? (
-        <Text allowFontScaling={false} style={{ fontSize: 22 }} className="text-ink-muted">
-          {'⌫'}
-        </Text>
+        <Icon name="backspace" size={22} color={palette.inkMuted} />
       ) : (
         <Text
           allowFontScaling={false}
