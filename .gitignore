@@ -63,3 +63,9 @@ install.log
 install.log.old
 Start Dev Server.bat
 Install on phone.bat
+
+# The Liquid Glass handoff bundle: two HTML prototypes, their runtime and the
+# spec they were written from. It is the SOURCE of a change, not part of the
+# app — the design lives in the code now, and the two 1000-line HTML files
+# would be the largest thing in the repo that nothing imports.
+design_handoff_liquid_glass/

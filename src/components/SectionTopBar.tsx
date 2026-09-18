@@ -32,6 +32,14 @@
  * things beside it. The ⟲ stays rightmost, under the thumb, because it is the
  * one every section has.
  *
+ * ── THE CORNER HOLDS DESTINATIONS ONLY ─────────────────────────────────────
+ *
+ * Placement rule 1, and this component is where it is enforced: an action takes
+ * an ICON and nothing else, so there is no way to put a word like `Save` up
+ * here. Every commit action in the app lives in the floating slot
+ * (`components/glass.tsx`) instead — `right: 16, bottom: 92`, which on an 800 dp
+ * phone is about 620 dp of diagonal closer to a right thumb than this corner.
+ *
  * ── THE ONE THAT IS NOT A GLYPH ────────────────────────────────────────────
  *
  * Settings' corner holds `РУ` and `EN`, and they are letters rather than a flag
@@ -40,14 +48,21 @@
  * point of a language switch is that it is legible to somebody who cannot read
  * the language currently on screen. Two letters in their own script are.
  *
+ * ── IT IS A PANE NOW, AND THE CONTENT RUNS UNDER IT ────────────────────────
+ *
+ * Absolutely positioned, at the `bar` tier, with each section's scroll paying
+ * `barInset.top` in padding rather than the bar claiming the space in the flow.
+ * Together with the detached nav pill (`components/TabBar.tsx`) that is the
+ * load-bearing half of the redesign: a list that visibly passes behind glass is
+ * the only thing that tells the eye a bar is a LAYER and not a strip of chrome.
+ *
  * ── WHY NOT `ScreenHeader` ─────────────────────────────────────────────────
  *
  * That one is for a screen you are INSIDE: it leads with back, and its kicker
  * reads as a place you can leave. A section root is somewhere you already are —
  * nothing to go back to, and the tab bar says where you are as well. So this is
- * the same type scale and the same safe-area handling with the two halves swapped:
- * no back, a row of actions, and no hairline, because every section below puts
- * its own first surface right under it.
+ * the same type scale and the same safe-area handling with the two halves
+ * swapped: no back, and a row of actions.
  */
 
 import type { ReactNode } from 'react';
@@ -56,9 +71,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from './Icon';
 import { BubblePressable } from './bubbles';
+import { GlassBar, SpecularEdge } from './glass';
 import { pressedStyle } from './motion';
 import { useT } from '../hooks/useT';
-import { glass, palette } from '../theme/tokens';
+import { palette, radius } from '../theme/tokens';
 
 export interface TopBarAction {
   /** Stable across renders, so a row of three does not re-key on every tick. */
@@ -103,36 +119,50 @@ export function SectionTopBar({
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={{ paddingTop: insets.top + 4 }} className="bg-bg px-lg pb-sm">
-      <View className="h-hit flex-row items-center">
-        <View className="flex-1">
-          <Text numberOfLines={1} className="text-micro font-semibold uppercase text-ink-faint">
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text className="mt-xs text-label font-medium tabular-nums text-ink-muted">
-              {subtitle}
-            </Text>
-          ) : null}
+    <View
+      // `zIndex` rather than order in the tree: the bar is declared BEFORE the
+      // scroll in every screen that has one, because that is the reading order
+      // of the file, and without this the list would paint straight over it.
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}
+    >
+      <GlassBar>
+        <View style={{ paddingTop: insets.top }} className="pb-sm pl-lg pr-md">
+          <View className="h-[56px] flex-row items-center">
+            <View className="flex-1 pr-sm">
+              <Text
+                numberOfLines={1}
+                allowFontScaling={false}
+                style={{ letterSpacing: 1.3 }}
+                className="text-micro font-semibold uppercase text-ink-muted"
+              >
+                {title}
+              </Text>
+              {subtitle ? (
+                <Text className="mt-xs text-label font-medium tabular-nums text-ink-muted">
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+
+            {trailing}
+
+            {actions.map((action) => (
+              <TopBarButton key={action.key} action={action} />
+            ))}
+
+            {onOpenHistory ? (
+              <TopBarButton
+                action={{
+                  key: 'history',
+                  icon: 'history',
+                  label: historyLabel,
+                  onPress: onOpenHistory,
+                }}
+              />
+            ) : null}
+          </View>
         </View>
-
-        {trailing}
-
-        {actions.map((action) => (
-          <TopBarButton key={action.key} action={action} />
-        ))}
-
-        {onOpenHistory ? (
-          <TopBarButton
-            action={{
-              key: 'history',
-              icon: 'history',
-              label: historyLabel,
-              onPress: onOpenHistory,
-            }}
-          />
-        ) : null}
-      </View>
+      </GlassBar>
     </View>
   );
 }
@@ -150,9 +180,27 @@ function TopBarButton({ action }: { action: TopBarAction }) {
       accessibilityRole="button"
       accessibilityState={{ selected: action.active }}
       accessibilityLabel={action.label}
-      style={(state) => [pressedStyle(state), { backgroundColor: glass.sunken }]}
-      className="ml-sm h-[36px] w-[36px] items-center justify-center rounded-pill border border-hairline"
+      style={(state) => [
+        pressedStyle(state),
+        {
+          marginLeft: 7,
+          height: 36,
+          width: 36,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: radius.pill,
+          overflow: 'hidden',
+          borderWidth: 1,
+          borderColor: 'rgba(236,241,238,0.07)',
+          backgroundColor: 'rgba(236,241,238,0.055)',
+        },
+      ]}
     >
+      {/* No `BlurView` inside these. Three of them sit on a bar that is already
+          the heaviest blur in the app; blurring a 36 dp circle against a surface
+          that is itself blurred buys nothing the tint does not, and it would be
+          three more native layers on the one bar that is always on screen. */}
+      <SpecularEdge color="rgba(236,241,238,0.10)" radius={radius.pill} />
       <Icon
         name={action.icon}
         size={18}
@@ -166,9 +214,9 @@ function TopBarButton({ action }: { action: TopBarAction }) {
  * The language switch: two letters, the one in force lit.
  *
  * A pair of buttons rather than a `Segmented`, because it has to fit in the same
- * 36px band as the glyph row beside it and a segmented control is 44 with its
- * own track. It is still the same idea — one of two, the selected one on green —
- * so it reads as the app's vocabulary rather than as a new control.
+ * band as the glyph row beside it and a segmented control is 44 with its own
+ * track. It is still the same idea — one of two, the selected one on green — so
+ * it reads as the app's vocabulary rather than as a new control.
  */
 export function LanguageToggle({
   options,
@@ -184,8 +232,11 @@ export function LanguageToggle({
     <View
       accessibilityRole="radiogroup"
       accessibilityLabel={t('Application language')}
-      style={{ backgroundColor: glass.sunken }}
-      className="h-[36px] flex-row items-center rounded-pill border border-hairline p-[3px]"
+      style={{
+        backgroundColor: 'rgba(236,241,238,0.04)',
+        borderColor: 'rgba(236,241,238,0.07)',
+      }}
+      className="h-[34px] flex-row items-center rounded-pill border p-[3px]"
     >
       {options.map((option) => {
         const selected = option.value === active;
@@ -197,9 +248,20 @@ export function LanguageToggle({
             accessibilityRole="radio"
             accessibilityState={{ selected }}
             accessibilityLabel={option.name}
-            style={pressedStyle}
+            style={(state) => [
+              pressedStyle(state),
+              selected
+                ? {
+                    // The same specular the rest of the lit surfaces carry, so
+                    // the selected half reads as a pane rather than as a swatch.
+                    boxShadow: [
+                      { offsetX: 0, offsetY: 0, blurRadius: 14, color: 'rgba(63,169,108,0.3)' },
+                    ],
+                  }
+                : undefined,
+            ]}
             className={[
-              'h-[30px] items-center justify-center rounded-pill px-md',
+              'h-[28px] items-center justify-center rounded-pill px-md',
               selected ? 'bg-green' : '',
             ].join(' ')}
           >

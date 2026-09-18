@@ -86,7 +86,7 @@ import { describePlates, platesFor } from '../lib/plates';
 import { maxLabel, showsMaxLabel } from '../lib/maxReps';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useLanguage, useT } from '../hooks/useT';
-import { glow as GLOW, palette } from '../theme/tokens';
+import { glow as GLOW, halo, palette } from '../theme/tokens';
 import { Icon } from './Icon';
 
 export type SetField = 'weight' | 'count';
@@ -349,12 +349,15 @@ function SetRowComponent({
             right: 6,
             top: 4,
             bottom: 4,
-            borderRadius: 14,
+            borderRadius: 16,
             borderWidth: 2,
             borderColor: palette.greenBright,
-            // 18 rather than 12: the ring has to bloom as much as the numerals
-            // inside it now do, or the outline reads as the sharper of two edges.
-            boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 18, color: GLOW }],
+            // `halo.single` — and the name is the rule: EXACTLY ONE of these per
+            // screen. It is the brightest thing in the app for the same reason
+            // it is the rarest, and the ring has to bloom as much as the
+            // numerals inside it do or the outline reads as the sharper of two
+            // edges. See `theme/tokens.ts`.
+            boxShadow: [...halo.single],
           }}
         />
       ) : null}

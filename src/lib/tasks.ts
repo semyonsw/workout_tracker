@@ -282,11 +282,26 @@ export function describeTaskRow(
   log: TaskLog,
   day: string,
   lang: Language = 'en',
+  /**
+   * Include the run of days in the line.
+   *
+   * Off for the day list, where the streak is a BADGE beside the row and saying
+   * it twice in one 72 dp card is the kind of duplication that makes both copies
+   * read as decoration. On everywhere else — the task's own screen and the
+   * history grid have no badge, and the sentence is all there is.
+   */
+  withStreak = true,
 ): string {
   const entry = entryOf(log, task.id, day);
   const parts: string[] = [describeSchedule(task.schedule, lang)];
-  const streak = streakOf(task, log, day);
-  if (streak >= 2) parts.push(`${streak} ${t('in a row', lang)}`);
+  // Behind the flag, not filtered after the fact: `streakOf` walks back a day at
+  // a time to the start of the run, so on a task answered every day for a year
+  // it is the most expensive thing this function could do — and the day list,
+  // which draws it once per row, does not want the number at all.
+  if (withStreak) {
+    const streak = streakOf(task, log, day);
+    if (streak >= 2) parts.push(`${streak} ${t('in a row', lang)}`);
+  }
   const reminder = describeReminder(task, lang);
   if (reminder) parts.push(reminder);
   if (entry.mark === 'missed') parts.push(t('missed on purpose', lang));

@@ -22,6 +22,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Easing, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useIsOverlay } from './overlay';
 import { useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 
@@ -37,6 +38,9 @@ interface SheetProps {
 export function Sheet({ title, onDismiss, children }: SheetProps) {
   const t = useT();
   const insets = useSafeAreaInsets();
+  // The nav pill is a sibling of the whole section and would paint over this.
+  // See `components/overlay.ts`.
+  useIsOverlay();
 
   const scrim = useRef(new Animated.Value(0)).current;
   const sheet = useRef(new Animated.Value(0)).current;

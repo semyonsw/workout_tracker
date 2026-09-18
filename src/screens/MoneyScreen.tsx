@@ -91,18 +91,17 @@ import { BalanceSheet } from '../components/BalanceSheet';
 import { CategoryEditorSheet } from '../components/CategoryEditorSheet';
 import { BubblePressable } from '../components/bubbles';
 import { Icon } from '../components/Icon';
-import { SectionGlow } from '../components/SectionGlow';
+import {
+  FloatingAction,
+  GlassSurface,
+  Lamps,
+  SpecularEdge,
+  useBarInsets,
+} from '../components/glass';
 import { SectionTopBar } from '../components/SectionTopBar';
 import { Sheet } from '../components/Sheet';
 import { pressedStyle } from '../components/motion';
-import {
-  DashedAdd,
-  GlassCard,
-  Kicker,
-  PrimaryButton,
-  Separator,
-  TextButton,
-} from '../components/primitives';
+import { DashedAdd, Kicker, Separator, TextButton } from '../components/primitives';
 import { ProgressRing } from '../components/ProgressRing';
 import { dayKey } from '../lib/days';
 import { tap } from '../lib/feedback';
@@ -126,7 +125,7 @@ import {
 } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useSettings } from '../state/settingsStore';
-import { glass, glowRepeating, palette } from '../theme/tokens';
+import { focalType, palette, radius, textGlow } from '../theme/tokens';
 import type { ID } from '../types/models';
 
 interface MoneyScreenProps {
@@ -174,6 +173,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
    * month every time the settings screen was visited, which is not what a default
    * is.
    */
+  const bars = useBarInsets();
   const currency = useSettings((s) => s.currencyCode);
   const [interval, setInterval] = useState<Interval>(
     () => useSettings.getState().moneyDefaultInterval,
@@ -231,7 +231,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <SectionGlow />
+      <Lamps section="Expenses" />
 
       <SectionTopBar
         title={t('Expenses')}
@@ -246,7 +246,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingTop: 16, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: bars.top + 8, paddingBottom: bars.bottom }}
         showsVerticalScrollIndicator={false}
       >
         {/* The subsections. WRAPPING and not a horizontal `ScrollView`: the tab
@@ -273,7 +273,7 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             accessibilityRole="button"
             accessibilityLabel={t('Add subsection')}
             style={pressedStyle}
-            className="mb-sm h-hit flex-row items-center rounded-pill border border-dashed border-hairline px-md"
+            className="mb-sm h-[36px] flex-row items-center rounded-pill border border-dashed border-hairline px-md"
           >
             <Icon name="plus" size={16} color={palette.inkMuted} />
           </Pressable>
@@ -287,29 +287,53 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             window picker under it from reading as the same kind of fact. The
             currency is stated in the corner of that panel, as a label and not as
             a control — it is a setting, and it is changed where settings are. */}
-        <GlassCard tone="green" radius="sheet" className="mx-lg mt-lg px-lg py-lg">
-          <View className="flex-row items-center">
-            <Kicker tone="green" className="flex-1">
-              {`${account.name} · ${t('All time')}`}
-            </Kicker>
-            <Kicker tone="green">{currency}</Kicker>
-          </View>
-          <Pressable
-            onPress={() => setSettingBalance(true)}
-            accessibilityRole="button"
-            accessibilityLabel={`${account.name}. ${formatMoney(balance, currency)}. ${t('Set what you have here.')}`}
-            style={pressedStyle}
-            className="mt-sm flex-row items-baseline"
-          >
-            <Text className="text-display font-semibold tabular-nums text-ink">
-              {formatValue(balance)}
+        {/* THE ONE HERO ON THIS SCREEN. `lit` glass over the section's
+            brightest lamp, and the only thing here at `balance` size — 52 dp of
+            tabular numeral with the app's hero glow behind it. Nothing else on
+            the screen comes near it, which is the rule the focal steps exist
+            for. */}
+        <GlassSurface
+          tier="lit"
+          radius={radius.hero}
+          shadow="e2"
+          glow="hero"
+          className="mx-lg mt-lg"
+        >
+          <View className="p-[20px]">
+            <View className="flex-row items-center">
+              <Kicker tone="green" className="flex-1">
+                {`${account.name} · ${t('All time')}`}
+              </Kicker>
+              <Kicker tone="green">{currency}</Kicker>
+            </View>
+            <Pressable
+              onPress={() => setSettingBalance(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`${account.name}. ${formatMoney(balance, currency)}. ${t('Set what you have here.')}`}
+              style={pressedStyle}
+              className="mt-sm flex-row items-baseline"
+            >
+              <Text
+                allowFontScaling={false}
+                numberOfLines={1}
+                style={[focalType.balance, textGlow.hero]}
+                className="font-semibold tabular-nums text-ink"
+              >
+                {formatValue(balance)}
+              </Text>
+              <Text
+                allowFontScaling={false}
+                style={{ fontSize: 20 }}
+                className="ml-sm font-semibold text-ink-muted"
+              >
+                {currency}
+              </Text>
+            </Pressable>
+            <Text className="mt-xs text-label text-ink-faint">
+              {t('Tap to set what you actually have here')}
             </Text>
-            <Text className="ml-sm text-title font-semibold text-ink-muted">{currency}</Text>
-          </Pressable>
-          <Text className="mt-xs text-label text-ink-faint">
-            {t('Tap to set what you actually have here')}
-          </Text>
-        </GlassCard>
+          </View>
+        </GlassSurface>
 
         <View className="mx-lg mt-lg flex-row items-center justify-center">
           <Pressable
@@ -328,13 +352,28 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
             onPress={() => setPicking(true)}
             accessibilityRole="button"
             accessibilityLabel={`${describeInterval(interval, anchor, lang)}. ${t('Change the time interval.')}`}
-            style={pressedStyle}
-            className="h-hit flex-row items-center px-md"
+            style={(state) => [
+              pressedStyle(state),
+              {
+                height: 36,
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: 14,
+                borderRadius: radius.pill,
+                borderWidth: 1,
+                borderColor: 'rgba(236,241,238,0.045)',
+                backgroundColor: 'rgba(236,241,238,0.028)',
+              },
+            ]}
           >
-            <Text className="mr-xs text-body font-medium tabular-nums text-ink">
+            <Text
+              allowFontScaling={false}
+              style={{ fontSize: 14 }}
+              className="mr-sm font-medium tabular-nums text-ink"
+            >
               {describeInterval(interval, anchor, lang)}
             </Text>
-            <Icon name="chevron-down" size={14} color={palette.inkMuted} />
+            <Icon name="chevron-down" size={13} color={palette.inkMuted} />
           </Pressable>
 
           <Pressable
@@ -389,20 +428,25 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
           <View className="w-1/2 p-[5px]">
             <DashedAdd
               label={t('Add category')}
-              height={150}
+              height={154}
               radius="card"
               onPress={() => setNaming(true)}
             />
           </View>
         </View>
 
-        <View className="mx-lg mt-xl">
-          <PrimaryButton
-            label={direction === 'expense' ? t('Add expense') : t('Add income')}
-            onPress={() => onAddAmount(null, account.id, direction)}
-          />
-        </View>
+        {/* The 56-high green slab that used to be here is the floating pill
+            below — placement rule 3. A full-width bar inside the scroll flow
+            competes with the grid it sits under AND scrolls away, so the one
+            action this screen exists for stopped existing the moment you looked
+            at your categories. */}
       </ScrollView>
+
+      <FloatingAction
+        label={direction === 'expense' ? t('Add expense') : t('Add income')}
+        icon="plus"
+        onPress={() => onAddAmount(null, account.id, direction)}
+      />
 
       {picking ? (
         <Sheet title={t('Time interval')} onDismiss={() => setPicking(false)}>
@@ -575,31 +619,44 @@ function DirectionTile({
   return (
     <BubblePressable
       onPress={onPress}
-      radius={14}
+      radius={radius.row}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={`${label} ${formatMoney(value, currency)}`}
       style={(state) => [
         pressedStyle(state),
         {
-          backgroundColor: selected ? glass.green : glass.sunken,
-          borderColor: selected ? glass.greenEdge : palette.hairline,
+          flex: 1,
+          padding: 15,
+          borderRadius: radius.row,
+          overflow: 'hidden',
+          borderWidth: 1,
+          backgroundColor: selected ? 'rgba(63,169,108,0.13)' : 'rgba(236,241,238,0.035)',
+          borderColor: selected ? 'rgba(63,169,108,0.30)' : 'rgba(236,241,238,0.055)',
+          ...(selected
+            ? {
+                boxShadow: [
+                  { offsetX: 0, offsetY: 0, blurRadius: 16, color: 'rgba(63,169,108,0.18)' },
+                ],
+              }
+            : {}),
         },
       ]}
-      className="flex-1 rounded-surface border p-lg"
     >
+      {selected ? <SpecularEdge color="rgba(236,241,238,0.12)" radius={radius.row} /> : null}
       <Text
-        className={[
-          'text-micro font-semibold uppercase',
-          selected ? 'text-ink' : 'text-ink-muted',
-        ].join(' ')}
+        allowFontScaling={false}
+        style={{ fontSize: 10, letterSpacing: 1.1 }}
+        className={['font-semibold uppercase', selected ? 'text-ink' : 'text-ink-muted'].join(' ')}
       >
         {label}
       </Text>
       <Text
         numberOfLines={1}
+        allowFontScaling={false}
+        style={{ fontSize: 21, letterSpacing: -0.5 }}
         className={[
-          'mt-xs text-title tabular-nums',
+          'mt-xs tabular-nums',
           selected ? 'font-semibold text-green-bright' : 'font-medium text-ink-muted',
         ].join(' ')}
       >
@@ -640,20 +697,32 @@ function AccountChip({
       accessibilityHint={t('Long press to edit the subsection')}
       style={(state) => [
         pressedStyle(state),
+        {
+          marginBottom: 8,
+          marginRight: 8,
+          height: 36,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          borderRadius: radius.pill,
+          overflow: 'hidden',
+          borderWidth: 1,
+        },
         selected
           ? {
               // The chip that is selected decides what every figure under it
               // means, so it is the one lit control on the screen. `boxShadow`
               // and not `elevation` — see `theme/tokens.ts`.
-              boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 8, color: glowRepeating }],
+              backgroundColor: palette.green,
+              borderColor: 'rgba(63,169,108,0.5)',
+              boxShadow: [
+                { offsetX: 0, offsetY: 0, blurRadius: 14, color: 'rgba(63,169,108,0.3)' },
+              ],
             }
-          : { backgroundColor: glass.sunken },
+          : { backgroundColor: 'rgba(236,241,238,0.035)', borderColor: 'transparent' },
       ]}
-      className={[
-        'mb-sm mr-sm h-hit flex-row items-center rounded-pill px-lg',
-        selected ? 'border border-green-bright/50 bg-green' : 'border border-hairline',
-      ].join(' ')}
     >
+      {selected ? <SpecularEdge color="rgba(236,241,238,0.2)" radius={radius.pill} /> : null}
       <Text className="mr-sm text-label">{account.glyph}</Text>
       <Text
         className={[
@@ -708,28 +777,55 @@ function CategoryTile({
       style={(state) => [
         pressedStyle(state),
         {
-          backgroundColor: glass.raised,
-          borderColor: total > 0 ? glass.greenEdge : palette.hairline,
+          height: 154,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 12,
+          borderRadius: radius.card,
+          overflow: 'hidden',
+          borderWidth: 1,
+          backgroundColor: 'rgba(236,241,238,0.055)',
+          borderColor: total > 0 ? 'rgba(63,169,108,0.24)' : 'rgba(236,241,238,0.06)',
+          boxShadow:
+            total > 0
+              ? [{ offsetX: 0, offsetY: 10, blurRadius: 26, color: 'rgba(0,0,0,0.42)' }]
+              : [{ offsetX: 0, offsetY: 8, blurRadius: 20, color: 'rgba(0,0,0,0.35)' }],
         },
       ]}
-      className="h-[150px] items-center justify-center rounded-card border px-md"
     >
-      <ProgressRing fraction={share} size={56} stroke={3}>
-        <Text className="text-[22px]">{category.glyph}</Text>
+      <SpecularEdge
+        color={total > 0 ? 'rgba(236,241,238,0.1)' : 'rgba(236,241,238,0.06)'}
+        radius={radius.card}
+      />
+      <ProgressRing fraction={share} size={60} stroke={3.5}>
+        <Text className="text-[23px]">{category.glyph}</Text>
       </ProgressRing>
-      <Text numberOfLines={1} className="mt-md w-full text-center text-label font-medium text-ink">
+      <Text
+        numberOfLines={1}
+        allowFontScaling={false}
+        style={{ fontSize: 13, marginTop: 11 }}
+        className="w-full text-center font-medium text-ink"
+      >
         {category.name}
       </Text>
       <Text
         numberOfLines={1}
+        allowFontScaling={false}
+        style={{ fontSize: 13 }}
         className={[
-          'mt-[2px] w-full text-center text-label font-medium tabular-nums',
+          'mt-[2px] w-full text-center font-semibold tabular-nums',
           total > 0 ? 'text-green-bright' : 'text-ink-faint',
         ].join(' ')}
       >
         {formatMoney(total, currency)}
       </Text>
-      <Kicker className="mt-[2px]">{total > 0 ? `${Math.round(share * 100)}%` : '—'}</Kicker>
+      <Text
+        allowFontScaling={false}
+        style={{ fontSize: 10, letterSpacing: 1.1 }}
+        className="mt-[2px] font-semibold uppercase tabular-nums text-ink-faint"
+      >
+        {total > 0 ? `${Math.round(share * 100)}%` : '\u2014'}
+      </Text>
     </Pressable>
   );
 }

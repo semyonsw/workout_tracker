@@ -24,6 +24,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useIsOverlay } from './overlay';
 import { useT } from '../hooks/useT';
 import { palette } from '../theme/tokens';
 import { PrimaryButton } from './primitives';
@@ -53,6 +54,9 @@ export function ConfirmSheet({
 }: ConfirmSheetProps) {
   const t = useT();
   const insets = useSafeAreaInsets();
+  // The nav pill is a sibling of the whole section and would paint over this.
+  // See `components/overlay.ts`.
+  useIsOverlay();
   const keep = cancelLabel ?? t('Cancel');
 
   /* Scrim fades in; the sheet fades and rises the last 24dp under it — the same

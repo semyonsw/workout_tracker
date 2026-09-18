@@ -45,7 +45,7 @@
  * escaping a pill button is the one way this can look wrong.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
@@ -54,8 +54,6 @@ import {
   View,
   type GestureResponderEvent,
   type PressableProps,
-  type StyleProp,
-  type ViewStyle,
 } from 'react-native';
 
 import { palette } from '../theme/tokens';
@@ -206,106 +204,5 @@ export function BubblePressable({
         </View>
       ) : null}
     </Pressable>
-  );
-}
-
-/**
- * GlowPulse — a halo that breathes, behind the one thing the app is suggesting
- * you do next.
- *
- * ── THE APP HAS ONE GLOW, AND THIS IS IT, MOVING ──────────────────────────
- *
- * `theme/tokens.ts` is explicit that exactly one glow exists and that whatever
- * wears it must be complete without it: "a renderer that drops `boxShadow`
- * loses gloss and not information". That condition holds here. The card this
- * wraps already says `Today`, already sits on `green-wash`, already carries the
- * routine's name and a button with that name on it. The pulse adds no fact.
- *
- * What it adds is FINDABILITY. The workout section is four cards and a list, and
- * the one the app is suggesting was a slightly different shade of the same
- * green as everything else on the screen. A thing that moves, in a column of
- * things that do not, is found without being read — which is the whole job of
- * that card.
- *
- * SLOW, AND IT NEVER REACHES ZERO. 2.4 seconds out and back, between a third
- * and full strength: fast enough to be alive, slow enough not to be an alarm,
- * and never fully off, so the ring does not blink. An animation that demands
- * attention rather than attracting it is one the user turns the phone over to
- * escape.
- *
- * Native-driven opacity on an absolutely-positioned ring, rather than animating
- * the card's own `shadowOpacity`: shadow properties cannot go on the native
- * driver, so the honest choice is between a glow that runs on the JS thread and
- * stutters whenever a list re-renders, and a second view that does not. This is
- * the second view.
- */
-export function GlowPulse({
-  children,
-  radius = 14,
-  color = palette.greenBright,
-  className = '',
-  style,
-}: {
-  children: ReactNode;
-  radius?: number;
-  color?: string;
-  /** NativeWind reaches a plain `View`, which is what this outer node is. */
-  className?: string;
-  style?: StyleProp<ViewStyle>;
-}) {
-  const pulse = useRef(new Animated.Value(0)).current;
-
-  /*
-   * In an effect, with a stop on the way out. A loop started during render is a
-   * loop that keeps running when the card unmounts — and this card unmounts every
-   * time the sequence advances or a workout starts, so it would leave one live
-   * animation behind per visit.
-   */
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 1200,
-          easing: EASING,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 1200,
-          easing: EASING,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-
-  return (
-    <View className={className} style={style}>
-      <Animated.View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          // Outside the card's own edge, so the halo reads as light coming off
-          // it rather than as a second border drawn on it.
-          left: -3,
-          right: -3,
-          top: -3,
-          bottom: -3,
-          borderRadius: radius + 3,
-          borderWidth: 2,
-          borderColor: color,
-          shadowColor: color,
-          shadowOpacity: 1,
-          shadowRadius: 16,
-          shadowOffset: { width: 0, height: 0 },
-          elevation: 12,
-          opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.95] }),
-        }}
-      />
-      {children}
-    </View>
   );
 }

@@ -46,6 +46,8 @@ import { BackHandler, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
+import { Toast } from '../components/glass';
+import { useOverlayOpen } from '../components/overlay';
 import { PanelEnter } from '../components/motion';
 import { PrimaryButton } from '../components/primitives';
 import { Segmented } from '../components/primitives';
@@ -178,6 +180,27 @@ type Route =
 export function AppShell() {
   const t = useT();
   const lang = useLanguage();
+  /*
+   * The nav pill floats over the section now, which means it also floats over
+   * anything the section raises. A sheet is modal, so while one is up the pill
+   * is not drawn at all — see `components/overlay.ts` for why this is a
+   * subscription rather than a `zIndex`.
+   */
+  const overlayOpen = useOverlayOpen();
+  /**
+   * What the last commit said, for about two seconds.
+   *
+   * It lives HERE and not in the screen that raised it, because the whole point
+   * of it is that it appears over the screen you land BACK on: the keypad is
+   * gone by the time the amount exists, and a toast rendered by a component
+   * that has just unmounted is a toast nobody sees.
+   */
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (toast == null) return undefined;
+    const timer = setTimeout(() => setToast(null), 1900);
+    return () => clearTimeout(timer);
+  }, [toast]);
   const [tab, setTab] = useState<TabName>('Workout');
   /**
    * A workout somebody tapped somewhere else, waiting for the training history to open
@@ -1212,7 +1235,10 @@ export function AppShell() {
         categoryId={top.categoryId}
         accountId={top.accountId}
         direction={top.direction}
-        onBack={pop}
+        onBack={(saved) => {
+          pop();
+          if (saved) setToast(amount ? t('Saved') : t('Written down'));
+        }}
       />
     );
   }
@@ -1360,7 +1386,11 @@ export function AppShell() {
         </PanelEnter>
       </SwipePager>
 
-      <TabBar active={tab} onSelect={selectTab} />
+      {overlayOpen ? null : <TabBar active={tab} onSelect={selectTab} />}
+
+      {/* Last child, over the nav pill, and non-interactive: pressing the
+          floating action twice in a row must still work while it is up. */}
+      {toast ? <Toast label={toast} /> : null}
     </View>
   );
 }

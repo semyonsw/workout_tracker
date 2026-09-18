@@ -37,12 +37,23 @@ module.exports = {
     // redesign draws a card that holds other cards (a section's glass panel) and
     // a sheet that holds a whole screen, and those cannot be the same corner as
     // the row inside them or the nesting stops reading.
+    // The first four are the flat design's corners and every screen that has not
+    // been re-cut still reads them. The last three are the GLASS steps, one
+    // notch softer apiece: a blurred pane with a tight corner reads as a hole
+    // punched in the page rather than as something lying on it. They are the
+    // same numbers as `radius` in `theme/tokens.ts`, which is where a
+    // `BlurView` has to be told its corner — NativeWind's transform does not
+    // reach a native component, so the two spellings have to agree by hand.
     borderRadius: {
       none: '0',
       cell: '10px', // a calendar square, a keypad key
       surface: '14px', // rows, wells, the standard card
       card: '18px', // a tile with its own contents — category tiles, task rows
       sheet: '22px', // a bottom sheet, the balance panel
+      row: '18px', // GLASS: a row, a chip container
+      tile: '20px', // GLASS: a card with contents of its own
+      hero: '24px', // GLASS: a hero, a sheet, an instrument
+      nav: '26px', // GLASS: the nav pill, and only it
       pill: '9999px',
     },
     fontSize: {
@@ -84,6 +95,18 @@ module.exports = {
       // `count` variant is 104 for exactly that job; this is the same idea with a
       // whole screen instead of a pill.
       'focus-count': ['160px', { lineHeight: '150px', letterSpacing: '-6px' }],
+      // ── THE FOUR FOCAL STEPS THE GLASS REDESIGN ADDED ──────────────────
+      //
+      // One per screen, and nothing else on that screen comes near its size.
+      // That rule is the whole reason they are separate steps rather than a
+      // range: `title-xl` at 30 is a large row, and these are the fact the
+      // screen exists for. They mirror `focalType` in `theme/tokens.ts`, which
+      // is the copy a screen reads when it has to MEASURE one — the amount
+      // shrinks to fit its own width, and a className cannot be measured.
+      'hero-name': ['30px', { lineHeight: '34px', letterSpacing: '-0.9px' }],
+      balance: ['52px', { lineHeight: '54px', letterSpacing: '-2px' }],
+      amount: ['60px', { lineHeight: '62px', letterSpacing: '-2.4px' }],
+      'day-dial': ['64px', { lineHeight: '64px', letterSpacing: '-2.4px' }],
     },
     spacing: {
       0: '0px',

@@ -80,7 +80,8 @@ export type IconName =
    * a LABEL the user types, so a ֏ or a $ here would be a guess about somebody
    * else's money.
    */
-  | 'money';
+  | 'money'
+  | 'flame';
 
 interface IconProps {
   name: IconName;
@@ -110,6 +111,7 @@ const STROKE: Record<IconName, number> = {
   clock: 2,
   dice: 2,
   money: 2,
+  flame: 2,
 };
 
 /**
@@ -176,6 +178,13 @@ const PATHS: Record<IconName, string[]> = {
   // A banknote, seen flat: the note's edge and the coin printed on it. It reads
   // at 15px, which is the size the Settings map draws it at.
   money: ['M3 6.5h18v11H3z', 'M12 9.6a2.4 2.4 0 100 4.8 2.4 2.4 0 000-4.8z'],
+  // A flame, drawn as an outline in the app's own green rather than as an
+  // emoji: the streak badge has three temperatures and all three are the same
+  // hue at different alphas, which a coloured glyph would break.
+  flame: [
+    'M12 3.2c3.6 3.3 5.6 6 5.6 8.9a5.6 5.6 0 11-11.2 0c0-2.9 2-5.6 5.6-8.9z',
+    'M12 13.4c1.4 1.1 2.1 2 2.1 3a2.1 2.1 0 11-4.2 0c0-1 .7-1.9 2.1-3z',
+  ],
   // A die on its five face: a rounded square, and the pips come from `DOTS`.
   dice: [
     'M7.6 4h8.8A3.6 3.6 0 0120 7.6v8.8a3.6 3.6 0 01-3.6 3.6H7.6A3.6 3.6 0 014 16.4V7.6A3.6 3.6 0 017.6 4z',

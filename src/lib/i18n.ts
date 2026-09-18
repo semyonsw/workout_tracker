@@ -579,7 +579,6 @@ const RU: Record<string, string> = {
   'Delete this workout': 'Удалить эту тренировку',
   'Delete {name}': 'Удалить «{name}»',
   'Delete “{title}”?': 'Удалить «{title}»?',
-  Direction: 'Направление',
   'Discard the workout and restart': 'Сбросить тренировку и перезапустить',
   'Dismiss suggestion': 'Скрыть подсказку',
   'Distance per session': 'Дистанция за тренировку',
@@ -816,7 +815,6 @@ const RU: Record<string, string> = {
   'What a routine plans for this exercise': 'Сколько программа планирует на это упражнение',
   'What amounts are counted in': 'В чём считаются суммы',
   'What it was for': 'На что',
-  When: 'Когда',
   'Where it went': 'Куда ушло',
   'Which workout was this?': 'Какая это была тренировка?',
   'Whole month': 'Весь месяц',
@@ -1094,6 +1092,25 @@ const RU: Record<string, string> = {
   'Book reading before sleep': 'Чтение книги перед сном',
   'Sleep before midnight': 'Лечь спать до полуночи',
   'Track expenses': 'Записать расходы',
+
+  /* ── The Liquid Glass redesign's own strings ──────────────────────────
+     The hero's nudge chip, the three counts under the day dial, the three
+     doors at the top of Settings, and the keypad. */
+  nudge: 'подсказка',
+  nudges: 'подсказок',
+  '{count} done': '{count} сделано',
+  '{count} left': '{count} осталось',
+  '{count} on purpose': '{count} намеренно',
+  'streak kept': 'серия сохранена',
+  'Rest, plates, weekly targets': 'Отдых, блины, недельные цели',
+  'The automatic tick': 'Автоматическая отметка',
+  'Automatic backups are off': 'Автокопии выключены',
+  'Nothing you have logged is touched.': 'Ничего из записанного не трогается.',
+  Amount: 'Сумма',
+  'Type an amount first': 'Сначала введите сумму',
+  'Delete the last digit': 'Удалить последнюю цифру',
+  Saved: 'Сохранено',
+  'Written down': 'Записано',
 };
 
 /** Test hook: the strings this build can translate. Not read by the app. */

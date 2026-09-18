@@ -51,7 +51,9 @@ import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { TaskEditorSheet } from '../components/TaskEditorSheet';
 import { pressedStyle } from '../components/motion';
-import { FieldWell, Kicker, PrimaryButton, StatTile, TextButton } from '../components/primitives';
+import { BubblePressable } from '../components/bubbles';
+import { FloatingAction, GlassSurface, Lamps } from '../components/glass';
+import { FieldWell, Kicker, StatTile } from '../components/primitives';
 import { useLanguage, usePlural, useT } from '../hooks/useT';
 import {
   dayKey,
@@ -71,7 +73,7 @@ import {
   taskMonth,
 } from '../lib/tasks';
 import { useTasks } from '../state/tasksStore';
-import { glowRepeating, palette } from '../theme/tokens';
+import { glowRepeating, palette, radius } from '../theme/tokens';
 
 interface TaskDetailScreenProps {
   task: Task;
@@ -111,11 +113,16 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
+      <Lamps section="Tasks" />
       <ScreenHeader kicker={t('Tasks')} onBack={onBack} bordered={false} />
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 24 }}
+        // Clears the floating pill, which sits at the same `bottom: 92` here as
+        // in every section even though this screen has no nav pill under it —
+        // the slot is a position a thumb learns, not a position relative to
+        // whatever else happens to be on screen.
+        contentContainerStyle={{ paddingBottom: 170 }}
         showsVerticalScrollIndicator={false}
       >
         <Text className="mx-lg mt-sm text-title font-semibold text-ink">{task.name}</Text>
@@ -188,27 +195,29 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
           ))}
         </View>
 
-        <View className="mx-lg mt-sm">
-          {month.weeks.map((week, index) => (
-            <View key={index} className="flex-row">
-              {week.map((cell, position) => (
-                <Cell
-                  key={cell.date ?? `pad${position}`}
-                  cell={cell}
-                  selected={cell.date !== null && cell.date === noteDay}
-                  onPress={cell.date ? () => setNoteDay(cell.date as string) : undefined}
-                />
-              ))}
-              {/* The last week is short rather than padded — a trailing blank
+        <GlassSurface tier="card" radius={radius.card} shadow="e1" flat className="mx-lg mt-sm">
+          <View className="p-sm">
+            {month.weeks.map((week, index) => (
+              <View key={index} className="flex-row">
+                {week.map((cell, position) => (
+                  <Cell
+                    key={cell.date ?? `pad${position}`}
+                    cell={cell}
+                    selected={cell.date !== null && cell.date === noteDay}
+                    onPress={cell.date ? () => setNoteDay(cell.date as string) : undefined}
+                  />
+                ))}
+                {/* The last week is short rather than padded — a trailing blank
                   would draw squares for days that have not happened. */}
-              {week.length < 7
-                ? Array.from({ length: 7 - week.length }, (_, i) => (
-                    <View key={`tail${i}`} className="flex-1" />
-                  ))
-                : null}
-            </View>
-          ))}
-        </View>
+                {week.length < 7
+                  ? Array.from({ length: 7 - week.length }, (_, i) => (
+                      <View key={`tail${i}`} className="flex-1" />
+                    ))
+                  : null}
+              </View>
+            ))}
+          </View>
+        </GlassSurface>
 
         <Text className="mx-lg mt-md text-label text-ink-faint">
           {t(
@@ -229,13 +238,49 @@ export function TaskDetailScreen({ task, onBack }: TaskDetailScreenProps) {
           />
         </View>
 
-        <View className="mx-lg mt-xl">
-          <PrimaryButton label={t('Edit task')} onPress={() => setEditing(true)} />
-        </View>
-        <View className="mx-lg">
-          <TextButton label={t('Archive this task')} onPress={() => setArchiving(true)} />
-        </View>
+        {/* Placement rule 5. Archiving is the one thing on this screen that
+            takes a task off the day list, so it is plain text in a dashed box at
+            the foot of the scroll rather than a row a thumb can reach. Still no
+            red — see the file header. */}
+        <BubblePressable
+          onPress={() => setArchiving(true)}
+          radius={16}
+          accessibilityRole="button"
+          accessibilityLabel={t('Archive this task')}
+          style={(state) => [
+            pressedStyle(state),
+            {
+              marginTop: 26,
+              marginHorizontal: 16,
+              paddingVertical: 14,
+              paddingHorizontal: 16,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderStyle: 'dashed',
+              borderColor: 'rgba(138,150,143,0.22)',
+            },
+          ]}
+        >
+          <Text
+            allowFontScaling={false}
+            style={{ fontSize: 13 }}
+            className="font-medium text-ink-muted"
+          >
+            {t('Archive this task')}
+          </Text>
+          <Text
+            allowFontScaling={false}
+            style={{ fontSize: 12, lineHeight: 16 }}
+            className="mt-[2px] text-ink-faint"
+          >
+            {t('It leaves the day list. Every day you already answered stays where it is.')}
+          </Text>
+        </BubblePressable>
       </ScrollView>
+
+      {/* The 56-high `Edit task` slab is the floating pill now — the same slot,
+          in the same place, as every other screen's one commit action. */}
+      <FloatingAction label={t('Edit task')} icon="edit" onPress={() => setEditing(true)} />
 
       {editing ? (
         <TaskEditorSheet

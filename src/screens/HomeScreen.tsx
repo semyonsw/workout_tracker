@@ -2,23 +2,23 @@
  * HomeScreen — what do I train today.
  *
  *   ┌──────────────────────────────────────────────┐
- *   │ ┌ IN PROGRESS ───────────────────────────────┐│  ← only mid-workout
- *   │ │ Pull + swimming · 11 of 18 sets · 42 min  ││
- *   │ │ ╭──── Back to the workout ──────────────╮ ││
- *   │ └────────────────────────────────────────────┘│
- *   │ SEQUENCE                                     │  ← only when one is on
+ *   │ WORKOUT                        ≡   📖    ⟲   │  ← glass bar, content under
+ *   │ SEQUENCE                                     │
  *   │  Push  ›  ‹Pull›  ›  Push  ›  Boxing          │
- *   │ ┌──────────────────────────────────────────┐ │
- *   │ │ NEXT UP · PULL · BACK, BICEPS            │ │
+ *   │ ╭──────────────────────────────────────────╮ │
+ *   │ │ TODAY · PULL                  ( 1 nudge )│ │  ← the hero, `lit` glass
  *   │ │ Pull + swimming                          │ │
- *   │ │ 6 exercises · 18 sets · 1 nudge waiting  │ │
- *   │ │ ╭──── Open Pull + swimming ────────────╮ │ │
- *   │ └──────────────────────────────────────────┘ │
- *   │ OR START ANOTHER                             │
- *   │ Push              Push · chest · 2 ex   ▶    │
- *   │ Boxing (cardio)   Cardio · 2 ex         ▶    │
+ *   │ │ back, biceps · 8 exercises · 25 sets     │ │
+ *   │ │ ────────────────────────                 │ │
+ *   │ │ EXERCISES   SETS        WORKOUT          │ │
+ *   │ │ 8           25          #92              │ │
+ *   │ ╰──────────────────────────────────────────╯ │
+ *   │ OTHER ROUTINES                               │
+ *   │ ╭ Push            Push · chest · 2 ex   ▶ ╮  │
+ *   │ ╭ Boxing (cardio) Cardio · 2 ex          ▶ ╮  │
  *   │ RECENT                                       │
- *   │ #91  Pull + swimming        8 Aug · 74 min   │
+ *   │ │ #91  Pull + swimming     8 Aug · 74 min │  │
+ *   │                            ╭ ▶ Open Pull ╮   │  ← the floating slot
  *   └──────────────────────────────────────────────┘
  *
  * THE USER PICKS THE WORKOUT. Every routine is on this screen and every one of
@@ -31,28 +31,45 @@
  * OPTIONAL and off until it is built (see `TrainingSequence`). While it is off,
  * nothing about it appears here: the screen is the routine list and the recent
  * log, and no routine is privileged. While it is on it adds exactly one thing: a
- * `NEXT UP` card naming the routine whose turn it is. It still only suggests.
+ * hero naming the routine whose turn it is. It still only suggests.
  *
  * `Open`, not `Start`: opening a routine shows its exercises without timing or
  * dating anything. The workout starts on the `Start` inside it — see
  * `ActiveWorkoutScreen`.
+ *
+ * ── THE BUTTON LEFT THE CARD ──────────────────────────────────────────────
+ *
+ * `Open Pull + swimming` was a 56-high green slab inside the hero. Two things
+ * were wrong with it and both are placement rules now: a full-width bar inside
+ * the scroll flow competes with the container it is in, and it SCROLLS AWAY —
+ * the one action the screen exists for stops existing the moment you look at the
+ * routine list under it. It is the floating pill at `right: 16, bottom: 92` now,
+ * the same slot the other three sections put their own commit action in, and it
+ * is on screen at every scroll position.
  *
  * "1 nudge waiting" is the only forward-looking number on the screen, and it is
  * a count of facts, not a nag: it tells you a weight has gone stale before you
  * are standing under the bar deciding what to load.
  */
 
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { Icon } from '../components/Icon';
 import { SectionTopBar } from '../components/SectionTopBar';
-import { GlowPulse } from '../components/bubbles';
+import { BubblePressable } from '../components/bubbles';
+import {
+  FloatingAction,
+  GlassSurface,
+  Lamps,
+  SpecularEdge,
+  useBarInsets,
+} from '../components/glass';
 import { pressedStyle } from '../components/motion';
-import { Kicker, ListCard, PrimaryButton, Separator } from '../components/primitives';
+import { Kicker } from '../components/primitives';
 import { useLanguage, usePlural, useT } from '../hooks/useT';
 import { formatShortDate, formatVolumeKg } from '../lib/units';
-import { palette } from '../theme/tokens';
+import { focalType, palette, radius } from '../theme/tokens';
 import type { ID, RecentSessionSummary } from '../types/models';
 
 /** One routine, described well enough to choose it without opening it. */
@@ -91,8 +108,8 @@ export interface WorkoutInProgress {
 
 interface HomeScreenProps {
   /**
-   * The workout already running, if any. It gets the top of the screen and its
-   * own button, because while one exists every routine row leads back to IT
+   * The workout already running, if any. It gets the top of the screen and the
+   * floating slot, because while one exists every routine row leads back to IT
    * rather than to the routine that was tapped — a live session is never
    * clobbered, and the user has to be able to see why.
    */
@@ -120,10 +137,7 @@ interface HomeScreenProps {
    * They had a tab of their own, then a lobby screen called `More`, then two rows
    * at the FOOT of this screen — and the foot was the right place only while the
    * corner held one glyph. It holds three now, at the same size, and these two
-   * are the other two: see `components/SectionTopBar.tsx`. The counts they used
-   * to state are gone with the rows, which is the one thing lost; a count of
-   * routines is not a thing anybody needs before deciding to look at them, and
-   * the screen that opens leads with it anyway.
+   * are the other two: see `components/SectionTopBar.tsx`.
    */
   onOpenRoutines: () => void;
   onOpenLibrary: () => void;
@@ -145,22 +159,43 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const t = useT();
   const plural = usePlural();
+  const bars = useBarInsets();
   const next = sequence?.next ?? null;
   /*
    * An empty routine has nothing to open — a ▶ that lands on an editor is a
    * button that lies. Empty ones live in the `Routines` tab, which is where they
-   * get filled in. The `NEXT UP` routine already has a button of its own.
+   * get filled in. The hero routine already has the floating slot.
    */
   const others = choices.filter(
     (choice) => choice.routineId !== next?.routineId && choice.exerciseCount > 0,
   );
 
+  /*
+   * What the workout about to be logged will be numbered. Derived here rather
+   * than passed, because `numbers` is already on this screen for the RECENT
+   * rows and the next ordinal is one `max` away from it — a second prop carrying
+   * the same fact is a second thing that can disagree with the history screen.
+   */
+  const ordinals = Object.values(numbers);
+  const nextNumber = ordinals.length > 0 ? Math.max(...ordinals) + 1 : 1;
+
+  /*
+   * THE FLOATING SLOT IS NEVER EMPTY, and what fills it is the one thing this
+   * screen is for. A live session outranks everything — it is the workout you
+   * are actually in — then the routine whose turn it is, then simply the first
+   * one that has exercises in it. Only a phone with no usable routine at all
+   * leaves the slot empty, and that screen says so in words instead.
+   */
+  const openable = next ?? others[0] ?? null;
+
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
+      <Lamps section="Workout" />
 
       {/* Three destinations, one size, left to right: the routines, the library,
-          the past. See `components/SectionTopBar.tsx` on why they are up here. */}
+          the past. See `components/SectionTopBar.tsx` on why they are up here
+          and why a commit action never is. */}
       <SectionTopBar
         title={t('Workout')}
         actions={[
@@ -183,82 +218,50 @@ export function HomeScreen({
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingTop: 16, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingTop: bars.top, paddingBottom: bars.bottom }}
         showsVerticalScrollIndicator={false}
       >
         {inProgress ? (
-          <View className="mx-lg mb-xl rounded-surface border border-green-dim bg-green-wash p-lg">
-            <Kicker tone="green">{t('In progress')}</Kicker>
-            <Text className="mt-sm text-title font-medium text-ink">{inProgress.title}</Text>
-            <Text className="mt-xs text-label tabular-nums text-ink-muted">
-              {t('{done} of {total} sets · {minutes} min', {
-                done: inProgress.done,
-                total: inProgress.total,
-                minutes: inProgress.minutes,
-              })}
-            </Text>
-            <View className="mt-lg">
-              <PrimaryButton label={t('Back to the workout')} onPress={onResume} />
+          <GlassSurface
+            tier="lit"
+            radius={radius.hero}
+            shadow="e2"
+            glow="hero"
+            flat
+            className="mx-lg mt-lg"
+          >
+            <View className="p-[20px]">
+              <Kicker tone="green">{t('In progress')}</Kicker>
+              <Text className="mt-sm text-title font-medium text-ink">{inProgress.title}</Text>
+              <Text className="mt-xs text-label tabular-nums text-ink-muted">
+                {t('{done} of {total} sets · {minutes} min', {
+                  done: inProgress.done,
+                  total: inProgress.total,
+                  minutes: inProgress.minutes,
+                })}
+              </Text>
             </View>
-          </View>
+          </GlassSurface>
         ) : null}
 
         {sequence ? <SequenceStrip sequence={sequence} onPress={onOpenSequence} /> : null}
 
-        {next ? (
-          /* THE ONE THING ON THIS SCREEN THAT MOVES.
-             It is the workout the app is suggesting, in a column of cards that
-             are the same green, and a slow halo is what makes it findable
-             without being read. `GlowPulse` has the argument, and the reason it
-             adds no information the card was not already carrying. */
-          <GlowPulse className="mx-lg mt-xl" radius={14}>
-            <View className="rounded-surface border border-hairline bg-green-wash p-lg">
-              {/* `TODAY`, and the tinted surface, because this card is now one of
-                  three things the tab bar offers and it has to say which day it is
-                  talking about. The queue is still a queue — the list under it is
-                  the rest of the offer — but `NEXT UP` described the sequence,
-                  and the sequence is a detail of how this routine got chosen. */}
-              <Kicker>{t('Today')}</Kicker>
-              <Text className="mt-sm text-title font-semibold text-ink">{next.name}</Text>
-              {next.focus ? (
-                <Text className="mt-xs text-label text-ink-muted">{next.focus}</Text>
-              ) : null}
-              <Text className="mt-xs text-label tabular-nums text-green-bright">
-                {t('{exercises} exercises · {sets} sets', {
-                  exercises: next.exerciseCount,
-                  sets: next.setCount,
-                })}
-                {next.nudgeCount > 0
-                  ? ` · ${next.nudgeCount} ${plural(next.nudgeCount, {
-                      one: t('nudge waiting'),
-                      few: 'подсказки ждут',
-                      many: t('nudges waiting'),
-                    })}`
-                  : ''}
-              </Text>
-              <View className="mt-lg">
-                <PrimaryButton
-                  label={t('Open {name}', { name: next.name })}
-                  onPress={() => onOpen(next.routineId)}
-                />
-              </View>
-            </View>
-          </GlowPulse>
-        ) : null}
+        {next ? <Hero plan={next} number={nextNumber} plural={plural} /> : null}
 
         {others.length > 0 ? (
           <>
             <Kicker className="mx-lg mb-md mt-xxl">
               {next ? t('Other routines') : t('Start a workout')}
             </Kicker>
-            <ListCard className="mx-lg">
-              {others.map((choice, index) => (
-                <View key={choice.routineId}>
-                  {index > 0 ? <Separator /> : null}
-                  <ChoiceRow choice={choice} onPress={() => onOpen(choice.routineId)} />
-                </View>
+            <View className="mx-lg">
+              {others.map((choice) => (
+                <ChoiceRow
+                  key={choice.routineId}
+                  choice={choice}
+                  onPress={() => onOpen(choice.routineId)}
+                />
               ))}
-            </ListCard>
+            </View>
           </>
         ) : null}
 
@@ -267,24 +270,34 @@ export function HomeScreen({
         {recent.length > 0 ? (
           <>
             <Kicker className="mx-lg mb-md mt-xxl">{t('Recent')}</Kicker>
-            <ListCard className="mx-lg">
+            {/* One `well` holding all of them, and the only surface on this
+                screen that is a container rather than a card: the past is
+                context, and eight lit panes of it would out-shout the hero. */}
+            <GlassSurface tier="well" radius={radius.row} flat className="mx-lg">
               {recent.map((session, index) => (
-                <View key={session.id}>
-                  {index > 0 ? <Separator /> : null}
-                  <RecentRow
-                    session={session}
-                    number={numbers[session.id]}
-                    onPress={() => onOpenSession(session.id)}
-                  />
-                </View>
+                <RecentRow
+                  key={session.id}
+                  session={session}
+                  number={numbers[session.id]}
+                  divided={index > 0}
+                  onPress={() => onOpenSession(session.id)}
+                />
               ))}
-            </ListCard>
+            </GlassSurface>
           </>
         ) : null}
-
-        {/* The two `Set up` rows that used to sit here are the two glyphs in the
-            corner now — same destinations, one tap instead of a scroll. */}
       </ScrollView>
+
+      {/* THE ONE COMMIT ACTION, in the slot every section shares. */}
+      {inProgress ? (
+        <FloatingAction label={t('Back to the workout')} icon="play" onPress={onResume} />
+      ) : openable ? (
+        <FloatingAction
+          label={t('Open {name}', { name: openable.name })}
+          icon="play"
+          onPress={() => onOpen(openable.routineId)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -292,8 +305,137 @@ export function HomeScreen({
 /* ------------------------------------------------------------------ */
 
 /**
+ * The routine whose turn it is, as the one hero on the screen.
+ *
+ * `lit` glass over the section's brightest lamp, which is what the depth stack
+ * is for: the card does not carry its own highlight, it is a translucent pane
+ * with the light already behind it. The name is the only thing on this screen at
+ * `hero-name` — one hero per screen is the rule the focal steps exist to keep.
+ *
+ * The three stats are a fact each, in a row, and none of them is new data: the
+ * exercise and set counts came with the plan, and the ordinal is one `max` off
+ * the numbers the RECENT rows below are already drawn from. The third is green
+ * because it is the only one of the three about the workout you are ABOUT to do
+ * rather than about the routine as written.
+ */
+function Hero({
+  plan,
+  number,
+  plural,
+}: {
+  plan: NextUpPlan;
+  number: number;
+  plural: ReturnType<typeof usePlural>;
+}) {
+  const t = useT();
+  return (
+    <GlassSurface
+      tier="lit"
+      radius={radius.hero}
+      shadow="e2"
+      glow="hero"
+      className="mx-lg mt-[22px]"
+    >
+      <View className="p-[20px]">
+        <View className="flex-row items-center">
+          <Kicker tone="green" className="flex-1">
+            {plan.focus ? `${t('Today')} · ${plan.focus}` : t('Today')}
+          </Kicker>
+          {plan.nudgeCount > 0 ? (
+            <View
+              style={{
+                height: 24,
+                paddingHorizontal: 10,
+                justifyContent: 'center',
+                borderRadius: radius.pill,
+                backgroundColor: 'rgba(63,169,108,0.20)',
+                borderWidth: 1,
+                borderColor: 'rgba(63,169,108,0.34)',
+              }}
+            >
+              <Text
+                allowFontScaling={false}
+                style={{ fontSize: 10, letterSpacing: 0.9 }}
+                className="font-semibold uppercase tabular-nums text-green-bright"
+              >
+                {`${plan.nudgeCount} ${plural(plan.nudgeCount, {
+                  one: t('nudge'),
+                  few: 'подсказки',
+                  many: t('nudges'),
+                })}`}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <Text
+          numberOfLines={2}
+          allowFontScaling={false}
+          style={focalType.heroName}
+          className="mt-sm font-semibold text-ink"
+        >
+          {plan.name}
+        </Text>
+
+        <Text className="mt-xs text-label text-ink-muted">
+          {t('{exercises} exercises · {sets} sets', {
+            exercises: plan.exerciseCount,
+            sets: plan.setCount,
+          })}
+        </Text>
+
+        {/* The divider fades out rather than crossing the card: a full-width
+            rule inside a pane reads as a seam between two panes. */}
+        <View
+          className="mt-lg h-hairline"
+          style={{ backgroundColor: 'rgba(236,241,238,0.12)', width: '62%' }}
+        />
+
+        <View className="mt-lg flex-row">
+          <HeroStat label={t('Exercises')} value={String(plan.exerciseCount)} />
+          <HeroStat label={t('Sets')} value={String(plan.setCount)} />
+          <HeroStat label={t('Workout')} value={`#${number}`} tone="green" />
+        </View>
+      </View>
+    </GlassSurface>
+  );
+}
+
+function HeroStat({
+  label,
+  value,
+  tone = 'plain',
+}: {
+  label: string;
+  value: string;
+  tone?: 'plain' | 'green';
+}) {
+  return (
+    <View className="mr-[22px]">
+      <Text
+        allowFontScaling={false}
+        style={{ fontSize: 10, letterSpacing: 1.1 }}
+        className="font-semibold uppercase text-ink-faint"
+      >
+        {label}
+      </Text>
+      <Text
+        allowFontScaling={false}
+        style={{ fontSize: 20, lineHeight: 22 }}
+        className={[
+          'mt-[2px] font-semibold tabular-nums',
+          tone === 'green' ? 'text-green-bright' : 'text-ink',
+        ].join(' ')}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+/**
  * The sequence, as one scrollable line: `Push › Pull › Push › Boxing`, with the
- * step whose turn it is on a green hairline.
+ * step whose turn it is on a lit pane.
  *
  * A line rather than a calendar grid, because a sequence is an ORDER and not a
  * week: it advances when you train, not when Tuesday arrives. Tapping anywhere on
@@ -303,33 +445,47 @@ export function HomeScreen({
 function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress: () => void }) {
   const t = useT();
   return (
-    <View>
+    <View className="mt-lg">
       <Kicker className="mx-lg">{t('Sequence')}</Kicker>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16 }}
+        contentContainerStyle={{ paddingHorizontal: 16, alignItems: 'center' }}
         className="mt-md"
       >
         {sequence.steps.map((step, index) => (
-          <Pressable
+          <BubblePressable
             key={step.key}
             onPress={onPress}
+            radius="pill"
             accessibilityRole="button"
             accessibilityLabel={`${step.name}${step.isCurrent ? `, ${t('next up')}` : ''}. ${t('Edit the sequence.')}`}
-            style={pressedStyle}
-            className="flex-row items-center"
+            style={(state) => [pressedStyle(state), { flexDirection: 'row', alignItems: 'center' }]}
           >
             {index > 0 ? (
-              <Text className="mx-xs text-label text-ink-faint" allowFontScaling={false}>
+              <Text className="mx-[3px] text-label text-ink-faint" allowFontScaling={false}>
                 ›
               </Text>
             ) : null}
             <View
-              className={[
-                'h-[32px] justify-center rounded-pill px-md',
-                step.isCurrent ? 'border border-green-bright bg-surface-alt' : 'bg-surface',
-              ].join(' ')}
+              style={{
+                height: 34,
+                justifyContent: 'center',
+                paddingHorizontal: 14,
+                borderRadius: radius.pill,
+                borderWidth: 1,
+                borderColor: step.isCurrent ? 'rgba(63,169,108,0.30)' : 'rgba(236,241,238,0.045)',
+                backgroundColor: step.isCurrent
+                  ? 'rgba(63,169,108,0.13)'
+                  : 'rgba(236,241,238,0.028)',
+                ...(step.isCurrent
+                  ? {
+                      boxShadow: [
+                        { offsetX: 0, offsetY: 0, blurRadius: 14, color: 'rgba(63,169,108,0.35)' },
+                      ],
+                    }
+                  : {}),
+              }}
             >
               <Text
                 numberOfLines={1}
@@ -341,7 +497,7 @@ function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress:
                 {step.name}
               </Text>
             </View>
-          </Pressable>
+          </BubblePressable>
         ))}
       </ScrollView>
     </View>
@@ -349,11 +505,11 @@ function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress:
 }
 
 /**
- * One openable routine.
+ * One openable routine, as its own `card` pane with 8 of air under it.
  *
  * The whole row opens it — no chevron, because a chevron promises a screen and
  * this promises a workout. The ▶ is the same green glyph the set rows use for
- * "this one now".
+ * "this one now", in a 40 dp circle that gives it an edge of its own.
  */
 function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => void }) {
   const t = useT();
@@ -368,34 +524,62 @@ function ChoiceRow({ choice, onPress }: { choice: RoutineChoice; onPress: () => 
     .join(' · ');
 
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${t('Open {name}', { name: choice.name })}. ${detail}`}
-      style={pressedStyle}
-      className="h-row-lg flex-row items-center px-lg"
-    >
-      <View className="flex-1 pr-md">
-        <Text numberOfLines={1} className="text-body font-medium text-ink">
-          {choice.name}
-        </Text>
-        <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
-          {detail}
-        </Text>
-      </View>
-      <Icon name="play" size={15} color={palette.greenBright} />
-    </Pressable>
+    <GlassSurface tier="card" radius={radius.row} shadow="e1" flat className="mb-sm">
+      <BubblePressable
+        onPress={onPress}
+        radius={radius.row}
+        accessibilityRole="button"
+        accessibilityLabel={`${t('Open {name}', { name: choice.name })}. ${detail}`}
+        style={(state) => [
+          pressedStyle(state),
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: 14,
+            paddingHorizontal: 16,
+          },
+        ]}
+      >
+        <View className="flex-1 pr-md">
+          <Text numberOfLines={1} className="text-body font-medium text-ink">
+            {choice.name}
+          </Text>
+          <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
+            {detail}
+          </Text>
+        </View>
+        <View
+          style={{
+            height: 40,
+            width: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: radius.pill,
+            overflow: 'hidden',
+            borderWidth: 1,
+            borderColor: 'rgba(63,169,108,0.26)',
+            backgroundColor: 'rgba(63,169,108,0.14)',
+          }}
+        >
+          <SpecularEdge color="rgba(236,241,238,0.12)" radius={radius.pill} />
+          <Icon name="play" size={14} color={palette.greenBright} />
+        </View>
+      </BubblePressable>
+    </GlassSurface>
   );
 }
 
 function RecentRow({
   session,
   number,
+  divided,
   onPress,
 }: {
   session: RecentSessionSummary;
   /** Its ordinal, when the numbering gives it one. */
   number?: number;
+  /** A hairline above it — every row but the first. */
+  divided: boolean;
   onPress: () => void;
 }) {
   const t = useT();
@@ -424,33 +608,33 @@ function RecentRow({
     .join(' · ');
 
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={[
-        numbered ? `${t('Workout {number}', { number })},` : '',
-        session.title,
-        detail,
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      style={pressedStyle}
-      className="h-row-lg flex-row items-center px-lg"
-    >
-      <View className="flex-1">
-        <Text numberOfLines={1} className="text-body text-ink">
+    <View>
+      {divided ? <View className="ml-lg h-hairline bg-hairline" /> : null}
+      <BubblePressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={[
+          numbered ? `${t('Workout {number}', { number })},` : '',
+          session.title,
+          detail,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        style={(state) => [pressedStyle(state), { paddingVertical: 13, paddingHorizontal: 16 }]}
+      >
+        <Text numberOfLines={1} className="text-[15px] leading-[20px] text-ink">
           {numbered ? (
-            <Text className="text-label font-semibold tabular-nums text-green-bright">
+            <Text className="text-[12px] font-semibold tabular-nums text-green-bright">
               {`#${number}  `}
             </Text>
           ) : null}
           {session.title}
         </Text>
-        <Text numberOfLines={1} className="mt-[2px] text-label tabular-nums text-ink-faint">
+        <Text numberOfLines={1} className="mt-[2px] text-[12px] tabular-nums text-ink-faint">
           {detail}
         </Text>
-      </View>
-    </Pressable>
+      </BubblePressable>
+    </View>
   );
 }
 
@@ -458,13 +642,15 @@ function RecentRow({
 function Empty() {
   const t = useT();
   return (
-    <View className="mx-lg mt-xxl rounded-surface border border-hairline bg-surface p-lg">
-      <Kicker>{t('Nothing to open')}</Kicker>
-      <Text className="mt-sm text-body text-ink-muted">
-        {t(
-          'Put some exercises in a routine — the list glyph in the corner of this screen — and it shows up here, ready to open.',
-        )}
-      </Text>
-    </View>
+    <GlassSurface tier="card" radius={radius.card} shadow="e1" flat className="mx-lg mt-xxl">
+      <View className="p-lg">
+        <Kicker>{t('Nothing to open')}</Kicker>
+        <Text className="mt-sm text-body text-ink-muted">
+          {t(
+            'Put some exercises in a routine — the list glyph in the corner of this screen — and it shows up here, ready to open.',
+          )}
+        </Text>
+      </View>
+    </GlassSurface>
   );
 }

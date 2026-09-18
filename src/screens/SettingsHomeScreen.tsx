@@ -63,17 +63,18 @@ import { ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
-import { Icon } from '../components/Icon';
+import { Icon, type IconName } from '../components/Icon';
 import { LanguageToggle, SectionTopBar } from '../components/SectionTopBar';
+import { BubblePressable } from '../components/bubbles';
 import {
-  GlassCard,
-  Kicker,
-  NavRow,
-  Separator,
-  SettingRow,
-  StepperRow,
-  TextButton,
-} from '../components/primitives';
+  FloatingAction,
+  GlassSurface,
+  Lamps,
+  SpecularEdge,
+  useBarInsets,
+} from '../components/glass';
+import { pressedStyle } from '../components/motion';
+import { Kicker, Separator, SettingRow, StepperRow, TextButton } from '../components/primitives';
 import { runBackupNow } from '../hooks/useAutoBackup';
 import { describeBackupAge } from '../lib/autoBackup';
 import {
@@ -97,7 +98,7 @@ import { commit, tap } from '../lib/feedback';
 import { LANGUAGES, LANGUAGE_LABELS, LANGUAGE_NAMES, type Language } from '../lib/i18n';
 import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
 import { SETTING_LIMITS, useSettings } from '../state/settingsStore';
-import { palette } from '../theme/tokens';
+import { palette, radius } from '../theme/tokens';
 
 /** A file that has been read and understood, waiting for a yes. */
 interface PendingImport {
@@ -137,6 +138,7 @@ export function SettingsHomeScreen({
   const settings = useSettings();
   const t = useT();
   const language = useLanguage();
+  const bars = useBarInsets();
 
   const [status, setStatus] = useState<Status | null>(null);
   const [pending, setPending] = useState<PendingImport | null>(null);
@@ -289,6 +291,7 @@ export function SettingsHomeScreen({
 
   return (
     <View className="flex-1 bg-bg">
+      <Lamps section="Settings" />
       <View className="flex-1" style={asking ? { opacity: 0.28 } : undefined}>
         <StatusBar style="light" />
         <SectionTopBar
@@ -311,33 +314,38 @@ export function SettingsHomeScreen({
 
         <ScrollView
           className="flex-1"
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingTop: bars.top + 8, paddingBottom: bars.bottom }}
           showsVerticalScrollIndicator={false}
           scrollEnabled={!asking}
         >
-          <Kicker className="mx-lg mb-sm mt-md">{t('Sections')}</Kicker>
+          <Kicker className="mx-lg mb-sm">{t('Sections')}</Kicker>
           {/* The three rows that ARE the app, each behind its own section's
               mark: the routine list, the tick, and the symbol amounts are counted
-              in. The badge is what makes this list read as a map. */}
-          <GlassCard className="mx-lg">
-            <NavRow
+              in. The badge is what makes this list read as a map.
+
+              Three separate panes with 8 of air between them rather than one
+              card split by hairlines — a door is a thing, and three doors in one
+              box read as three lines in a list. */}
+          <View className="mx-lg">
+            <SectionRow
               label={t('Workout settings')}
-              badge={<Icon name="routines" size={15} color={palette.greenBright} />}
+              hint={t('Rest, plates, weekly targets')}
+              icon="routines"
               onPress={onOpenWorkoutSettings}
             />
-            <Separator />
-            <NavRow
+            <SectionRow
               label={t('Daily tasks settings')}
-              badge={<Icon name="check" size={15} color={palette.greenBright} />}
+              hint={t('The automatic tick')}
+              icon="check"
               onPress={onOpenTaskSettings}
             />
-            <Separator />
-            <NavRow
+            <SectionRow
               label={t('Expenses settings')}
-              badge={<Icon name="money" size={15} color={palette.greenBright} />}
+              hint={t('What amounts are counted in')}
+              icon="money"
               onPress={onOpenMoneySettings}
             />
-          </GlassCard>
+          </View>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
             {t(
               'Each one holds only what its own section reads. Rest, plates and weekly targets are training; the automatic tick is the daily tasks; what amounts are counted in is the expenses.',
@@ -360,13 +368,40 @@ export function SettingsHomeScreen({
               which is one of the exact events a backup exists to survive. So the
               row states which of the two facts is missing. */}
           <Kicker className="mx-lg mb-sm mt-xxl">{t('Everything, in one file')}</Kicker>
-          <GlassCard className="mx-lg">
-            <SettingRow
-              label={t('Last backup')}
-              value={describeBackupAge(settings.lastBackupAt, undefined, language)}
-              valueTone={settings.lastBackupAt == null ? 'muted' : 'faint'}
-            />
-            <Separator inset={0} />
+
+          {/* THE HERO. The one fact on this screen anybody opens it to check —
+              how old the last copy is — at a size nothing else here comes near.
+              A phrase rather than a bare numeral, because "Never" and "Today"
+              are both answers and neither is a number. */}
+          <GlassSurface
+            tier="lit"
+            radius={radius.card}
+            className="mx-lg mb-sm"
+            tint="rgba(63,169,108,0.10)"
+            borderColor="rgba(63,169,108,0.24)"
+            style={{
+              boxShadow: [{ offsetX: 0, offsetY: 10, blurRadius: 28, color: 'rgba(0,0,0,0.44)' }],
+            }}
+          >
+            <View className="p-[18px]">
+              <Kicker tone="green">{t('Last backup')}</Kicker>
+              <Text
+                allowFontScaling={false}
+                numberOfLines={1}
+                style={{ fontSize: 26, lineHeight: 30, letterSpacing: -0.8 }}
+                className="mt-xs font-semibold tabular-nums text-ink"
+              >
+                {describeBackupAge(settings.lastBackupAt, undefined, language)}
+              </Text>
+              <Text className="mt-[2px] text-label font-medium text-ink-muted">
+                {settings.autoBackupEnabled
+                  ? t('Every {days} days', { days: settings.autoBackupIntervalDays })
+                  : t('Automatic backups are off')}
+              </Text>
+            </View>
+          </GlassSurface>
+
+          <GlassSurface tier="well" radius={radius.row} flat className="mx-lg">
             <SettingRow
               label={t('Back up automatically')}
               value={
@@ -411,16 +446,6 @@ export function SettingsHomeScreen({
             ) : null}
             <Separator inset={0} />
             <TextButton
-              label={
-                settings.autoBackupFolderUri == null
-                  ? t('Choose a backup folder')
-                  : t('Back up now')
-              }
-              tone="green"
-              onPress={() => void backUpNow()}
-            />
-            <Separator inset={0} />
-            <TextButton
               label={t('Export everything')}
               tone="green"
               onPress={() => void exportEverything()}
@@ -432,11 +457,47 @@ export function SettingsHomeScreen({
               onPress={() => void importEverything()}
             />
             <Separator inset={0} />
-            <TextButton
-              label={t('Reset every setting to its default')}
-              onPress={() => setConfirmingReset(true)}
-            />
-          </GlassCard>
+          </GlassSurface>
+
+          {/* PLACEMENT RULE 5. The one action on this screen that cannot be
+              undone is plain text in a dashed box at the foot of the scroll —
+              deliberately out of the thumb's arc. A reset should cost a scroll,
+              not a flick. Still no red: this app has one hue, and a destructive
+              action states what it does rather than shouting a colour. */}
+          <BubblePressable
+            onPress={() => setConfirmingReset(true)}
+            radius={16}
+            accessibilityRole="button"
+            accessibilityLabel={t('Reset every setting to its default')}
+            style={(state) => [
+              pressedStyle(state),
+              {
+                marginTop: 26,
+                marginHorizontal: 16,
+                paddingVertical: 14,
+                paddingHorizontal: 16,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderStyle: 'dashed',
+                borderColor: 'rgba(138,150,143,0.22)',
+              },
+            ]}
+          >
+            <Text
+              allowFontScaling={false}
+              style={{ fontSize: 13 }}
+              className="font-medium text-ink-muted"
+            >
+              {t('Reset every setting to its default')}
+            </Text>
+            <Text
+              allowFontScaling={false}
+              style={{ fontSize: 12, lineHeight: 16 }}
+              className="mt-[2px] text-ink-faint"
+            >
+              {t('Nothing you have logged is touched.')}
+            </Text>
+          </BubblePressable>
 
           {status ? (
             <Text
@@ -467,6 +528,19 @@ export function SettingsHomeScreen({
           </Text>
         </ScrollView>
       </View>
+
+      {/* THE ONE NON-FILLED INSTANCE of the floating slot, and it earns the
+          exception: a maintenance task should not shout in the same voice as
+          `Add expense`. Same coordinates, same geometry, ghost glass. */}
+      {asking ? null : (
+        <FloatingAction
+          label={
+            settings.autoBackupFolderUri == null ? t('Choose a backup folder') : t('Back up now')
+          }
+          variant="ghost"
+          onPress={() => void backUpNow()}
+        />
+      )}
 
       {pending ? (
         <ConfirmSheet
@@ -505,5 +579,83 @@ export function SettingsHomeScreen({
         />
       ) : null}
     </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * One of the three doors at the top, as its own pane.
+ *
+ * The leading tile is the section's own mark, in the same green square the tab
+ * it belongs to would draw — which is what makes this list read as the app's map
+ * rather than as three more rows. A door inside a section does not get one;
+ * there is nothing for it to be a mark of.
+ */
+function SectionRow({
+  label,
+  hint,
+  icon,
+  onPress,
+}: {
+  label: string;
+  hint: string;
+  icon: IconName;
+  onPress: () => void;
+}) {
+  return (
+    <GlassSurface tier="card" radius={radius.row} shadow="e1" flat className="mb-sm">
+      <BubblePressable
+        onPress={onPress}
+        radius={radius.row}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}. ${hint}`}
+        style={(state) => [
+          pressedStyle(state),
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: 14,
+            paddingHorizontal: 16,
+          },
+        ]}
+      >
+        <View
+          style={{
+            height: 36,
+            width: 36,
+            marginRight: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 12,
+            overflow: 'hidden',
+            borderWidth: 1,
+            borderColor: 'rgba(63,169,108,0.24)',
+            backgroundColor: 'rgba(63,169,108,0.16)',
+          }}
+        >
+          <SpecularEdge color="rgba(236,241,238,0.12)" radius={12} />
+          <Icon name={icon} size={16} color={palette.greenBright} />
+        </View>
+        <View className="flex-1 pr-md">
+          <Text
+            allowFontScaling={false}
+            style={{ fontSize: 16, lineHeight: 21 }}
+            className="font-medium text-ink"
+          >
+            {label}
+          </Text>
+          <Text
+            allowFontScaling={false}
+            numberOfLines={1}
+            style={{ fontSize: 12 }}
+            className="mt-[2px] text-ink-faint"
+          >
+            {hint}
+          </Text>
+        </View>
+        <Icon name="chevron-right" size={16} color={palette.inkFaint} />
+      </BubblePressable>
+    </GlassSurface>
   );
 }

@@ -8,7 +8,6 @@
  *   DashedAdd   a dashed slot that adds one of whatever the list holds
  *   Separator   a 1px rule, inset past whatever column it must clear
  *   SettingRow  56 high: label left, value right
- *   NavRow      the same row with a chevron — it goes somewhere
  *   SwitchRow   label, optional hint, and the app's one switch
  *   FieldWell   a 56-high text field with a green caret
  *   NumericWell a 96-high labelled number
@@ -256,59 +255,6 @@ export function SettingRow({
   );
 }
 
-/**
- * A row that goes somewhere.
- *
- * `SettingRow` states a value; this one is a DOOR, and the chevron is the whole
- * difference. It is the only row shape in the app that carries one, which is why
- * it is spelled out rather than added as a flag to the row above — a chevron that
- * can be switched off is a chevron that ends up on rows that go nowhere.
- */
-export function NavRow({
-  label,
-  value,
-  badge,
-  onPress,
-}: {
-  label: string;
-  /** A count, so the row answers its own question without being opened. */
-  value?: string;
-  /**
-   * A section's own mark, in a tinted square before the label.
-   *
-   * Only the three rows at the top of Settings carry one, and only because those
-   * three ARE the sections — the badge is the same glyph the tab leads with, so
-   * the list reads as the app's own map rather than as three more rows. A door
-   * inside a section does not get one; there is nothing for it to be a mark of.
-   */
-  badge?: ReactNode;
-  onPress: () => void;
-}) {
-  return (
-    <BubblePressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={value ? `${label}, ${value}` : label}
-      style={pressedStyle}
-      className="h-row flex-row items-center px-lg"
-    >
-      {badge ? (
-        <View
-          style={{ backgroundColor: glass.green }}
-          className="mr-md h-[28px] w-[28px] items-center justify-center rounded-cell"
-        >
-          {badge}
-        </View>
-      ) : null}
-      <Text className="flex-1 text-body font-medium text-ink">{label}</Text>
-      {value ? (
-        <Text className="mr-md text-body font-medium tabular-nums text-ink-muted">{value}</Text>
-      ) : null}
-      <Icon name="chevron-right" size={16} color={palette.inkFaint} />
-    </BubblePressable>
-  );
-}
-
 /** Label, optional hint, and the app's one switch. */
 export function SwitchRow({
   label,
@@ -376,7 +322,14 @@ export function StepperRow({
   );
 }
 
-export function StepButton({
+/**
+ * The `−` and the `+` of a `StepperRow`, and nothing else in the app draws one.
+ *
+ * Not exported: a 36 dp circle with a glyph in it is a shape three other
+ * controls could plausibly want, and every one of them would want it at a
+ * different size. It stays the stepper's own part until a second caller exists.
+ */
+function StepButton({
   icon,
   label,
   onPress,

@@ -165,6 +165,7 @@ import { formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
 import { platesInForce, useSettings } from '../state/settingsStore';
 import { PrimaryButton } from '../components/primitives';
+import { FloatingPair, Lamps } from '../components/glass';
 import { palette } from '../theme/tokens';
 import type { ID, RoutineItem, UnitSystem } from '../types/models';
 
@@ -694,6 +695,7 @@ export function ActiveWorkoutScreen({
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
+      <Lamps section="Session" />
 
       {/* The list dims behind a sheet rather than being replaced — the user is
           confirming something about THIS list, and should still see it. */}
@@ -715,13 +717,20 @@ export function ActiveWorkoutScreen({
                 : t('{total} sets planned · not started', { total: progress.total })
           }
           onBack={lifted ? undefined : onExit}
-          action={
-            lifted
-              ? { label: t('Drop'), onPress: drop }
-              : isStarted
-                ? { label: t('Finish'), onPress: handleFinish }
-                : { label: t('Start'), onPress: handleStart }
-          }
+          /*
+           * NO COMMIT ACTION IN THIS BAR — placement rule 1.
+           *
+           * `Finish` and `Start` used to be a pill in this corner, which is the
+           * furthest point on the screen from a right thumb that is otherwise
+           * spending the whole session in the bottom third pressing ✓. They are
+           * the floating pair at the foot of the screen now.
+           *
+           * `Drop` stays, and is the exception that proves the rule: it is not a
+           * commit, it is the escape from a transient mode the header is already
+           * announcing ("MOVING · PULL"), and it has to sit with the sentence
+           * that explains it.
+           */
+          action={lifted ? { label: t('Drop'), onPress: drop } : undefined}
         >
           {/* The session's own controls. Hidden mid-move — none of them is about
               a card in the air. `Start` is repeated as a chip before the workout
@@ -729,14 +738,6 @@ export function ActiveWorkoutScreen({
               easy to read as a page title. */}
           {lifted ? null : (
             <View className="mt-sm flex-row items-center">
-              {isStarted ? null : (
-                <SessionChip
-                  label={t('Start workout')}
-                  icon="play"
-                  tone="green"
-                  onPress={handleStart}
-                />
-              )}
               <SessionChip label={t('Stop and exit')} icon="x" onPress={handleStopAndExit} />
               {isStarted ? (
                 <SessionChip
@@ -766,7 +767,9 @@ export function ActiveWorkoutScreen({
           className="flex-1"
           contentContainerStyle={{
             paddingTop: 8,
-            paddingBottom: insets.bottom + 32,
+            // The floating pair is 64 tall at `bottom: 24`; this is what keeps
+            // the last card clear of it.
+            paddingBottom: insets.bottom + 120,
           }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -889,6 +892,31 @@ export function ActiveWorkoutScreen({
           </View>
         </ScrollView>
       </View>
+
+      {/*
+        THE FLOATING PAIR — placement rule 4, and the one place in the app where
+        two actions share the slot.
+
+        `Focus` is filled at 64 and `Finish` is ghost at 52, with 10 between
+        them. Different weight AND different geometry, deliberately: a thumb that
+        has pressed `Focus` sixty times this session must not be able to end the
+        workout by muscle memory. Finishing is the one commit in this app that is
+        not one tap to undo.
+
+        Before the workout is started there is nothing to finish and nothing to
+        focus on, so the pair is one button and it is the one thing to do.
+      */}
+      {dimmed || lifted || focusOpen ? null : isStarted ? (
+        <FloatingPair
+          secondary={{ label: t('Finish'), onPress: handleFinish }}
+          primary={{ label: t('Focus'), icon: 'play', onPress: () => setFocusOpen(true) }}
+        />
+      ) : (
+        <FloatingPair
+          secondary={{ label: t('Stop and exit'), onPress: handleStopAndExit }}
+          primary={{ label: t('Start workout'), icon: 'play', onPress: handleStart }}
+        />
+      )}
 
       {/* FOCUS MODE. After the list so it covers it, before the sheets so
           `FinishSheet` and `ConfirmSheet` still paint on top — pressing

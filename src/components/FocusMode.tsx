@@ -107,6 +107,7 @@ import { useSettings } from '../state/settingsStore';
 import { useLanguage, usePlural, useT } from '../hooks/useT';
 import { palette, size, space } from '../theme/tokens';
 import { FocusBottom, FocusDone, FocusFinish } from './FocusControls';
+import { Lamps } from './glass';
 import { FocusNumbers, workLines } from './FocusNumbers';
 import { FocusHold } from './FocusHold';
 import { FocusNudge } from './FocusNudge';
@@ -418,6 +419,10 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
         { backgroundColor: palette.bg, transform: [{ translateY: slide }] },
       ]}
     >
+      {/* One lamp, behind the numbers. Focus mode is the one screen with a
+          single light source, because it has a single subject. */}
+      <Lamps section="Focus" />
+
       {/* THE WAY OUT, and the only chrome in here. Its own block above the header
           rule, outside every other control's box, in every state. */}
       <View {...drag.panHandlers} style={{ paddingTop: insets.top + 4 }}>

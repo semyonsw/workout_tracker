@@ -192,3 +192,267 @@ export const focusGlow = {
   textShadowOffset: { width: 0, height: 0 },
   textShadowRadius: 26,
 } as const;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIQUID GLASS — the layer the redesign added on top of everything above.
+
+   Nothing below changes a colour. The palette, the hue rule and the type scale
+   are untouched; what is new is DEPTH — the surfaces stopped being flat alpha
+   over a flat page and became panes with light under them.
+
+   The one thing the old glass was missing: the section glow sat BEHIND a
+   surface with nothing to transmit, so a card over it read as a slightly
+   lighter black. The lamps are layer 1, the glass is layer 2, and the glass is
+   translucent enough to carry the lamp through it. That is the whole change,
+   and every token below serves it.
+
+   Six layers, bottom to top:
+     0  page      #060807
+     1  lamps     radial green, decorative, breathing            `LAMPS`
+     2  content   cards, rows, tiles                             `glassTier`
+     3  floating  one action per section, its own glow           `halo.floating`
+     4  bars      top bar and nav pill, content scrolls under    `glassTier.bar`
+     5  sheets    focus mode, keypad, confirmations
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * A glass tier — one tint, one blur, one border, one specular edge. FOUR of
+ * them, and there is deliberately no way to ask for a fifth: a surface that
+ * needs its own alpha is a surface that has stopped belonging to the system.
+ *
+ * `blur` is an `expo-blur` INTENSITY. On Android that library divides it by
+ * `blurReductionFactor`, and `components/glass.tsx` passes 1 — so these are the
+ * design's own px blur radii, one for one, which is the most defensible mapping
+ * available without a device to calibrate against. What must hold either way is
+ * the ORDER: `well` < `card` < `lit` < `bar`.
+ *
+ * SATURATION HAS NO PROP. The design's `saturate(140–170%)` is what keeps the
+ * glass dark and moody rather than milky, and `BlurView` cannot do it. The
+ * compensation is to push the tint greener on the two tiers that carried the
+ * most saturation — which is why `lit` is a green tint rather than an ink one,
+ * and why `bar` is tinted with `surface` (#0E1211, the page's own green cast)
+ * instead of with black.
+ */
+export interface GlassTier {
+  /** Overlaid on the blur, as a plain `View`. */
+  tint: string;
+  /** `expo-blur` intensity, 0–100. */
+  blur: number;
+  /** The 1px edge that holds the pane. */
+  border: string;
+  /** The 1px lit line along the top edge, or null for a tier without one. */
+  specular: string | null;
+}
+
+export const glassTier: Record<'well' | 'card' | 'lit' | 'bar', GlassTier> = {
+  /** A well inside a card — present, but not a pane of its own. */
+  well: {
+    tint: 'rgba(236,241,238,0.028)',
+    blur: 14,
+    border: 'rgba(236,241,238,0.045)',
+    specular: null,
+  },
+  /** The default raised pane: cards, rows, tiles, keypad keys. */
+  card: {
+    tint: 'rgba(236,241,238,0.055)',
+    blur: 20,
+    border: 'rgba(236,241,238,0.06)',
+    specular: 'rgba(236,241,238,0.10)',
+  },
+  /** A pane that is currently the answer — the hero, a done task, a lit tile. */
+  lit: {
+    tint: 'rgba(63,169,108,0.13)',
+    blur: 24,
+    border: 'rgba(63,169,108,0.30)',
+    specular: 'rgba(236,241,238,0.14)',
+  },
+  /** The two bars. The heaviest blur in the app, because content moves under it. */
+  bar: {
+    tint: 'rgba(14,18,17,0.58)',
+    blur: 34,
+    border: 'rgba(236,241,238,0.075)',
+    specular: 'rgba(236,241,238,0.12)',
+  },
+} as const;
+
+/** The floating action's own edge — the one element with a heavier specular. */
+export const specularHeavy = 'rgba(236,241,238,0.22)';
+
+/**
+ * THREE GLOW STEPS, and the rule for choosing between them is a COUNT rather
+ * than an importance: how many of these can be on one screen at once.
+ *
+ *   repeating   many — done tasks, lit chips, the sequence's active step
+ *   single      EXACTLY ONE per screen — the up-next set's ring
+ *   floating    the floating action, and nothing else
+ *
+ * All three are `boxShadow` and never `elevation`. Android's `elevation` draws
+ * its own opaque, much wider shadow that ignores both the colour and the radius
+ * asked for — which is how the old repeating glow got thick enough to need
+ * fixing in the first place.
+ */
+export const halo = {
+  repeating: [{ offsetX: 0, offsetY: 0, blurRadius: 16, color: 'rgba(63,169,108,0.28)' }],
+  single: [{ offsetX: 0, offsetY: 0, blurRadius: 20, color: 'rgba(63,169,108,0.60)' }],
+  floating: [{ offsetX: 0, offsetY: 0, blurRadius: 44, color: 'rgba(63,169,108,0.50)' }],
+  /** The soft bloom a hero card carries under its shadow. Not a halo step. */
+  hero: [{ offsetX: 0, offsetY: 0, blurRadius: 30, color: 'rgba(63,169,108,0.18)' }],
+} as const;
+
+/**
+ * THE SHADOW UNDER THE GLASS — three steps, black only.
+ *
+ * The app used to have exactly one shadow, under the timer pill, and the
+ * comment above `timerShadow` is still right about why that suited an app of
+ * flat surfaces. Glass changes the argument: a pane is a pane because something
+ * is behind it, and a shadow is the cheapest statement of how far behind.
+ *
+ * `boxShadow` again, for the same reason as the halos — and these are the only
+ * three depths, so a card cannot invent a fourth distance from the page.
+ */
+export const elevation = {
+  /** Cards, rows, tiles. */
+  e1: [{ offsetX: 0, offsetY: 8, blurRadius: 20, color: 'rgba(0,0,0,0.35)' }],
+  /** Hero cards and floating elements. */
+  e2: [{ offsetX: 0, offsetY: 14, blurRadius: 34, color: 'rgba(0,0,0,0.50)' }],
+  /** The rest clock, and nothing else. */
+  e3: [{ offsetX: 0, offsetY: 18, blurRadius: 44, color: 'rgba(0,0,0,0.60)' }],
+} as const;
+
+/**
+ * RADIUS — one step softer than the flat design, because a blurred pane with a
+ * tight corner reads as a cut-out rather than as glass.
+ *
+ * These live here as NUMBERS as well as in `tailwind.config.js` because a
+ * `BlurView` has to be told its corner in `style` — NativeWind's transform does
+ * not reach a native component — and a radius that disagreed between the
+ * clipper and the blur inside it is a hairline of unblurred page along the edge.
+ */
+export const radius = {
+  cell: 10, // a calendar square
+  row: 18, // a row, a chip container, a keypad key
+  card: 20, // a card with contents of its own
+  hero: 24, // a hero, a sheet, an instrument
+  navPill: 26, // the nav pill, and only it
+  pill: 9999,
+} as const;
+
+/**
+ * FOUR FOCAL TYPE STEPS, and the rule that makes them work: ONE HERO PER
+ * SCREEN, and nothing else on that screen comes near its size.
+ *
+ * They are here rather than in `tailwind.config.js` because every one of them
+ * is a NUMBER a screen has to reason about — the day dial measures itself
+ * against the ring it sits in, the amount shrinks to fit its own width. A
+ * className cannot be measured.
+ *
+ * The fifth step the design names — focus mode's 112 — is not here on purpose:
+ * `lib/focusType.ts` already measures that one per screen, and a fixed value
+ * beside it would be a second opinion about the same numerals.
+ */
+export const focalType = {
+  /** Today's routine name on the workout hero. */
+  heroName: { fontSize: 30, lineHeight: 34, letterSpacing: -0.9 },
+  /** The all-time balance. */
+  balance: { fontSize: 52, lineHeight: 54, letterSpacing: -2 },
+  /** The keypad's amount. */
+  amount: { fontSize: 60, lineHeight: 62, letterSpacing: -2.4 },
+  /** The day number inside the tasks dial. Was 44. */
+  dayDial: { fontSize: 64, lineHeight: 64, letterSpacing: -2.4 },
+} as const;
+
+/**
+ * THE TEXT GLOWS. `textShadow` is native on both platforms, so unlike the box
+ * halos these need no workaround — but they still belong here, because the
+ * numerals that carry them live in three different screens and a bloom that
+ * drifted apart between them would read as two different lights.
+ */
+export const textGlow = {
+  /** The day number, the balance. */
+  hero: {
+    textShadowColor: 'rgba(63,169,108,0.32)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 30,
+  },
+  /** The up-next set's numbers. */
+  live: {
+    textShadowColor: 'rgba(63,169,108,0.60)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 16,
+  },
+} as const;
+
+/**
+ * THE LAMPS — layer 1, per section.
+ *
+ * Two or three radial greens on the page, one of them anchored behind whatever
+ * that section's hero is. They carry NO information: a build that dropped this
+ * table entirely would lose atmosphere and not one fact, which is the condition
+ * on which decoration is allowed to exist in this app at all.
+ *
+ * `x` is a fraction of the width and `y` is in dp from the top, because a lamp
+ * behind the tasks dial has to stay behind the dial on a tall phone rather than
+ * sliding down with a percentage.
+ */
+export interface LampSpec {
+  /** 0–1 across the width. */
+  x: number;
+  /** dp from the top. */
+  y: number;
+  /** Radius in dp. */
+  r: number;
+  /** Peak opacity at the centre. */
+  a: number;
+  /** `dim` is the darker green, for the lamps furthest from the hero. */
+  hue?: 'bright' | 'dim';
+}
+
+export const LAMPS: Record<string, readonly LampSpec[]> = {
+  Workout: [
+    { x: 0.4, y: 250, r: 200, a: 0.17 },
+    { x: 0.98, y: 560, r: 170, a: 0.11, hue: 'dim' },
+  ],
+  Tasks: [
+    { x: 0.5, y: 240, r: 210, a: 0.2 },
+    { x: 0.08, y: 90, r: 150, a: 0.12 },
+    { x: 0.96, y: 620, r: 180, a: 0.11, hue: 'dim' },
+  ],
+  Expenses: [
+    { x: 0.46, y: 210, r: 200, a: 0.18 },
+    { x: 0.04, y: 420, r: 160, a: 0.1, hue: 'dim' },
+  ],
+  Settings: [
+    { x: 0.12, y: 120, r: 180, a: 0.12 },
+    { x: 0.92, y: 500, r: 180, a: 0.09, hue: 'dim' },
+  ],
+  /** Focus mode's single lamp, behind the numbers. */
+  Focus: [{ x: 0.3, y: 370, r: 260, a: 0.16 }],
+  /** The session screen: one behind the rest clock, one low on the right. */
+  Session: [
+    { x: 0.5, y: 200, r: 200, a: 0.14 },
+    { x: 0.95, y: 600, r: 170, a: 0.1, hue: 'dim' },
+  ],
+};
+
+/**
+ * THE FLOATING SLOT — identical coordinates in every section, which is the
+ * whole of placement rule 2 and half the reason the redesign exists.
+ *
+ * `right: 16, bottom: 92` puts one commit action in the thumb's arc on every
+ * screen that has one, and the top-right corner keeps navigation only. On an
+ * 800 dp phone a `Save` in that corner is ~620 dp of diagonal travel from a
+ * right thumb, and the app was asking for that trip forty times a session.
+ *
+ * `bottom` clears the nav pill (64 tall at inset 12) with 16 of air.
+ */
+export const floatingSlot = { right: 16, bottom: 92, height: 60, paddingH: 24 } as const;
+
+/**
+ * What a scroll must clear so the two translucent bars never hide a row.
+ *
+ * Content scrolls visibly UNDER both bars — that is the single clearest read on
+ * whether the glass is working — so this padding is the only thing keeping the
+ * first and last rows reachable. `bottom` is the nav pill (64), its inset (12),
+ * and the floating action's clearance.
+ */
+export const barInset = { top: 64, bottom: 178 } as const;
