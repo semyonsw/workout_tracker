@@ -175,12 +175,18 @@ describe('an exercise added mid-workout', () => {
       now: new Date('2026-08-17T17:00:00.000Z'),
     });
 
-  it('starts at exactly one set, whatever last session did', () => {
-    // Four sets last time; the user is deciding set by set today, and `Add set` is
-    // one tap. Planning four rows for an exercise nobody planned is a guess.
+  it('builds exactly the rows it was asked for, whatever last session did', () => {
+    /*
+     * The COUNT comes from the caller and is not widened to history here — the
+     * caller is `AppShell.addExerciseToSession`, which asks for
+     * `defaultTargetSets` (four for ordinary rep work), the same number the
+     * routine editor's `+ Add exercise` plans. It used to ask for ONE, so the
+     * same exercise was four sets in a plan and one set at the rack.
+     */
     const entry = entryFor([loggedSet(), loggedSet({ id: 'sh2', setIndex: 1 })]);
 
     expect(entry.sets).toHaveLength(1);
+    expect(entryFor([], defaultTargetSets(machine)).sets).toHaveLength(4);
   });
 
   it('still prefills that set from history — the one-tap promise holds', () => {
@@ -527,5 +533,68 @@ describe('formatTarget with a ladder', () => {
     expect(formatTarget({ targetSets: 4, targetRepsMax: 8, exercise: entry.exercise })).toBe(
       '4 × 8 reps',
     );
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * `MAX` — the exercise with no rep target.
+ *
+ * Two claims, and the second is the one that makes the feature honest: the plan
+ * says `MAX` rather than a number, and the rows start EMPTY. A max set prefilled
+ * from last session would put the answer in the cell of the question, one tap
+ * from being logged as though it had happened.
+ */
+describe('an exercise whose reps are MAX', () => {
+  /* The same exercise, with the flag on — so the logged sets below are its own
+     history and the test is about the flag rather than about an id mismatch. */
+  const toFailure: Exercise = { ...machine, countToMax: true };
+
+  const entryFor = (history: SetHistory[] = []) =>
+    buildDraftEntry({
+      exercise: toFailure,
+      history,
+      policy: DEFAULT_OVERLOAD_POLICY,
+      unitSystem: 'metric',
+      restSeconds: 120,
+      transitionRestSeconds: 150,
+      targetSets: 4,
+      targetRepsMax: 12,
+      now: new Date('2026-08-17T17:00:00.000Z'),
+    });
+
+  it('starts every set at zero, with nothing carried over from last session', () => {
+    const entry = entryFor([loggedSet(), loggedSet({ id: 'sh2', setIndex: 1 })]);
+
+    expect(entry.sets.map((set) => set.count)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('keeps the weight from last session — only the reps are the open question', () => {
+    const entry = entryFor([loggedSet()]);
+
+    expect(entry.sets[0].weightKg).toBe(45);
+  });
+
+  it('states the plan as MAX rather than as a rep target', () => {
+    const entry = entryFor();
+    expect(formatTarget(entry)).toBe('4 × MAX');
+  });
+
+  it('is an ordinary prefilled exercise again the moment the flag is off', () => {
+    const entry = buildDraftEntry({
+      exercise: machine,
+      history: [loggedSet()],
+      policy: DEFAULT_OVERLOAD_POLICY,
+      unitSystem: 'metric',
+      restSeconds: 120,
+      transitionRestSeconds: 150,
+      targetSets: 4,
+      targetRepsMax: 12,
+      now: new Date('2026-08-17T17:00:00.000Z'),
+    });
+
+    expect(entry.sets[0].count).toBe(8);
+    expect(entry.sets[0].isPrefilled).toBe(true);
   });
 });

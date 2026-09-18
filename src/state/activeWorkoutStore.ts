@@ -56,6 +56,7 @@ import {
   withWorkAdjusted,
   type SetTimerSpec,
 } from '../lib/setTimer';
+import { countsToMax } from '../lib/maxReps';
 import { MAX_PLAUSIBLE_REST_SECONDS } from '../lib/restHistory';
 import { clearExerciseRest, resolveRest } from '../lib/rest';
 import {
@@ -644,10 +645,18 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
           session: mapEntry(session, entryId, (entry) => {
             // A new set inherits the last one — the near-universal intent.
             const last = entry.sets[entry.sets.length - 1];
+            /*
+             * EXCEPT ON A `MAX` EXERCISE, where inheriting is the one thing that
+             * must not happen: the previous set's twelve is what you managed last
+             * time you hit failure, and copying it into the row you are about to
+             * do puts an answer in the cell of the question. Zero, and count up.
+             * Same rule `buildDraftEntry` applies to the rows it builds.
+             */
+            const toMax = countsToMax(entry.exercise);
             const next: DraftSet = {
               localId: uid('set'),
               weightKg: last?.weightKg ?? null,
-              count: last?.count ?? entry.targetRepsMax ?? 10,
+              count: toMax ? 0 : (last?.count ?? entry.targetRepsMax ?? 10),
               isWarmup: false,
               isCompleted: false,
               completedAt: null,

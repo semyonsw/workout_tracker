@@ -9,7 +9,7 @@
  *   │ └──────────────────────────────────────────┘ │
  *   │ DIRECTION      ╭ Expense ╮╭ Income ╮         │
  *   │ SUBSECTION     💵 Cash   💳 Online           │
- *   │ CATEGORY   🧊 Food  💡 me  🚌 Transport …    │
+ *   │ CATEGORY       ╭ 🧊  Food                ▾ ╮ │
  *   │ WHEN           ╭ A day ╮╭ Whole month ╮      │
  *   │                ‹ 12 September 2026 ›         │
  *   │ NOTE                                         │
@@ -32,6 +32,21 @@
  * each somebody's real pocket, which is why it is a row of chips you can see and
  * not something hidden behind the note.
  *
+ * ── THE CATEGORY IS A ROW, NOT EVERY CATEGORY ─────────────────────────────
+ *
+ * It was one pill per category, wrapped over as many lines as it took, and that
+ * is the one field here whose list GROWS: eight shipped, and a person who files
+ * their spending properly ends up with fifteen. At that size the grid pushed
+ * `When`, the note and `Save` off the bottom of the screen, so the fastest field
+ * on the screen — the one that arrives already correct, because you tapped a tile
+ * to get here — was also the one taking the most room.
+ *
+ * So it states the category it is on and opens the list when tapped
+ * (`components/Sheet.tsx`, the same sheet the money screen picks its window in).
+ * The direction and the subsection KEEP their chips: two and three options are a
+ * row you read without touching, and hiding a two-way switch behind a sheet costs
+ * a tap to see something that was already visible.
+ *
  * ── `A DAY` OR `WHOLE MONTH` ──────────────────────────────────────────────
  *
  * The second switch is the one people do not expect, so the screen says in words
@@ -51,12 +66,20 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
+import { Sheet } from '../components/Sheet';
 import { Icon } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { pressedStyle } from '../components/motion';
-import { Kicker, PrimaryButton, Segmented, TextButton } from '../components/primitives';
+import { Kicker, PrimaryButton, Segmented, Separator, TextButton } from '../components/primitives';
 import { dayKey, formatLongDay, formatMonth, parseDay, shiftDay } from '../lib/days';
-import { type Amount, type AmountWhen, type Direction, formatValue } from '../lib/money';
+import { tap } from '../lib/feedback';
+import {
+  type Amount,
+  type AmountWhen,
+  type Direction,
+  type MoneyCategory,
+  formatValue,
+} from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useLanguage, useT, type Translate } from '../hooks/useT';
 import { useSettings } from '../state/settingsStore';
@@ -143,6 +166,10 @@ export function AmountEditorScreen({
   );
   const [note, setNote] = useState(amount?.note ?? '');
   const [deleting, setDeleting] = useState(false);
+  /** The category list, open. Closed = the one row, which is the normal state. */
+  const [picking, setPicking] = useState(false);
+
+  const chosen = live.find((option) => option.id === category) ?? null;
 
   const value = Number(digits.replace(/\D/g, '')) || 0;
   const savable = value > 0 && category !== null && account !== null;
@@ -262,39 +289,25 @@ export function AmountEditorScreen({
         </View>
 
         <Kicker className="mx-lg mb-sm mt-xl">{t('Category')}</Kicker>
-        <View className="mx-lg flex-row flex-wrap">
-          {live.map((option) => {
-            const selected = option.id === category;
-            return (
-              <Pressable
-                key={option.id}
-                onPress={() => setCategory(option.id)}
-                hitSlop={6}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={option.name}
-                style={(state) => [
-                  pressedStyle(state),
-                  selected ? undefined : { backgroundColor: glass.sunken },
-                ]}
-                className={[
-                  'mb-sm mr-sm h-[36px] flex-row items-center rounded-pill px-md',
-                  selected ? 'bg-green' : 'border border-hairline',
-                ].join(' ')}
-              >
-                <Text className="mr-sm text-label">{option.glyph}</Text>
-                <Text
-                  className={[
-                    'text-label',
-                    selected ? 'font-semibold text-ink' : 'font-medium text-ink-muted',
-                  ].join(' ')}
-                >
-                  {option.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {/* ONE ROW, NOT EVERY CATEGORY. See the file header. */}
+        <Pressable
+          onPress={() => {
+            tap();
+            setPicking(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={
+            chosen ? t('Category: {name}. Change it.', { name: chosen.name }) : t('Pick a category')
+          }
+          style={(state) => [pressedStyle(state), { backgroundColor: glass.sunken }]}
+          className="mx-lg h-row flex-row items-center rounded-surface border border-hairline px-lg"
+        >
+          <Text className="mr-md text-title">{chosen?.glyph ?? '•'}</Text>
+          <Text numberOfLines={1} className="flex-1 text-body text-ink">
+            {chosen?.name ?? t('Pick a category')}
+          </Text>
+          <Icon name="chevron-down" size={16} color={palette.inkMuted} />
+        </Pressable>
 
         <Kicker className="mx-lg mb-sm mt-xl">{t('When')}</Kicker>
         <View className="mx-lg">
@@ -361,6 +374,28 @@ export function AmountEditorScreen({
         ) : null}
       </ScrollView>
 
+      {picking ? (
+        <Sheet title={t('Category')} onDismiss={() => setPicking(false)}>
+          <View className="overflow-hidden rounded-surface bg-surface-alt">
+            {live.map((option, index) => (
+              <View key={option.id}>
+                {index > 0 ? <Separator inset={16} /> : null}
+                <CategoryRow
+                  category={option}
+                  selected={option.id === category}
+                  onPress={() => {
+                    tap();
+                    setCategory(option.id);
+                    setPicking(false);
+                  }}
+                />
+              </View>
+            ))}
+          </View>
+          <TextButton label={t('Cancel')} onPress={() => setPicking(false)} />
+        </Sheet>
+      ) : null}
+
       {deleting && amount ? (
         <ConfirmSheet
           title={t('Delete this amount?')}
@@ -378,5 +413,42 @@ export function AmountEditorScreen({
         />
       ) : null}
     </View>
+  );
+}
+
+/**
+ * One category in the picker: the glyph, the name, and a ✓ on the one in force.
+ *
+ * `h-row-lg` and the tick rather than a filled pill, because this is a LIST being
+ * chosen from rather than a row of switches — the same shape the interval picker
+ * on the money screen uses, so the two sheets are recognisably one object.
+ */
+function CategoryRow({
+  category,
+  selected,
+  onPress,
+}: {
+  category: MoneyCategory;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={category.name}
+      style={pressedStyle}
+      className="h-row-lg flex-row items-center px-lg"
+    >
+      <Text className="mr-md text-title">{category.glyph}</Text>
+      <Text
+        numberOfLines={1}
+        className={`flex-1 text-body ${selected ? 'font-semibold text-ink' : 'text-ink-muted'}`}
+      >
+        {category.name}
+      </Text>
+      {selected ? <Icon name="check" size={18} color={palette.greenBright} /> : null}
+    </Pressable>
   );
 }

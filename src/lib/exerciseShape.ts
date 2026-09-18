@@ -15,6 +15,7 @@
  */
 
 import { t, term, type Language } from './i18n';
+import { countsToMax, maxLabel } from './maxReps';
 import type { CountUnit, Exercise, LoadMode, TimerMode } from '../types/models';
 import { resolveTimerMode } from './setTimer';
 
@@ -34,11 +35,25 @@ export interface ShapeInput {
    * at 12. See `lib/exerciseDraft.ts`.
    */
   ladderOn?: boolean;
+  /**
+   * The target is `MAX` — as many as you can — so there is no number to set.
+   *
+   * It subtracts from the shape for the same reason a ladder does and with the
+   * opposite argument: a ladder DERIVES every rep, a max REFUSES to name one, and
+   * either way a well asking for a rep target is a second answer to a question
+   * that already has one. See `lib/maxReps.ts`.
+   */
+  countToMax?: boolean;
 }
 
 /** Reps, and a ladder switched on to prescribe them. */
 function ladderOwnsReps(exercise: ShapeInput): boolean {
   return exercise.ladderOn === true && exercise.countUnit === 'reps';
+}
+
+/** Reps, and `MAX` in place of a target for them. */
+function maxOwnsReps(exercise: ShapeInput): boolean {
+  return countsToMax(exercise);
 }
 
 /** The count axis as a noun: "reps" / "time" / "metres" / "rounds". */
@@ -94,6 +109,13 @@ export function describeSetInputs(exercise: ShapeInput, lang: Language = 'en'): 
   if (ladderOwnsReps(exercise)) {
     return exercise.requiresWeight ? t('weight + ladder', lang) : t('ladder reps', lang);
   }
+  // Named for the same reason the ladder is: the well is gone from under this
+  // label, and the label is the receipt for that.
+  if (maxOwnsReps(exercise)) {
+    return exercise.requiresWeight
+      ? t('weight + {noun}', lang, { noun: maxLabel(lang) })
+      : t('{noun} only', lang, { noun: maxLabel(lang) });
+  }
   if (exercise.requiresWeight) return t('weight + {noun}', lang, { noun });
   if (exercise.countUnit === 'meters') return t('distance + duration', lang);
   if (exercise.countUnit === 'seconds') return t('duration only', lang);
@@ -123,7 +145,7 @@ export function wellsFor(exercise: ShapeInput, lang: Language = 'en'): WellSpec[
   // target to well — the max's own ± is the control. An unweighted laddered
   // exercise therefore has no wells at all, which is correct: one number, and it is
   // in the ladder card.
-  if (ladderOwnsReps(exercise)) {
+  if (ladderOwnsReps(exercise) || maxOwnsReps(exercise)) {
     return exercise.requiresWeight
       ? [{ label: t('default {unit}', lang, { unit: kg }), field: 'weight', unit: kg }]
       : [];

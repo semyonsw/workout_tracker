@@ -25,6 +25,7 @@ import { resolveRest } from './rest';
 import { summarizeSessionSets } from './history';
 import { evaluateOverload, type OverloadVerdict } from './progressiveOverload';
 import { LADDER_SETS, describeLadder, ladderOf, ladderTargets } from './repLadder';
+import { countsToMax, maxLabel } from './maxReps';
 import { exerciseBests, type BodyweightLookup, type ExerciseBests } from './records';
 import { evaluateDeload, type DeloadVerdict } from './deload';
 
@@ -277,6 +278,10 @@ export function formatTarget(
     return `${targetSets} × ${formatDuration(perSet, lang)}`;
   }
 
+  // `4 × MAX`, and no unit after it: `MAX reps` reads as a quantity of reps
+  // called max, and the word is already doing the whole job.
+  if (countsToMax(exercise)) return `${targetSets} × ${maxLabel(lang).toUpperCase()}`;
+
   const range =
     targetRepsMin && targetRepsMax && targetRepsMin !== targetRepsMax
       ? `${targetRepsMin}–${targetRepsMax}`
@@ -486,21 +491,41 @@ export function buildDraftEntry(params: BuildEntryParams): DraftEntry {
   );
   const ladderPlan = ladder ? ladderTargets(ladder, plannedSets) : null;
 
+  /*
+   * `MAX` STARTS EVERY SET AT ZERO, and that is the feature rather than a gap in
+   * the prefill. The whole claim of a max set is that nobody knows the number
+   * yet — handing back last session's would put the answer in the cell of the
+   * question, and one tap on ✓ would log it as if it had happened. So the count
+   * is a COUNTER here: 0, and `+1` per rep as they happen.
+   *
+   * WEIGHT still comes from history, exactly as it does under a ladder: the belt
+   * you loaded last time is a fact, and only the reps are the open question.
+   */
+  const toMax = countsToMax(exercise);
+
   const sets: DraftSet[] = Array.from({ length: plannedSets }, (_, i) => {
     const reference = previous[i] ?? previous[previous.length - 1];
     return {
       localId: uid('set'),
       weightKg: exercise.requiresWeight ? (reference?.weightKg ?? startingWeightKg) : null,
-      count:
-        ladderPlan?.[i] ??
-        reference?.count ??
-        targetRepsMax ??
-        targetRepsMin ??
-        startingCount ??
-        10,
+      count: toMax
+        ? 0
+        : (ladderPlan?.[i] ??
+          reference?.count ??
+          targetRepsMax ??
+          targetRepsMin ??
+          startingCount ??
+          10),
       isWarmup: false,
       isCompleted: false,
       completedAt: null,
+      /*
+       * STILL A PREFILL, even on a max set, because the WEIGHT is one — it is
+       * last session's belt, carried exactly as a ladder carries it, and the row
+       * has one `isPrefilled` for both cells. The count is not a plan on such a
+       * row and does not pretend to be: it renders as `MAX` rather than as a
+       * number anybody could tick by mistake (`lib/maxReps.ts`).
+       */
       isPrefilled: true,
     };
   });

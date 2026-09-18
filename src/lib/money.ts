@@ -409,3 +409,27 @@ export function amountsOnDay(amounts: readonly Amount[], day: string): Amount[] 
     .filter((amount) => amount.when.kind === 'day' && amount.when.date === day)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
+
+/**
+ * Which DAY the history's day list should open on, for the window the money
+ * screen is reading.
+ *
+ * The ⟲ used to hand over today, always, which is wrong the moment the user has
+ * stepped anywhere: walking back three days and then opening the history to be
+ * shown today is the screen forgetting where they were standing. But the anchor
+ * alone is not the answer either — `shiftAnchor` normalises a month or a year to
+ * its first day, so reading September on the 18th and tapping ⟲ would land on
+ * 1 September, which is a day the user has not looked at and probably did not
+ * spend anything on.
+ *
+ * So: the anchor where it IS a day (`day`, `week` — the windows whose anchor is
+ * the day you stepped to), and for the wider ones, today when today is inside the
+ * window and the anchor when it is not. Reading last March, the day list opens on
+ * 1 March; reading this month, it opens on today.
+ */
+export function historyDay(interval: Interval, anchor: string, today: string): string {
+  if (interval === 'day' || interval === 'week') return anchor;
+  return inInterval({ when: { kind: 'day', date: today } } as Amount, interval, anchor)
+    ? today
+    : anchor;
+}

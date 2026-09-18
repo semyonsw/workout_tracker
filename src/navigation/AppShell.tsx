@@ -87,7 +87,7 @@ import { buildDraftEntry, defaultTargetCount, defaultTargetSets } from '../lib/d
 import { resolveRest } from '../lib/rest';
 import { bodyweightAt } from '../lib/bodyweightLog';
 import { writeWorkoutToHealthConnect } from '../lib/healthConnect';
-import { ladderOf, ladderOutcomes } from '../lib/repLadder';
+import { ladderOutcomes } from '../lib/repLadder';
 import { applyPlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
 import {
   applyDraftToExercise,
@@ -158,7 +158,7 @@ type Route =
      and the only thing they share is where the tap came from. */
   | { name: 'workoutHistory' }
   | { name: 'tasksHistory' }
-  | { name: 'moneyHistory'; accountId: ID }
+  | { name: 'moneyHistory'; accountId: ID; day: string }
   /* One settings screen per section, pushed from the section list. */
   | { name: 'workoutSettings' }
   | { name: 'taskSettings' }
@@ -736,8 +736,18 @@ export function AppShell() {
       const workout = useActiveWorkout.getState();
       if (!workout.session) return;
       const settings = useSettings.getState();
-      const planned =
-        exercise.defaultSets != null || ladderOf(exercise) ? defaultTargetSets(exercise) : null;
+      /*
+       * WHAT IT PLANS ANYWHERE ELSE, which used to be "one set" here.
+       *
+       * The add-at-the-rack path only honoured a set count the exercise carried
+       * itself (or a ladder's five) and fell back to a SINGLE row otherwise — so
+       * an exercise added mid-session started as one set while the same exercise
+       * appended to a routine started as four, and the difference was invisible
+       * until the second set had to be added by hand at the rack. It is the same
+       * question in both places, so it is the same answer: `defaultTargetSets`,
+       * which is 4 for ordinary rep work and per-unit where four would be wrong.
+       */
+      const planned = defaultTargetSets(exercise);
 
       workout.addEntry(
         buildDraftEntry({
@@ -753,9 +763,9 @@ export function AppShell() {
           bodyweightAtDate: (at) => bodyweightAt(settings.bodyweightLog, at),
           // For the deload suggestion, which must never name an unloadable weight.
           availablePlatesKg: platesInForce(settings),
-          targetSets: planned ?? 1,
+          targetSets: planned,
           targetRepsMax: defaultTargetCount(exercise),
-          plannedSetCount: planned ?? 1,
+          plannedSetCount: planned,
           lang,
         }),
       );
@@ -1264,6 +1274,8 @@ export function AppShell() {
     return (
       <MoneyHistoryScreen
         account={account}
+        /* The day the money screen was reading when the ⟲ was tapped. */
+        day={top.day}
         onBack={pop}
         /* A row of the day list is an amount, and the editor is where an amount
            is read and corrected — the same route the category screen pushes. */
@@ -1332,7 +1344,9 @@ export function AppShell() {
               onAddAmount={(categoryId, accountId, direction) =>
                 push({ name: 'moneyAmount', amountId: null, categoryId, accountId, direction })
               }
-              onOpenHistory={(accountId) => push({ name: 'moneyHistory', accountId })}
+              onOpenHistory={(accountId, anchor) =>
+                push({ name: 'moneyHistory', accountId, day: anchor })
+              }
             />
           ) : null}
 

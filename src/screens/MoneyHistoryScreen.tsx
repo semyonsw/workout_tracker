@@ -108,11 +108,18 @@ function directions(t: Translate) {
 
 export function MoneyHistoryScreen({
   account,
+  day: openOn,
   onBack,
   onOpenAmount,
 }: {
   /** The subsection the ⟲ was tapped in. Every line here is drawn from it alone. */
   account: MoneyAccount;
+  /**
+   * The day the money screen was anchored on. Not `today`: stepping back three
+   * days and then opening the history is a question about THOSE three days ago,
+   * and landing on today would be the screen forgetting where the user was.
+   */
+  day: string;
   onBack: () => void;
   /** A row of the day list, opened in the editor it was written in. */
   onOpenAmount: (amountId: ID) => void;
@@ -141,7 +148,7 @@ export function MoneyHistoryScreen({
    * they answer different questions, and a day that moved when the range chips
    * were touched would be the one control on this screen that did two things.
    */
-  const [day, setDay] = useState(today);
+  const [day, setDay] = useState(openOn);
   const dayRows = useMemo(() => amountsOnDay(amounts, day), [amounts, day]);
   const dayTotals = useMemo(
     () =>

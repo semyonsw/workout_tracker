@@ -30,6 +30,7 @@ import { Pressable, Text, View } from 'react-native';
 import type { DraftSet } from '../lib/draft';
 import { useLanguage } from '../hooks/useT';
 import { tap } from '../lib/feedback';
+import { maxLabel, showsMaxLabel } from '../lib/maxReps';
 import { nudgeSet, nudgeSteps, type NudgeField } from '../lib/setNudge';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import type { Exercise, UnitSystem } from '../types/models';
@@ -69,8 +70,12 @@ export function FocusNudge({
           set={set}
           exercise={exercise}
           unitSystem={unitSystem}
-          value={formatCount(set.count, exercise.countUnit)}
-          unit={countUnitLabel(exercise.countUnit, lang)}
+          value={
+            showsMaxLabel(exercise, set)
+              ? maxLabel(lang).toUpperCase()
+              : formatCount(set.count, exercise.countUnit)
+          }
+          unit={showsMaxLabel(exercise, set) ? '' : countUnitLabel(exercise.countUnit, lang)}
           onChange={onChange}
         />
       </View>

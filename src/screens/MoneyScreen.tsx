@@ -119,6 +119,7 @@ import {
   describeInterval,
   formatMoney,
   formatValue,
+  historyDay,
   inAccount,
   shiftAnchor,
   totalsIn,
@@ -143,8 +144,16 @@ interface MoneyScreenProps {
    * have to be told twice.
    */
   onAddAmount: (categoryId: ID | null, accountId: ID, direction: Direction) => void;
-  /** The ⟲ in the corner: the lines, the balance and where it went. */
-  onOpenHistory: (accountId: ID) => void;
+  /**
+   * The ⟲ in the corner: the lines, the balance and where it went.
+   *
+   * The ANCHOR travels with it, for the same reason the window travels with a
+   * tap on a tile. Stepping back three days and then opening the history to be
+   * shown today is the screen forgetting where you were standing — and the day
+   * list over there is the one thing on it that answers a question about a
+   * particular day rather than about a range.
+   */
+  onOpenHistory: (accountId: ID, anchor: string) => void;
 }
 
 export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: MoneyScreenProps) {
@@ -226,7 +235,12 @@ export function MoneyScreen({ onOpenCategory, onAddAmount, onOpenHistory }: Mone
 
       <SectionTopBar
         title={t('Expenses')}
-        onOpenHistory={() => onOpenHistory(account.id)}
+        /* `historyDay` rather than the anchor itself: a month's anchor is its
+           1st, and nobody reading September on the 18th means "show me the
+           1st". See `lib/money.ts`. */
+        onOpenHistory={() =>
+          onOpenHistory(account.id, historyDay(interval, anchor, dayKey(new Date())))
+        }
         historyLabel={t('Expense history')}
       />
 

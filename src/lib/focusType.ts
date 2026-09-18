@@ -36,6 +36,23 @@
 /** How wide one numeral glyph is, as a fraction of the font size. */
 export const NUMERAL_ADVANCE = 0.6;
 
+/**
+ * And how wide a LETTER is — `MAX`, `МАКС`, the one value here that is a word.
+ *
+ * Tabular numerals are all one width and a capital M is not: measuring `MAX` as
+ * three digits under-counts it by nearly half a line, which at 120 dp is the word
+ * running off the screen. Capitals are the only letters that reach this, so this
+ * is sized for them.
+ */
+export const LETTER_ADVANCE = 0.85;
+
+/** Per character, by what it is. Digits and the signs around them are tabular. */
+function advanceOf(text: string): number {
+  let ems = 0;
+  for (const ch of text) ems += /[0-9+\-.,:]/.test(ch) ? NUMERAL_ADVANCE : LETTER_ADVANCE;
+  return ems;
+}
+
 /** The unit's font size, as a fraction of the numeral's. `KG`, `REPS`, `SEC`. */
 export const UNIT_RATIO = 0.3;
 
@@ -85,8 +102,7 @@ export function workNumeralSize(
     // In numeral em: the digits, then the unit at its own size, then the gap
     // between them — and no gap at all when there is no unit to separate.
     const ems =
-      line.value.length * NUMERAL_ADVANCE +
-      (line.unit === '' ? 0 : UNIT_GAP + line.unit.length * NUMERAL_ADVANCE * UNIT_RATIO);
+      advanceOf(line.value) + (line.unit === '' ? 0 : UNIT_GAP + advanceOf(line.unit) * UNIT_RATIO);
     if (ems <= 0) continue;
     fits = Math.min(fits, width / ems);
   }

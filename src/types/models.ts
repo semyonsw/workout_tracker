@@ -310,6 +310,28 @@ export interface Exercise {
   defaultSets?: number;
 
   /**
+   * THE PLAN IS `MAX`: as many as you can, counted up from zero as you do them.
+   *
+   * A rep target is a number for work you can plan — three sets of eight. Some
+   * work has no such number and never did: the last set of chin-ups, a push-up
+   * test, anything done to failure. The app had no way to say that, so it wrote
+   * one down anyway — ten, or whatever last session happened to end on — and then
+   * offered it back as the prefill you tap ✓ on, which is a log recording a plan
+   * rather than a performance.
+   *
+   * With this on, every set of this exercise starts at ZERO and `+1` counts the
+   * reps as they happen. The row reads `MAX` until the first one is counted,
+   * because zero is not what you are being asked for, and nothing is prefilled
+   * from last session: the number you did last time is the one thing that must
+   * not be sitting in the cell of a set whose entire point is finding out.
+   *
+   * Rep-counted work only, and never alongside a ladder — a ladder prescribes
+   * every rep from a max, which is the opposite claim about the same sets.
+   * `countsToMax` is the gate every read goes through.
+   */
+  countToMax?: boolean;
+
+  /**
    * The rep ladder this movement runs, if it runs one. Absent = off.
    *
    * ON THE EXERCISE, not on the routine item, and the reason is that a max is a

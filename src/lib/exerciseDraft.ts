@@ -38,6 +38,7 @@ import type { CountUnit, Exercise, MuscleGroup, TimerMode } from '../types/model
 import { DEFAULT_PREPARE_SECONDS } from './setTimer';
 import { clampMax, LADDER_SETS, ladderOf, supportsLadder } from './repLadder';
 import { defaultTargetSets } from './draft';
+import { countsToMax } from './maxReps';
 import { TARGET_SETS_LIMITS } from './routinePlan';
 import { clampRest, ownRestSeconds } from './rest';
 import type { LoadMode } from '../types/models';
@@ -68,6 +69,15 @@ export interface ExerciseDraft {
    * every routine item for this exercise is built from.
    */
   targetSets: number;
+  /**
+   * The rep target is `MAX` — as many as you can. See `Exercise.countToMax`.
+   *
+   * Mutually exclusive with `ladderOn` and only meaningful on rep-counted work;
+   * `toggleMaxReps` and `draftToExercise` both enforce that rather than trusting
+   * the screen, for the same reason the ladder's own `supportsLadder` check is
+   * repeated on the way out.
+   */
+  countToMax: boolean;
   /** Seconds per set: a round length, or a swim duration. */
   durationSeconds: number;
   incrementKg: number;
@@ -158,7 +168,25 @@ export function toggleLadder(draft: ExerciseDraft, on: boolean): ExerciseDraft {
     ladderOn: true,
     ladderMax: clampMax(seeded),
     targetSets: LADDER_SETS,
+    // A ladder derives every rep of every set. `MAX` refuses to name one. Both on
+    // is not a shape — see `lib/maxReps.ts` — so switching one on switches the
+    // other off HERE, where the user can see it happen, rather than silently on
+    // the way out.
+    countToMax: false,
   });
+}
+
+/**
+ * Switch the `MAX` target on or off.
+ *
+ * The mirror image of `toggleLadder`, including its one side effect: a ladder and
+ * a max cannot both be on, so this turns the ladder off. It keeps `targetCount`
+ * untouched — switching max off should give you back the target you had, not a
+ * twelve the app invented while the toggle was down.
+ */
+export function toggleMaxReps(draft: ExerciseDraft, on: boolean): ExerciseDraft {
+  if (!on) return { ...draft, countToMax: false };
+  return { ...draft, countToMax: true, ladderOn: false };
 }
 
 /** How many sets a plan may ask for — the routine editor's own range. */
@@ -223,6 +251,9 @@ export function emptyExerciseDraft(
      * to cannot drift apart. A ladder switched on below overrides it with five.
      */
     targetSets: defaultTargetSets({ countUnit: 'reps' }),
+    /* Off. A rep target is the ordinary case; `MAX` is a claim you make on
+       purpose about a movement you do to failure. */
+    countToMax: false,
     durationSeconds: 180,
     incrementKg: 2.5,
     // A new exercise FOLLOWS THE SETTING. `restSeconds` is the setting's current
@@ -331,6 +362,10 @@ export function exerciseToDraft(exercise: Exercise, restSeconds = 120): Exercise
     ladderOn: ladder != null,
     ladderMax: ladder?.max ?? 0,
     ladderEarned: ladder?.earned ?? 0,
+    // Through the gate, so a row whose unit changed under it — or one carrying
+    // both a ladder and a max from a hand-edited backup — opens as the shape the
+    // session would actually run. See `lib/maxReps.ts`.
+    countToMax: countsToMax(exercise),
   };
 }
 
@@ -401,6 +436,15 @@ export function draftToExercise(
         : draft.targetCount,
     // What every routine item for this exercise plans. See `Exercise.defaultSets`.
     defaultSets: clampSets(draft.targetSets),
+    /*
+     * Only where it means something, and never beside a ladder — the same
+     * defensive re-check `ladder` below makes, and for the same reason: flipping
+     * `Requires weight` rewrites the count unit, so a draft can leave this screen
+     * with the toggle on and a unit that has no reps to max out.
+     */
+    ...(draft.countToMax && draft.countUnit === 'reps' && !draft.ladderOn
+      ? { countToMax: true }
+      : {}),
     /*
      * The ladder, only where the scheme applies. `supportsLadder` is checked here
      * as well as in `ladderOf` because a draft can leave this screen with the

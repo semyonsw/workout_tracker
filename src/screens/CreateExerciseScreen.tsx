@@ -139,6 +139,7 @@ import {
   bumpLadderMax,
   followSettingsRest,
   toggleLadder,
+  toggleMaxReps,
   type ExerciseDraft,
 } from '../lib/exerciseDraft';
 import { REST_LIMITS } from '../lib/rest';
@@ -427,11 +428,17 @@ export function CreateExerciseScreen({
         <Kicker tone="green" className="mx-lg mb-sm mt-xl">
           {t('Set inputs')} · {describeSetInputs(draft, lang)}
         </Kicker>
-        {/* A laddered bodyweight movement has NO wells: the max below is its only
-            number, and an empty row is the honest rendering of that. */}
+        {/* A bodyweight movement with no rep target has NO wells, and the line in
+            their place says WHY — which is a different sentence for each of the
+            two reasons: a ladder derives every set from its max, and a `MAX`
+            target refuses to name one at all. */}
         {wells.length === 0 ? (
           <Text className="mx-lg text-label text-ink-faint">
-            {t('The ladder’s max is the only number this exercise needs — it derives every set.')}
+            {draft.countToMax
+              ? t('No number to set — every set of this exercise is as many as you can.')
+              : t(
+                  'The ladder’s max is the only number this exercise needs — it derives every set.',
+                )}
           </Text>
         ) : (
           <View className="mx-lg flex-row">
@@ -465,10 +472,16 @@ export function CreateExerciseScreen({
           </View>
         ) : null}
 
-        {/* The ladder. Only on rep-counted work — see `supportsLadder`: a hold
-            does not get longer for the reason a set gets easier. */}
+        {/* `MAX`, and the ladder. Both are claims about the rep target and they
+            are opposite ones, so they sit together and switching either on
+            switches the other off (`lib/exerciseDraft.ts`). Rep-counted work
+            only: a hold already has the honest version of `MAX` in a count-up
+            clock, and it does not get longer for the reason a set gets easier. */}
         {supportsLadder(draft.countUnit) ? (
-          <LadderSection draft={draft} onChange={setDraft} />
+          <>
+            <MaxRepsSection draft={draft} onChange={setDraft} />
+            <LadderSection draft={draft} onChange={setDraft} />
+          </>
         ) : null}
 
         {/* The timer. Only time-counted work has a clock to run, and this is
@@ -764,6 +777,57 @@ function WellStepper({
         </Pressable>
       </View>
     </View>
+  );
+}
+
+/**
+ * `MAX` — the switch that says this movement has no rep target.
+ *
+ *   ╭──────────────────────────────────────────────╮
+ *   │ Reps to MAX                            ( ●)  │
+ *   │ Every set starts at 0 and counts up          │
+ *   ╰──────────────────────────────────────────────╯
+ *
+ * Beside the ladder rather than inside the wells, because it is not a number: it
+ * REMOVES the number, the same way the ladder replaces it, and the well it would
+ * have edited stops being rendered (`lib/exerciseShape.ts`). The line under it
+ * says what will actually happen at the rack, because "max" on its own is a
+ * setting whose effect you would otherwise meet mid-set.
+ */
+function MaxRepsSection({
+  draft,
+  onChange,
+}: {
+  draft: ExerciseDraft;
+  onChange: (fn: (draft: ExerciseDraft) => ExerciseDraft) => void;
+}) {
+  const t = useT();
+
+  return (
+    <>
+      <Kicker tone={draft.countToMax ? 'green' : 'faint'} className="mx-lg mb-sm mt-xl">
+        {t('Reps')}
+      </Kicker>
+
+      <View className="mx-lg min-h-[64px] flex-row items-center rounded-surface border border-hairline bg-surface-alt px-lg py-sm">
+        <View className="flex-1 pr-md">
+          <Text className="text-body font-medium text-ink">{t('Reps to MAX')}</Text>
+          <Text className="mt-[2px] text-label text-ink-faint">
+            {draft.countToMax
+              ? t('Every set starts at 0 and counts up — nothing is prefilled')
+              : t('Off — every set plans the rep target above')}
+          </Text>
+        </View>
+        <Toggle
+          value={draft.countToMax}
+          onChange={(on) => {
+            tap();
+            onChange((d) => toggleMaxReps(d, on));
+          }}
+          accessibilityLabel={t('Reps to MAX')}
+        />
+      </View>
+    </>
   );
 }
 

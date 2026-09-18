@@ -5,6 +5,7 @@ import {
   type MoneyAccount,
   amountsIn,
   amountsOnDay,
+  historyDay,
   balanceOf,
   balanceOfAccount,
   inAccount,
@@ -267,5 +268,36 @@ describe('a single day', () => {
 
   it('is empty on a day nothing was recorded on', () => {
     expect(amountsOnDay(rows, '2026-09-14')).toEqual([]);
+  });
+});
+
+/**
+ * ── WHICH DAY THE ⟲ OPENS ON ───────────────────────────────────────────────
+ *
+ * It opened on today, always, which meant stepping back three days and then
+ * tapping it showed you today's spending. The anchor alone is not the fix: a
+ * month's anchor is its 1st, and nobody who is reading September on the 18th
+ * means "show me the 1st".
+ */
+describe('the day the history opens on', () => {
+  const TODAY = '2026-09-18';
+
+  it('is the day you stepped to, when the window IS a day', () => {
+    expect(historyDay('day', '2026-09-15', TODAY)).toBe('2026-09-15');
+  });
+
+  it('is the anchor for a week, which is a day inside that week', () => {
+    expect(historyDay('week', '2026-09-07', TODAY)).toBe('2026-09-07');
+  });
+
+  it('is today while the wider window still contains today', () => {
+    expect(historyDay('month', '2026-09-01', TODAY)).toBe(TODAY);
+    expect(historyDay('year', '2026-01-01', TODAY)).toBe(TODAY);
+    expect(historyDay('all', '2026-01-01', TODAY)).toBe(TODAY);
+  });
+
+  it('is the window itself once the window is in the past', () => {
+    expect(historyDay('month', '2026-03-01', TODAY)).toBe('2026-03-01');
+    expect(historyDay('year', '2024-01-01', TODAY)).toBe('2024-01-01');
   });
 });

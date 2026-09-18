@@ -98,6 +98,7 @@ import { describeSetPosition, focusPlan, focusTarget, type FocusTarget } from '.
 import { tap } from '../lib/feedback';
 import { isTimed as isTimedExercise } from '../lib/setTimer';
 import { workCeiling } from '../lib/focusType';
+import { maxLabel, showsMaxLabel } from '../lib/maxReps';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useRestTimer } from '../hooks/useRestTimer';
 import { useSetTimer } from '../hooks/useSetTimer';
@@ -553,7 +554,9 @@ function Lift({
                   unit: unitLabel(unitSystem, lang),
                 })
               : '',
-            `${formatCount(target.set.count, exercise.countUnit)} ${countUnitLabel(exercise.countUnit, lang)}.`,
+            showsMaxLabel(exercise, target.set)
+              ? `${maxLabel(lang)}.`
+              : `${formatCount(target.set.count, exercise.countUnit)} ${countUnitLabel(exercise.countUnit, lang)}.`,
             t('Adjust.'),
           ]
             .filter(Boolean)

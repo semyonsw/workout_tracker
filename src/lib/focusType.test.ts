@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { NUMERAL_ADVANCE, UNIT_GAP, UNIT_RATIO, workCeiling, workNumeralSize } from './focusType';
+import {
+  LETTER_ADVANCE,
+  NUMERAL_ADVANCE,
+  UNIT_GAP,
+  UNIT_RATIO,
+  workCeiling,
+  workNumeralSize,
+} from './focusType';
 
 /**
  * The size of the two numbers focus mode exists to show.
@@ -13,11 +20,15 @@ import { NUMERAL_ADVANCE, UNIT_GAP, UNIT_RATIO, workCeiling, workNumeralSize } f
  */
 
 /** What the component draws, in dp, at a given size. The model, inverted. */
+function advance(text: string): number {
+  let ems = 0;
+  for (const ch of text) ems += /[0-9+\-.,:]/.test(ch) ? NUMERAL_ADVANCE : LETTER_ADVANCE;
+  return ems;
+}
+
 function drawnWidth(value: string, unit: string, size: number): number {
-  const digits = value.length * NUMERAL_ADVANCE * size;
-  const tail =
-    unit === '' ? 0 : UNIT_GAP * size + unit.length * NUMERAL_ADVANCE * UNIT_RATIO * size;
-  return digits + tail;
+  const tail = unit === '' ? 0 : UNIT_GAP * size + advance(unit) * UNIT_RATIO * size;
+  return advance(value) * size + tail;
 }
 
 describe('the working numerals', () => {
@@ -48,7 +59,9 @@ describe('the working numerals', () => {
   });
 
   it('keeps every line inside the width, over every set and every phone', () => {
-    for (const value of ['5', '12', '100', '32.5', '+120', '-22.5']) {
+    // `MAX` and `МАКС` are in here because the one value on this screen that is
+    // a WORD is the one a digit-width model gets wrong by half a line.
+    for (const value of ['5', '12', '100', '32.5', '+120', '-22.5', 'MAX', 'МАКС']) {
       for (const unit of ['', 'KG', 'REPS', 'SEC', 'ПОВТ']) {
         for (const width of [120, 180, 220, 284, 340, 600]) {
           const size = workNumeralSize([{ value, unit }], width, 140);

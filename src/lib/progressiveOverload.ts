@@ -59,6 +59,7 @@ import { countStep, daysBetween, formatCount, resolveIncrementKg, roundToStep } 
 import { term, type Language } from './i18n';
 import { resolveTimerMode } from './setTimer';
 import { ladderOf } from './repLadder';
+import { countsToMax } from './maxReps';
 
 /* ------------------------------------------------------------------ */
 /* Public types                                                        */
@@ -252,6 +253,13 @@ export function evaluateOverload(params: EvaluateOverloadParams): OverloadVerdic
    * is indistinguishable from a broken one.
    */
   if (ladderOf(exercise)) return empty;
+  /*
+   * AND A `MAX` TARGET SILENCES IT FOR THE OPPOSITE REASON. A nudge says "three
+   * sessions at 16 — try 17", which is a target; the whole claim of a max set is
+   * that there is no target and the number is whatever the day gives you. Telling
+   * somebody to do one more rep than they could is not a plan.
+   */
+  if (countsToMax(exercise)) return empty;
 
   const sessions = summarizeSessions(history, exercise.id);
   if (sessions.length === 0) return empty;

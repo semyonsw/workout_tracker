@@ -34,6 +34,7 @@
 import { Text, View } from 'react-native';
 
 import { workNumeralSize, UNIT_RATIO, type WorkLine } from '../lib/focusType';
+import { maxLabel, showsMaxLabel } from '../lib/maxReps';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useLanguage } from '../hooks/useT';
 import type { Language } from '../lib/i18n';
@@ -55,6 +56,17 @@ export function workLines(target: FocusTarget, unitSystem: UnitSystem, lang: Lan
       unit: unitLabel(unitSystem, lang).toUpperCase(),
     });
   }
+  /*
+   * `MAX` IS A LINE OF ITS OWN WORD, not a number with a unit after it. The set
+   * has no rep target and the counter has not started, so the biggest thing on
+   * the screen says the only thing that is true about it. The moment a rep is
+   * counted it becomes the count, like any other set. See `lib/maxReps.ts`.
+   */
+  if (showsMaxLabel(exercise, target.set)) {
+    lines.push({ value: maxLabel(lang).toUpperCase(), unit: '' });
+    return lines;
+  }
+
   lines.push({
     value: formatCount(target.set.count, exercise.countUnit),
     unit: countUnitLabel(exercise.countUnit, lang).toUpperCase(),

@@ -83,6 +83,7 @@ import { commit, tap, undo } from '../lib/feedback';
 import type { DraftSet } from '../lib/draft';
 import type { Exercise, UnitSystem } from '../types/models';
 import { describePlates, platesFor } from '../lib/plates';
+import { maxLabel, showsMaxLabel } from '../lib/maxReps';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useLanguage, useT } from '../hooks/useT';
 import { glow as GLOW, palette } from '../theme/tokens';
@@ -161,6 +162,8 @@ function SetRowComponent({
   const ring = isUpNext && !done;
   // Ghost = a value carried over from last session that the user hasn't touched.
   const ghost = set.isPrefilled && !done;
+  /** The count cell is standing in for a number nobody has yet. */
+  const countsMax = showsMaxLabel(exercise, set);
   const valueTone = ghost ? 'text-ink-faint' : 'text-ink';
 
   /*
@@ -275,13 +278,20 @@ function SetRowComponent({
           96 dp when there is no weight, so the thumb target never moves. */}
       <ValueCell
         width={exercise.requiresWeight ? 'min-w-[76px]' : 'min-w-[96px]'}
-        value={formatCount(set.count, exercise.countUnit)}
-        unit={countUnitLabel(exercise.countUnit, lang)}
+        /* `MAX` rather than a 0 until the first rep is counted — the word is what
+           is being asked for, and the zero is only the counter. See
+           `lib/maxReps.ts`. */
+        value={
+          countsMax ? maxLabel(lang).toUpperCase() : formatCount(set.count, exercise.countUnit)
+        }
+        unit={countsMax ? '' : countUnitLabel(exercise.countUnit, lang)}
         tone={valueTone}
         emphasis={ring}
         focused={focusedField === 'count'}
         onPress={openCount}
-        accessibilityLabel={`${set.count} ${countUnitLabel(exercise.countUnit, lang)}`}
+        accessibilityLabel={
+          countsMax ? maxLabel(lang) : `${set.count} ${countUnitLabel(exercise.countUnit, lang)}`
+        }
       />
 
       <View className="flex-1" />

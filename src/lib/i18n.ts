@@ -270,6 +270,14 @@ const RU: Record<string, string> = {
   'The day it first asks. Days before it stay exactly as you left them.':
     'День, когда она спросит впервые. Более ранние дни останутся такими, как были.',
   'Give it a name.': 'Дайте ей название.',
+  'Category: {name}. Change it.': 'Категория: {name}. Изменить.',
+  'Pick a category': 'Выберите категорию',
+  MAX: 'МАКС',
+  'Reps to MAX': 'Повторения до МАКС',
+  'Every set starts at 0 and counts up — nothing is prefilled':
+    'Каждый подход начинается с 0 и считается вверх — ничего не подставляется',
+  'Off — every set plans the rep target above':
+    'Выкл — каждый подход планирует цель по повторениям выше',
   'Pick at least one day.': 'Выберите хотя бы один день.',
   'Nothing asked for today': 'На сегодня ничего не запланировано',
   'Nothing is scheduled for this day.': 'На этот день ничего не запланировано.',

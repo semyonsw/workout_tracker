@@ -154,6 +154,7 @@ import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
 import { useLanguage, useT, type Translate } from '../hooks/useT';
 import type { Language } from '../lib/i18n';
 import { tap, undo } from '../lib/feedback';
+import { countsToMax, maxLabel } from '../lib/maxReps';
 import {
   DEFAULT_RANDOM_SPEC,
   drawablePool,
@@ -811,6 +812,13 @@ function ItemEditor({
    */
   const ladder = ladderOf(exercise);
   const ladderPlan = ladder ? ladderTargets(ladder, item.targetSets) : null;
+  /*
+   * A `MAX` target removes the same controls the ladder replaces, by the opposite
+   * argument: there is no per-set number, so a `Reps` stepper here would be a
+   * control that changes a figure nothing reads. What the routine still owns is
+   * `Sets` — how many times you go to failure is a plan.
+   */
+  const toMax = countsToMax(exercise);
 
   /*
    * A hold or a round reads as a clock, a distance as metres, reps as a number.
@@ -830,7 +838,22 @@ function ItemEditor({
         onDecrease={() => onPatch((i) => bumpTargetSets(i, -1))}
         onIncrease={() => onPatch((i) => bumpTargetSets(i, 1))}
       />
-      {ladderPlan ? (
+      {toMax ? (
+        <>
+          <Separator inset={40} />
+          <View className="min-h-[56px] justify-center py-sm pl-xxl pr-lg">
+            <View className="flex-row items-center">
+              <Text className="flex-1 pr-md text-label font-medium text-ink">{t('Reps')}</Text>
+              <Text className="text-body font-semibold text-ink">
+                {maxLabel(lang).toUpperCase()}
+              </Text>
+            </View>
+            <Text className="mt-[2px] text-micro text-ink-faint">
+              {t('As many as you can — set in the exercise, not in the plan')}
+            </Text>
+          </View>
+        </>
+      ) : ladderPlan ? (
         <>
           <Separator inset={40} />
           {/* Stated, not offered. The max is a fact about the lifter and lives on
@@ -1061,6 +1084,10 @@ function summarizeItem(
     // A ladder states every set, because that is what it is: five numbers, not a
     // count times a target. Same line the session's card shows.
     parts.push(describeLadder(ladderTargets(ladder, item.targetSets)));
+  } else if (countsToMax(exercise)) {
+    // The item's own rep numbers still exist in the data and mean nothing here:
+    // the exercise has said it has no target. `4 × MAX`, same as the card.
+    parts.push(`${item.targetSets} × ${maxLabel(lang).toUpperCase()}`);
   } else if (exercise.countUnit === 'seconds' || exercise.countUnit === 'rounds') {
     parts.push(`${item.targetSets} × ${formatDuration(item.targetRepsMax ?? 0, lang)}`);
   } else {

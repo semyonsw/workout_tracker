@@ -44,6 +44,7 @@ import { tap } from '../lib/feedback';
 import type { DraftSet } from '../lib/draft';
 import type { Exercise, UnitSystem } from '../types/models';
 import { nudgeSet, nudgeSteps } from '../lib/setNudge';
+import { maxLabel, showsMaxLabel } from '../lib/maxReps';
 import { countUnitLabel, formatCount, formatWeight, lbToKg, unitLabel } from '../lib/units';
 import type { SetField } from './SetRow';
 import { useLanguage, useT } from '../hooks/useT';
@@ -83,12 +84,19 @@ export function QuickAdjust({
   const { fine, coarse } = nudgeSteps(field, exercise.countUnit, unitSystem);
   const chips = [-coarse, -fine, fine, coarse];
 
+  /* `MAX` while the counter is still at zero, here as on the row this panel
+     opened under: the two must not disagree about the same cell. */
+  const countsMax = !isWeight && showsMaxLabel(exercise, set);
   const displayValue = isWeight
     ? formatWeight(set.weightKg, unitSystem, exercise.loadMode)
-    : formatCount(set.count, exercise.countUnit);
+    : countsMax
+      ? maxLabel(lang).toUpperCase()
+      : formatCount(set.count, exercise.countUnit);
   const displayUnit = isWeight
     ? unitLabel(unitSystem, lang)
-    : countUnitLabel(exercise.countUnit, lang);
+    : countsMax
+      ? ''
+      : countUnitLabel(exercise.countUnit, lang);
 
   useEffect(() => {
     if (typing) inputRef.current?.focus();
