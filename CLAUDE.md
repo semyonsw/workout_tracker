@@ -63,7 +63,14 @@ npm pack lightningcss-linux-x64-gnu@1.33.0   # the top-level one
 ```
 
 Check it with `node -e "require('./metro.config.js')"`, which is a two-second
-test for a failure that otherwise costs six minutes. `android/local.properties`
+test for a failure that otherwise costs six minutes.
+
+And one flake, from the same mount: `:app:compressReleaseAssets` can fail with a
+bare `No such file or directory`, twice over — once per asset, because its two
+work actions run in parallel and race to create the `out/assets` directory they
+share. Nothing is wrong. Re-run the same command; the task succeeds on the
+second pass and everything upstream of it is cached, so it costs seconds rather
+than the eleven minutes the failed build did. `android/local.properties`
 needs pointing at the Linux SDK for the same reason (`sdk.dir=/root/android-sdk`);
 both files are gitignored, so neither correction can follow the repo to the other
 machine and break it.
