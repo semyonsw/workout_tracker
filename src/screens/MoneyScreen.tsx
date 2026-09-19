@@ -56,10 +56,16 @@
  * ── A TILE IS THE FASTEST WAY TO RECORD SOMETHING ─────────────────────────
  *
  * TAP a category and the editor opens ON that category, in the direction the two
- * tiles are currently showing — so a taxi is Transport, a number, Save. It used
- * to open the category's own screen, which meant the common act (write this
- * down) went through the rare one (look at what I wrote down) and cost two more
- * taps and a category chip.
+ * tiles are currently showing, ON THE DAY THE WINDOW IS READING — so a taxi is
+ * Transport, a number, Save. It used to open the category's own screen, which
+ * meant the common act (write this down) went through the rare one (look at what
+ * I wrote down) and cost two more taps and a category chip.
+ *
+ * The day is the part that was wrong for longest. The window travelled with a
+ * long press and with the ⟲, but a TAP handed the editor nothing and the editor
+ * fell back to the clock: stepping back to the 16th and tapping `Food` wrote the
+ * amount onto today. `dayInWindow` is the one answer both the ⟲ and the tile
+ * use, so the day you are reading is the day you are writing.
  *
  * LONG PRESS is where the rare one went: a sheet with `Edit category` on it, and
  * with the OTHER direction — because an income into a category whose tile is
@@ -118,7 +124,7 @@ import {
   describeInterval,
   formatMoney,
   formatValue,
-  historyDay,
+  dayInWindow,
   inAccount,
   shiftAnchor,
   totalsIn,
@@ -139,10 +145,16 @@ interface MoneyScreenProps {
    */
   onOpenCategory: (categoryId: ID, accountId: ID, interval: Interval, anchor: string) => void;
   /**
-   * The editor, opened on a category, a subsection and a direction it does not
-   * have to be told twice.
+   * The editor, opened on a category, a subsection, a direction and a DAY it
+   * does not have to be told twice.
+   *
+   * The day is the one the window means (`dayInWindow`), not today. Stepping
+   * back to the 16th and tapping `Food` is a sentence about the 16th, and the
+   * editor used to open on today and quietly file it there — the screen
+   * overruling the only thing the user had said. The same argument as the
+   * window travelling with a long press, one screen earlier.
    */
-  onAddAmount: (categoryId: ID | null, accountId: ID, direction: Direction) => void;
+  onAddAmount: (categoryId: ID | null, accountId: ID, direction: Direction, day: string) => void;
   /**
    * The ⟲ in the corner: the lines, the balance and where it went.
    *
@@ -206,7 +218,11 @@ export function MoneyScreen({
   const bars = useBarInsets();
   const currency = useSettings((s) => s.currencyCode);
   const { interval, anchor, direction, accountId } = view;
-  const setInterval = (next: Interval) => onChangeWindow({ interval: next });
+  /* `setWindowInterval` and not `setInterval`: the short name SHADOWS the global
+     one inside this component, so the first timer anybody ever adds to this file
+     would silently call the window setter and fail in a way that looks like the
+     picker misbehaving. */
+  const setWindowInterval = (next: Interval) => onChangeWindow({ interval: next });
   const setAnchor = (next: string) => onChangeWindow({ anchor: next });
   const setDirection = (next: Direction) => onChangeWindow({ direction: next });
   const setAccountId = (next: ID | null) => onChangeWindow({ accountId: next });
@@ -250,6 +266,13 @@ export function MoneyScreen({
   );
   // `All time` has no next or previous window to step to.
   const steppable = interval !== 'all';
+  /*
+   * The day this window MEANS — where a new amount lands and where the ⟲ opens
+   * the day list. Both questions have the same answer, and `lib/money.ts` argues
+   * why it is not simply today. Recomputed per render rather than memoised: it
+   * reads the clock, and a stale one would file tonight's taxi on yesterday.
+   */
+  const onDay = dayInWindow(interval, anchor, dayKey(new Date()));
 
   return (
     <View className="flex-1 bg-bg">
@@ -258,12 +281,10 @@ export function MoneyScreen({
 
       <SectionTopBar
         title={t('Expenses')}
-        /* `historyDay` rather than the anchor itself: a month's anchor is its
+        /* `dayInWindow` rather than the anchor itself: a month's anchor is its
            1st, and nobody reading September on the 18th means "show me the
            1st". See `lib/money.ts`. */
-        onOpenHistory={() =>
-          onOpenHistory(account.id, historyDay(interval, anchor, dayKey(new Date())))
-        }
+        onOpenHistory={() => onOpenHistory(account.id, onDay)}
         historyLabel={t('Expense history')}
       />
 
@@ -441,7 +462,7 @@ export function MoneyScreen({
                 total={perCategory[category.id] ?? 0}
                 share={directionTotal > 0 ? (perCategory[category.id] ?? 0) / directionTotal : 0}
                 currency={currency}
-                onPress={() => onAddAmount(category.id, account.id, direction)}
+                onPress={() => onAddAmount(category.id, account.id, direction, onDay)}
                 onLongPress={() => {
                   tap();
                   setHolding(category);
@@ -469,7 +490,7 @@ export function MoneyScreen({
       <FloatingAction
         label={direction === 'expense' ? t('Add expense') : t('Add income')}
         icon="plus"
-        onPress={() => onAddAmount(null, account.id, direction)}
+        onPress={() => onAddAmount(null, account.id, direction, onDay)}
       />
 
       {picking ? (
@@ -483,7 +504,7 @@ export function MoneyScreen({
                   detail={describeInterval(option, anchor, lang)}
                   selected={option === interval}
                   onPress={() => {
-                    setInterval(option);
+                    setWindowInterval(option);
                     setPicking(false);
                   }}
                 />
@@ -613,6 +634,7 @@ export function MoneyScreen({
                   category.id,
                   account.id,
                   direction === 'expense' ? 'income' : 'expense',
+                  onDay,
                 );
               }}
             />

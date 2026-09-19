@@ -63,12 +63,14 @@ import {
   type MoneyAccount,
   type MoneyCategory,
   amountsIn,
+  dayInWindow,
   inAccount,
   describeAmount,
   describeCount,
   describeInterval,
   formatMoney,
 } from '../lib/money';
+import { dayKey } from '../lib/days';
 import { useMoney } from '../state/moneyStore';
 import { useLanguage, useT } from '../hooks/useT';
 import { useSettings } from '../state/settingsStore';
@@ -84,7 +86,9 @@ interface CategoryDetailScreenProps {
   anchor: string;
   onBack: () => void;
   onOpenAmount: (amountId: ID) => void;
-  onAddAmount: () => void;
+  /** Handed the day this window means, so the new amount lands inside the list
+      it was added from rather than on today. See `dayInWindow`. */
+  onAddAmount: (day: string) => void;
 }
 
 export function CategoryDetailScreen({
@@ -175,7 +179,10 @@ export function CategoryDetailScreen({
         )}
 
         <View className="mx-lg">
-          <AddRow label={t('Add to this category')} onPress={onAddAmount} />
+          <AddRow
+            label={t('Add to this category')}
+            onPress={() => onAddAmount(dayInWindow(interval, anchor, dayKey(new Date())))}
+          />
         </View>
 
         <View className="mx-lg mt-sm h-hairline bg-hairline" />

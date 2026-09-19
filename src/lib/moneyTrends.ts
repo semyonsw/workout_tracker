@@ -127,6 +127,18 @@ function bucketsIn(
   return buckets;
 }
 
+/**
+ * The day an amount counts FROM, for deciding whether it has happened yet.
+ *
+ * A whole-month amount has no day (see `lib/money.ts`), so this uses the 1st of
+ * its month — the earliest day it could possibly be about. September's rent has
+ * happened by 13 September; October's has not.
+ */
+function startsOn(amount: Amount): string {
+  if (amount.when.kind === 'day') return amount.when.date;
+  return dayKey(new Date(amount.when.year, amount.when.month, 1));
+}
+
 /** Which bucket an amount lands in, or null when it has no place in this series. */
 function keyOf(amount: Amount, byMonth: boolean): string | null {
   if (amount.when.kind === 'month') {
@@ -193,6 +205,14 @@ export function moneyBalanceSeries(
 
   let opening = 0;
   for (const amount of amounts) {
+    /*
+     * A day in the FUTURE — the editor's stepper has no ceiling, and dating next
+     * month's rent forward is a reasonable thing to do. It has not happened, so
+     * it is in neither a bucket nor the opening; falling through to the opening
+     * is what it used to do, and that put money you have not spent yet into the
+     * balance you had a week ago, across the entire line.
+     */
+    if (startsOn(amount) > today) continue;
     const signed = amount.direction === 'expense' ? -amount.value : amount.value;
     const key = keyOf(amount, byMonth);
     // Outside the range entirely, or a whole-month amount a daily series cannot

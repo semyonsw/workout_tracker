@@ -5,7 +5,7 @@ import {
   type MoneyAccount,
   amountsIn,
   amountsOnDay,
-  historyDay,
+  dayInWindow,
   balanceOf,
   balanceOfAccount,
   inAccount,
@@ -272,32 +272,40 @@ describe('a single day', () => {
 });
 
 /**
- * ── WHICH DAY THE ⟲ OPENS ON ───────────────────────────────────────────────
+ * ── WHICH DAY A WINDOW MEANS ───────────────────────────────────────────────
  *
- * It opened on today, always, which meant stepping back three days and then
- * tapping it showed you today's spending. The anchor alone is not the fix: a
- * month's anchor is its 1st, and nobody who is reading September on the 18th
- * means "show me the 1st".
+ * Two screens ask it. The ⟲ opened on today, always, which meant stepping back
+ * three days and then tapping it showed you today's spending. And TAPPING A
+ * CATEGORY TILE wrote the new amount onto today for the same reason, which is
+ * the worse of the two: the first shows the wrong day, the second RECORDS one.
+ *
+ * The anchor alone is not the fix: a month's anchor is its 1st, and nobody who
+ * is reading September on the 18th means "show me the 1st".
  */
-describe('the day the history opens on', () => {
+describe('the day a window means', () => {
   const TODAY = '2026-09-18';
 
+  it('is the day you stepped BACK to, which is the whole point', () => {
+    // Reading the 16th and tapping Food: the amount belongs on the 16th.
+    expect(dayInWindow('day', '2026-09-16', TODAY)).toBe('2026-09-16');
+  });
+
   it('is the day you stepped to, when the window IS a day', () => {
-    expect(historyDay('day', '2026-09-15', TODAY)).toBe('2026-09-15');
+    expect(dayInWindow('day', '2026-09-15', TODAY)).toBe('2026-09-15');
   });
 
   it('is the anchor for a week, which is a day inside that week', () => {
-    expect(historyDay('week', '2026-09-07', TODAY)).toBe('2026-09-07');
+    expect(dayInWindow('week', '2026-09-07', TODAY)).toBe('2026-09-07');
   });
 
   it('is today while the wider window still contains today', () => {
-    expect(historyDay('month', '2026-09-01', TODAY)).toBe(TODAY);
-    expect(historyDay('year', '2026-01-01', TODAY)).toBe(TODAY);
-    expect(historyDay('all', '2026-01-01', TODAY)).toBe(TODAY);
+    expect(dayInWindow('month', '2026-09-01', TODAY)).toBe(TODAY);
+    expect(dayInWindow('year', '2026-01-01', TODAY)).toBe(TODAY);
+    expect(dayInWindow('all', '2026-01-01', TODAY)).toBe(TODAY);
   });
 
   it('is the window itself once the window is in the past', () => {
-    expect(historyDay('month', '2026-03-01', TODAY)).toBe('2026-03-01');
-    expect(historyDay('year', '2024-01-01', TODAY)).toBe('2024-01-01');
+    expect(dayInWindow('month', '2026-03-01', TODAY)).toBe('2026-03-01');
+    expect(dayInWindow('year', '2024-01-01', TODAY)).toBe('2024-01-01');
   });
 });

@@ -157,6 +157,27 @@ describe('the running balance', () => {
     const points = moneyBalanceSeries([month(2026, 8, 60000)], 'week', '2026-09-13');
     expect(points.every((p) => p.value === -60000)).toBe(true);
   });
+
+  /*
+   * The editor's day stepper has no ceiling, so an amount CAN be dated forward.
+   * It used to fall through to the opening figure, which is the worst of the
+   * three places it could go: money that has not moved yet, subtracted from the
+   * balance you had at the left edge of the chart and from every bucket after it.
+   */
+  it('ignores an amount dated in the future entirely', () => {
+    const points = moneyBalanceSeries(
+      [day('2026-09-12', 400), day('2026-09-20', 9999)],
+      'week',
+      '2026-09-13',
+    );
+    expect(points[0].value).toBe(0);
+    expect(points.at(-1)?.value).toBe(-400);
+  });
+
+  it('ignores a whole-month amount for a month that has not started', () => {
+    const points = moneyBalanceSeries([month(2026, 9, 60000)], 'week', '2026-09-13');
+    expect(points.every((p) => p.value === 0)).toBe(true);
+  });
 });
 
 describe('summarizing a range', () => {

@@ -72,7 +72,7 @@
  * deadline; this screen only ever asks for a nudge.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
@@ -910,12 +910,26 @@ function MeasuredRestRow({
 function TestBeepRow() {
   const t = useT();
   const [playing, setPlaying] = useState(false);
+  /*
+   * The three pending tones, so leaving Settings mid-sequence takes them with it.
+   * They used to be collected into a `const timers` that was immediately thrown
+   * away with `void timers` under a comment saying there was nothing to clean up
+   * — which left the last one to fire `countFinal()` and set state on a screen
+   * the user had already walked away from, two seconds after they left.
+   */
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(
+    () => () => {
+      for (const timer of timers.current) clearTimeout(timer);
+    },
+    [],
+  );
 
   const play = () => {
     if (playing) return;
     setPlaying(true);
     countTick();
-    const timers = [
+    timers.current = [
       setTimeout(() => countTick(), 700),
       setTimeout(() => countTick(), 1400),
       setTimeout(() => {
@@ -923,9 +937,6 @@ function TestBeepRow() {
         setPlaying(false);
       }, 2100),
     ];
-    // Nothing to clean up on unmount beyond the flag: the tones are fire-and-forget
-    // and a beep that lands after the user leaves Settings is harmless.
-    void timers;
   };
 
   return (

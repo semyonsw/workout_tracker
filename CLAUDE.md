@@ -35,6 +35,39 @@ export ANDROID_HOME=/root/android-sdk ANDROID_SDK_ROOT=/root/android-sdk
 Takes ~10 minutes; run it in the background. Output lands at
 `android/app/build/outputs/apk/release/app-release.apk`.
 
+### THE OTHER TRAP: one `node_modules`, two operating systems
+
+The repo lives on the Windows filesystem and both machines build out of the SAME
+`node_modules`. `npm install` only unpacks the native binaries for the platform
+it ran on, so a tree installed on Windows has `lightningcss-win32-x64-msvc` and
+nothing else — and building from WSL then dies six minutes in, at
+`:app:createBundleReleaseJsAndAssets`, with
+
+```
+Error loading Metro config at: …/metro.config.js
+Cannot find module '../lightningcss.linux-x64-gnu.node'
+```
+
+`lightningcss` is NativeWind's CSS parser, reached through
+`react-native-css-interop`, and there are TWO copies of it at two versions. It is
+not a broken install and `npm ci` is the wrong answer — that would rebuild the
+tree for Linux and break the Windows box the same way round. Add the Linux
+binaries BESIDE the Windows ones instead, matching each copy's version:
+
+```bash
+npm pack lightningcss-linux-x64-gnu@1.27.0   # react-native-css-interop's copy
+npm pack lightningcss-linux-x64-gnu@1.33.0   # the top-level one
+# extract each `package/` into the matching
+# …/node_modules/lightningcss-linux-x64-gnu/ — `node/index.js` prefers the
+# PACKAGE over the local `.node` file, so no file needs renaming.
+```
+
+Check it with `node -e "require('./metro.config.js')"`, which is a two-second
+test for a failure that otherwise costs six minutes. `android/local.properties`
+needs pointing at the Linux SDK for the same reason (`sdk.dir=/root/android-sdk`);
+both files are gitignored, so neither correction can follow the repo to the other
+machine and break it.
+
 ### On the Windows box
 
 The same build, with the paths it actually has (installed 2026-08-30): JDK 17 at

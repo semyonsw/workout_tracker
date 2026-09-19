@@ -169,12 +169,15 @@ type Route =
   /* The window travels with the tap, so the category opens on the one the tile
      was read through rather than resetting to this month. */
   | { name: 'moneyCategory'; categoryId: ID; accountId: ID; interval: Interval; anchor: string }
+  /* `day` travels with the tap for the same reason the window does: a category
+     tapped while reading the 16th is an amount ON the 16th. */
   | {
       name: 'moneyAmount';
       amountId: ID | null;
       categoryId: ID | null;
       accountId: ID | null;
       direction?: Direction;
+      day?: string;
     };
 
 export function AppShell() {
@@ -1244,12 +1247,15 @@ export function AppShell() {
         onOpenAmount={(amountId) =>
           push({ name: 'moneyAmount', amountId, categoryId: null, accountId: null })
         }
-        onAddAmount={() =>
+        /* The window this screen was opened with decides the day, exactly as the
+           tile that opened it does. */
+        onAddAmount={(day) =>
           push({
             name: 'moneyAmount',
             amountId: null,
             categoryId: category.id,
             accountId: account.id,
+            day,
           })
         }
       />
@@ -1265,6 +1271,7 @@ export function AppShell() {
         categoryId={top.categoryId}
         accountId={top.accountId}
         direction={top.direction}
+        day={top.day}
         onBack={(saved) => {
           pop();
           if (saved) setToast(amount ? t('Saved') : t('Written down'));
@@ -1401,8 +1408,15 @@ export function AppShell() {
               onOpenCategory={(categoryId, accountId, interval, anchor) =>
                 push({ name: 'moneyCategory', categoryId, accountId, interval, anchor })
               }
-              onAddAmount={(categoryId, accountId, direction) =>
-                push({ name: 'moneyAmount', amountId: null, categoryId, accountId, direction })
+              onAddAmount={(categoryId, accountId, direction, day) =>
+                push({
+                  name: 'moneyAmount',
+                  amountId: null,
+                  categoryId,
+                  accountId,
+                  direction,
+                  day,
+                })
               }
               onOpenHistory={(accountId, anchor) =>
                 push({ name: 'moneyHistory', accountId, day: anchor })

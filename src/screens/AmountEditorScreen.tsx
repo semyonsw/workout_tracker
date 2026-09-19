@@ -34,9 +34,19 @@
  * controls and roughly 400 dp of scroll — on a screen whose fastest path is a
  * number and `Save`, because every one of those four arrives already correct:
  * you tapped a category tile in a direction the grid was already showing, in the
- * subsection you were already reading, today. So they are chips. Each one STATES
- * its answer, and correcting one is a tap; the category's chip is the `lit` one
- * because it is the only one of the six that changes what the amount is ABOUT.
+ * subsection you were already reading, on the day you were reading. So they are
+ * chips. Each one STATES its answer, and correcting one is a tap; the category's
+ * chip is the `lit` one because it is the only one of the six that changes what
+ * the amount is ABOUT.
+ *
+ * ── AND `WHEN` ARRIVES CORRECT TOO, WHICH IT DID NOT USED TO ──────────────
+ *
+ * It was always today. Stepping the money screen back to the 16th and tapping a
+ * category is unambiguously a sentence about the 16th, and this screen opening
+ * on today meant three taps on the stepper to say again what had already been
+ * said — or, far worse, a `Save` that filed the 16th's taxi on the 19th and gave
+ * two days the wrong total. The `day` prop carries it; `lib/money.ts` works out
+ * which day a window means.
  *
  * ── AND SAVE LEFT THE CORNER ──────────────────────────────────────────────
  *
@@ -126,6 +136,20 @@ interface AmountEditorScreenProps {
   /** Which subsection a new amount lands in. Ignored when editing. */
   accountId: ID | null;
   /**
+   * Which DAY a new amount lands on. Ignored when editing — an amount already
+   * has a day, and the stepper is right there.
+   *
+   * Not `today`, and that is the whole point of the prop: the money screen's
+   * window is a sentence about a day, and tapping `Food` while reading the 16th
+   * MEANS the 16th. Filing it under today was the screen overruling the only
+   * thing the user had said, and the correction cost three taps on the stepper
+   * every time. `lib/money.ts`'s `dayInWindow` works out which day that is.
+   *
+   * Optional so that the paths with no window behind them — a row of the day
+   * list, opened to be corrected — can leave it out and get today.
+   */
+  day?: string;
+  /**
    * Which way a NEW amount points, decided by whatever opened this screen.
    *
    * The money grid is already showing expenses or incomes when a tile is tapped,
@@ -151,6 +175,7 @@ export function AmountEditorScreen({
   categoryId,
   accountId,
   direction: initialDirection = 'expense',
+  day: initialDay,
   onBack,
 }: AmountEditorScreenProps) {
   const t = useT();
@@ -173,6 +198,10 @@ export function AmountEditorScreen({
   );
 
   const today = dayKey(new Date());
+  /* The day a NEW amount opens on: the window's, when one came with the tap.
+     Guarded, because a route that predates the prop — or a malformed one — must
+     not put an amount on `undefined`. */
+  const landsOn = initialDay && parseDay(initialDay) ? initialDay : today;
   const [digits, setDigits] = useState(amount ? String(amount.value) : '');
   const [direction, setDirection] = useState<Direction>(amount?.direction ?? initialDirection);
   const [category, setCategory] = useState<ID | null>(
@@ -182,11 +211,13 @@ export function AmountEditorScreen({
     amount?.accountId ?? accountId ?? liveAccounts[0]?.id ?? null,
   );
   const [span, setSpan] = useState<'day' | 'month'>(amount?.when.kind ?? 'day');
-  const [day, setDay] = useState(amount?.when.kind === 'day' ? amount.when.date : today);
+  const [day, setDay] = useState(amount?.when.kind === 'day' ? amount.when.date : landsOn);
+  /* The month follows the day for the same reason: switching a new amount to
+     `Whole month` while reading March means March, not this one. */
   const [monthAnchor, setMonthAnchor] = useState(() =>
     amount?.when.kind === 'month'
       ? dayKey(new Date(amount.when.year, amount.when.month, 1))
-      : today,
+      : landsOn,
   );
   const [note, setNote] = useState(amount?.note ?? '');
   const [deleting, setDeleting] = useState(false);
