@@ -3,8 +3,7 @@
  *
  *   ┌──────────────────────────────────────────────┐
  *   │ WORKOUT                        ≡   📖    ⟲   │  ← glass bar, content under
- *   │ SEQUENCE                                     │
- *   │  Push  ›  ‹Pull›  ›  Push  ›  Boxing          │
+ *   │ ( SEQUENCE  3/4 · then Push              › ) │  ← folded; › opens it
  *   │ ╭──────────────────────────────────────────╮ │
  *   │ │ TODAY · PULL                  ( 1 nudge )│ │  ← the hero, `lit` glass
  *   │ │ Pull + swimming                          │ │
@@ -52,6 +51,7 @@
  * are standing under the bar deciding what to load.
  */
 
+import { useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
@@ -65,7 +65,7 @@ import {
   SpecularEdge,
   useBarInsets,
 } from '../components/glass';
-import { pressedStyle } from '../components/motion';
+import { pressedStyle, Reveal } from '../components/motion';
 import { Kicker } from '../components/primitives';
 import { useLanguage, usePlural, useT } from '../hooks/useT';
 import { formatShortDate, formatVolumeKg } from '../lib/units';
@@ -126,7 +126,7 @@ interface HomeScreenProps {
   onOpen: (routineId: ID) => void;
   /** Back to the logging screen of the workout in progress. */
   onResume: () => void;
-  /** Tapping the sequence strip goes to the screen that edits it. */
+  /** Tapping a step in the opened sequence goes to the screen that edits it. */
   onOpenSequence: () => void;
   onOpenSession: (sessionId: string) => void;
   /** The ⟲ in the corner: the log, the graphs and the calendar. */
@@ -434,73 +434,143 @@ function HeroStat({
 }
 
 /**
- * The sequence, as one wrapping line: `Push › Pull › Push › Boxing`, with the
- * step whose turn it is on a lit pane.
+ * The sequence, FOLDED by default to one line: `SEQUENCE · 11/12 · then Push ⌄`.
  *
- * WRAPPING and not a horizontal `ScrollView`, which it was: the section swipe
- * (`components/SwipePager.tsx`) claims sideways drags on capture, so a sequence
- * wider than the screen could not be scrolled at all — flicking it changed
- * section. Same decision, same reason, as the money screen's subsection chips.
+ * It used to be the full wrapping line of chips, always — and a real sequence is
+ * not four steps, it is twelve, with long names. That was twelve rows of chips
+ * between the top bar and the hero, pushing the one card this screen exists for
+ * below the fold. The folded line keeps what is worth a glance on every visit —
+ * where in the order you are, and what comes AFTER today (today itself is the
+ * hero right under it, so naming it here too would be saying it twice). The
+ * chevron opens the full order; it closes again the same way.
  *
- * A line rather than a calendar grid, because a sequence is an ORDER and not a
- * week: it advances when you train, not when Tuesday arrives. Tapping anywhere on
- * it opens the screen that edits it — a chip is a label, not a start button, and
- * the thing you want after looking at your order is usually to change it.
+ * Open state is local and starts closed each time the screen mounts. The whole
+ * order is a thing you look at occasionally, not every time, and a preference
+ * persisted for one disclosure is more machinery than the question deserves.
+ *
+ * Open, it is the same wrapping line of chips as before, step whose turn it is on
+ * a lit pane. WRAPPING and not a horizontal `ScrollView`, which it once was: the
+ * section swipe (`components/SwipePager.tsx`) claims sideways drags on capture,
+ * so a sequence wider than the screen could not be scrolled at all — flicking it
+ * changed section. Tapping a chip opens the screen that edits the order — a chip
+ * is a label, not a start button, and the thing you want after looking at your
+ * order is usually to change it.
  */
 function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress: () => void }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
+  const { steps } = sequence;
+  const currentIndex = steps.findIndex((step) => step.isCurrent);
+  // The cursor wraps (`advanceSequence`), so after the last step comes the first.
+  const after =
+    currentIndex >= 0 && steps.length > 1 ? steps[(currentIndex + 1) % steps.length] : null;
+  const summary = [
+    currentIndex >= 0 ? `${currentIndex + 1}/${steps.length}` : null,
+    after ? t('then {name}', { name: after.name }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     <View className="mt-lg">
-      <Kicker className="mx-lg">{t('Sequence')}</Kicker>
-      <View className="mx-lg mt-md flex-row flex-wrap items-center" style={{ rowGap: 8 }}>
-        {sequence.steps.map((step, index) => (
-          <BubblePressable
-            key={step.key}
-            onPress={onPress}
-            radius="pill"
-            accessibilityRole="button"
-            accessibilityLabel={`${step.name}${step.isCurrent ? `, ${t('next up')}` : ''}. ${t('Edit the sequence.')}`}
-            style={(state) => [pressedStyle(state), { flexDirection: 'row', alignItems: 'center' }]}
-          >
-            {index > 0 ? (
-              <Text className="mx-[3px] text-label text-ink-faint" allowFontScaling={false}>
-                ›
-              </Text>
-            ) : null}
-            <View
-              style={{
-                height: 34,
-                justifyContent: 'center',
-                paddingHorizontal: 14,
-                borderRadius: radius.pill,
-                borderWidth: 1,
-                borderColor: step.isCurrent ? 'rgba(63,169,108,0.30)' : 'rgba(236,241,238,0.045)',
-                backgroundColor: step.isCurrent
-                  ? 'rgba(63,169,108,0.13)'
-                  : 'rgba(236,241,238,0.028)',
-                ...(step.isCurrent
-                  ? {
-                      boxShadow: [
-                        { offsetX: 0, offsetY: 0, blurRadius: 14, color: 'rgba(63,169,108,0.35)' },
-                      ],
-                    }
-                  : {}),
-              }}
-            >
-              <Text
-                numberOfLines={1}
-                className={[
-                  'text-label',
-                  step.isCurrent ? 'font-semibold text-green-bright' : 'text-ink-muted',
-                ].join(' ')}
-              >
-                {step.name}
-              </Text>
-            </View>
-          </BubblePressable>
-        ))}
-      </View>
+      <BubblePressable
+        onPress={() => setOpen((was) => !was)}
+        radius="pill"
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${t('Sequence')}. ${summary}. ${open ? t('Hide the sequence') : t('Show the sequence')}`}
+        style={(state) => [
+          pressedStyle(state),
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            minHeight: 40,
+            marginHorizontal: 16,
+            paddingHorizontal: 14,
+            borderRadius: radius.pill,
+            borderWidth: 1,
+            borderColor: 'rgba(236,241,238,0.045)',
+            backgroundColor: 'rgba(236,241,238,0.028)',
+          },
+        ]}
+      >
+        <Kicker>{t('Sequence')}</Kicker>
+        <Text
+          numberOfLines={1}
+          className="ml-md flex-1 text-label tabular-nums text-ink-faint"
+          allowFontScaling={false}
+        >
+          {summary}
+        </Text>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={16} color={palette.inkFaint} />
+      </BubblePressable>
+
+      {open ? (
+        <Reveal>
+          <View className="mx-lg mt-md flex-row flex-wrap items-center" style={{ rowGap: 8 }}>
+            {steps.map((step, index) => (
+              <SequenceChip key={step.key} step={step} divided={index > 0} onPress={onPress} />
+            ))}
+          </View>
+        </Reveal>
+      ) : null}
     </View>
+  );
+}
+
+function SequenceChip({
+  step,
+  divided,
+  onPress,
+}: {
+  step: SequenceView['steps'][number];
+  /** A `›` before it — every chip but the first. */
+  divided: boolean;
+  onPress: () => void;
+}) {
+  const t = useT();
+  return (
+    <BubblePressable
+      onPress={onPress}
+      radius="pill"
+      accessibilityRole="button"
+      accessibilityLabel={`${step.name}${step.isCurrent ? `, ${t('next up')}` : ''}. ${t('Edit the sequence.')}`}
+      style={(state) => [pressedStyle(state), { flexDirection: 'row', alignItems: 'center' }]}
+    >
+      {divided ? (
+        <Text className="mx-[3px] text-label text-ink-faint" allowFontScaling={false}>
+          ›
+        </Text>
+      ) : null}
+      <View
+        style={{
+          height: 34,
+          justifyContent: 'center',
+          paddingHorizontal: 14,
+          borderRadius: radius.pill,
+          borderWidth: 1,
+          borderColor: step.isCurrent ? 'rgba(63,169,108,0.30)' : 'rgba(236,241,238,0.045)',
+          backgroundColor: step.isCurrent ? 'rgba(63,169,108,0.13)' : 'rgba(236,241,238,0.028)',
+          ...(step.isCurrent
+            ? {
+                boxShadow: [
+                  { offsetX: 0, offsetY: 0, blurRadius: 14, color: 'rgba(63,169,108,0.35)' },
+                ],
+              }
+            : {}),
+        }}
+      >
+        <Text
+          numberOfLines={1}
+          className={[
+            'text-label',
+            step.isCurrent ? 'font-semibold text-green-bright' : 'text-ink-muted',
+          ].join(' ')}
+        >
+          {step.name}
+        </Text>
+      </View>
+    </BubblePressable>
   );
 }
 
