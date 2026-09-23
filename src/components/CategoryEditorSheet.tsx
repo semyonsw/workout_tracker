@@ -32,6 +32,7 @@ import { Text, TextInput, View } from 'react-native';
 import { Sheet } from './Sheet';
 import { FieldWell, PrimaryButton, TextButton } from './primitives';
 import { useT } from '../hooks/useT';
+import { lastGlyph } from '../lib/glyph';
 import { palette } from '../theme/tokens';
 
 interface CategoryEditorSheetProps {
@@ -60,7 +61,7 @@ export function CategoryEditorSheet({
         <View className="h-row w-row items-center justify-center rounded-surface border border-hairline bg-surface-alt">
           <TextInput
             value={glyph}
-            onChangeText={(text) => setGlyph([...text].slice(-1).join(''))}
+            onChangeText={(text) => setGlyph(lastGlyph(text))}
             placeholder="🙂"
             placeholderTextColor={palette.inkFaint}
             cursorColor={palette.greenBright}

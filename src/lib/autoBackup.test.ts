@@ -74,10 +74,20 @@ describe('whether a backup is due', () => {
 });
 
 describe('the age of the last backup', () => {
-  it('counts whole days, floored', () => {
-    expect(daysSince(daysAgo(0), NOW)).toBe(0);
-    expect(daysSince(daysAgo(1.9), NOW)).toBe(1);
+  it('counts calendar days, not 24-hour periods', () => {
+    // Local times, so the answer does not depend on the machine's time zone.
+    const morning = new Date(2026, 8, 2, 8, 0);
+    expect(daysSince(new Date(2026, 8, 2, 7, 0).toISOString(), morning)).toBe(0);
+    // Nine hours ago, but yesterday — which is what the row has to say.
+    expect(daysSince(new Date(2026, 8, 1, 23, 0).toISOString(), morning)).toBe(1);
+    expect(daysSince(new Date(2026, 7, 31, 1, 0).toISOString(), morning)).toBe(2);
     expect(daysSince(undefined, NOW)).toBeNull();
+  });
+
+  it('makes a one-day interval due the next morning', () => {
+    const evening = new Date(2026, 8, 1, 20, 0).toISOString();
+    const morning = new Date(2026, 8, 2, 8, 0);
+    expect(shouldBackUpNow(state({ lastAt: evening, intervalDays: 1 }), morning)).toBe(true);
   });
 
   it('says it in words, because the row only answers "recent enough"', () => {

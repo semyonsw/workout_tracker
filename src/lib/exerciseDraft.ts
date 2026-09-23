@@ -36,7 +36,7 @@
 
 import type { CountUnit, Exercise, MuscleGroup, TimerMode } from '../types/models';
 import { DEFAULT_PREPARE_SECONDS } from './setTimer';
-import { clampMax, LADDER_SETS, ladderOf, supportsLadder } from './repLadder';
+import { clampMax, ladderOf, supportsLadder } from './repLadder';
 import { defaultTargetSets } from './draft';
 import { countsToMax } from './maxReps';
 import { TARGET_SETS_LIMITS } from './routinePlan';
@@ -154,11 +154,11 @@ function syncLadderTarget(draft: ExerciseDraft): ExerciseDraft {
  * constant in this file would have picked. Switching it OFF keeps the max, so the
  * toggle is reversible.
  *
- * It also asks for FIVE SETS, because five is the scheme — the same reason
- * `defaultTargetSets` has always answered five for a laddered exercise. The
- * difference now is that the number is on the screen with a ± beside it, so five
- * is a starting point the user can see and change rather than a constant they
- * cannot reach.
+ * It LEAVES THE SET COUNT ALONE. It used to jump it to five — the published
+ * scheme — which meant a new exercise opened at five whenever `Make every
+ * exercise a rep ladder` was on, and switching the ladder on quietly overwrote a
+ * four the user had just chosen. A ladder shapes whatever count it is given, and
+ * the ± beside the count is where the user says five if five is what they want.
  */
 export function toggleLadder(draft: ExerciseDraft, on: boolean): ExerciseDraft {
   if (!on) return { ...draft, ladderOn: false };
@@ -167,7 +167,6 @@ export function toggleLadder(draft: ExerciseDraft, on: boolean): ExerciseDraft {
     ...draft,
     ladderOn: true,
     ladderMax: clampMax(seeded),
-    targetSets: LADDER_SETS,
     // A ladder derives every rep of every set. `MAX` refuses to name one. Both on
     // is not a shape — see `lib/maxReps.ts` — so switching one on switches the
     // other off HERE, where the user can see it happen, rather than silently on
@@ -248,7 +247,7 @@ export function emptyExerciseDraft(
      * Four, which is `defaultTargetSets`' answer for the rep-counted weighted work
      * a blank draft starts as. Read from there rather than written as a 4 here, so
      * the number a new exercise starts at and the number a shipped one falls back
-     * to cannot drift apart. A ladder switched on below overrides it with five.
+     * to cannot drift apart. A ladder switched on below keeps it.
      */
     targetSets: defaultTargetSets({ countUnit: 'reps' }),
     /* Off. A rep target is the ordinary case; `MAX` is a claim you make on

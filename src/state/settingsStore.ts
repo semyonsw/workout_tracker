@@ -26,7 +26,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AUTO_BACKUP_INTERVAL_LIMITS, rotateBackups } from '../lib/autoBackup';
 import {
-  BODYWEIGHT_LIMITS,
   clampBodyweightKg,
   recordBodyweight,
   sanitizeBodyweightLog,
@@ -36,7 +35,6 @@ import { DEFAULT_PLATES_KG } from '../lib/plates';
 import {
   activeGymPlates,
   addGym as addGymTo,
-  clampPlates,
   DEFAULT_GYM_ID,
   gymsFromLegacyPlates,
   removeGym as removeGymFrom,
@@ -52,14 +50,6 @@ import { INTERVALS, type Direction, type Interval } from '../lib/money';
 import type { Weekday } from '../lib/tasks';
 import { TREND_RANGES, type TrendRange } from '../lib/trends';
 import type { MuscleCluster, UnitSystem } from '../types/models';
-
-/*
- * Re-exported, because they used to live here and the range is still a settings
- * concern from the outside — `lib/bodyweightLog.ts` owns them now so that the
- * series and the scalar cannot disagree about what a believable weight is, and a
- * store importing a lib is the direction that does not cycle.
- */
-export { BODYWEIGHT_LIMITS, clampBodyweightKg };
 
 export interface Settings {
   /**
@@ -365,13 +355,6 @@ export function clampSetting(key: NumericSetting, value: unknown): number {
   if (!Number.isFinite(n)) return DEFAULT_SETTINGS[key];
   return Math.min(max, Math.max(min, Math.round(n)));
 }
-
-/*
- * `clampPlates` moved to `lib/gyms.ts` with the rest of the plate concern, and is
- * re-exported because it is still what the settings screen validates a plate row
- * with. One list per gym now; the sanitizer is unchanged.
- */
-export { clampPlates };
 
 /**
  * A complete, in-range `Settings` from anything at all — including `undefined`.

@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { BODYWEIGHT_LIMITS, clampBodyweightKg } from '../lib/bodyweightLog';
+import { clampPlates } from '../lib/gyms';
 import {
-  BODYWEIGHT_LIMITS,
   DEFAULT_SETTINGS,
   SETTING_LIMITS,
-  clampBodyweightKg,
-  clampPlates,
   clampSetting,
   currentSettings,
   platesInForce,

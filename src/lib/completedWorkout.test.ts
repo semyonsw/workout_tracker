@@ -71,6 +71,24 @@ describe('buildCompletedWorkout', () => {
     expect(workout?.sets.every((s) => s.isCompleted)).toBe(true);
   });
 
+  it('gives an exercise added twice ONE line, holding every set of both cards', () => {
+    const logged = logFirstEntry(draft(), 2);
+    const [first] = logged.entries;
+    // The same movement again, as a second card with its own two ticked sets.
+    const again = {
+      ...first,
+      localId: 'entry_again',
+      sets: first.sets.map((s, i) => ({ ...s, localId: `again_${i}`, isCompleted: i < 2 })),
+    };
+    const session = { ...logged, entries: [...logged.entries, again] };
+
+    const workout = buildCompletedWorkout(session, new Date('2026-08-17T18:14:00.000Z'));
+    const lines = workout?.exercises.filter((e) => e.exerciseId === first.exercise.id) ?? [];
+    expect(lines).toHaveLength(1);
+    expect(lines[0].setCount).toBe(4);
+    expect(workout?.setCount).toBe(4);
+  });
+
   it('keeps the session id, so finishing twice cannot become two workouts', () => {
     const session = logFirstEntry(draft(), 1);
     expect(buildCompletedWorkout(session)?.id).toBe(session.localId);

@@ -61,7 +61,8 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
+import { Pressable } from '../components/Pressable';
 import { StatusBar } from 'expo-status-bar';
 
 import { Icon } from '../components/Icon';
@@ -108,7 +109,8 @@ function directions(t: Translate) {
 
 export function MoneyHistoryScreen({
   account,
-  day: openOn,
+  day,
+  onChangeDay,
   onBack,
   onOpenAmount,
 }: {
@@ -120,6 +122,14 @@ export function MoneyHistoryScreen({
    * and landing on today would be the screen forgetting where the user was.
    */
   day: string;
+  /**
+   * The day list moved. HELD BY THE SHELL, on this screen's route, and not in a
+   * `useState` here: a row opens the amount editor, which is a pushed route, and
+   * a pushed route replaces this screen — so coming back re-mounted it and
+   * re-seeded the day from the ⟲. You stepped to Tuesday, fixed a typo in
+   * Tuesday's taxi, and landed back on the day you opened with.
+   */
+  onChangeDay: (day: string) => void;
   onBack: () => void;
   /** A row of the day list, opened in the editor it was written in. */
   onOpenAmount: (amountId: ID) => void;
@@ -144,11 +154,11 @@ export function MoneyHistoryScreen({
 
   const today = dayKey(new Date());
   /*
-   * Which day the list below is reading. Its own state and not the chart's range:
-   * they answer different questions, and a day that moved when the range chips
-   * were touched would be the one control on this screen that did two things.
+   * Which day the list below is reading — the route's (see `onChangeDay`), and
+   * never the chart's range: they answer different questions, and a day that
+   * moved when the range chips were touched would be the one control on this
+   * screen that did two things.
    */
-  const [day, setDay] = useState(openOn);
   const dayRows = useMemo(() => amountsOnDay(amounts, day), [amounts, day]);
   const dayTotals = useMemo(
     () =>
@@ -166,8 +176,8 @@ export function MoneyHistoryScreen({
     [amounts, direction, lang, range, today],
   );
   const balanceLine = useMemo(
-    () => moneyBalanceSeries(amounts, range, today, lang),
-    [amounts, lang, range, today],
+    () => moneyBalanceSeries(amounts, range, today, lang, account.opening),
+    [account.opening, amounts, lang, range, today],
   );
   const trend = useMemo(() => summarizeMoneyTrend(series), [series]);
   const shares = useMemo(
@@ -205,7 +215,7 @@ export function MoneyHistoryScreen({
           <Pressable
             onPress={() => {
               tap();
-              setDay((current) => shiftDay(current, -1));
+              onChangeDay(shiftDay(day, -1));
             }}
             hitSlop={12}
             accessibilityRole="button"
@@ -221,7 +231,7 @@ export function MoneyHistoryScreen({
           <Pressable
             onPress={() => {
               tap();
-              setDay((current) => shiftDay(current, 1));
+              onChangeDay(shiftDay(day, 1));
             }}
             hitSlop={12}
             accessibilityRole="button"
@@ -269,7 +279,7 @@ export function MoneyHistoryScreen({
               label={t('Today')}
               onPress={() => {
                 tap();
-                setDay(today);
+                onChangeDay(today);
               }}
             />
           </View>

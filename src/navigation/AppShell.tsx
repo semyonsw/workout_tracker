@@ -109,6 +109,7 @@ import { useMoney } from '../state/moneyStore';
 import { useTasks } from '../state/tasksStore';
 import { dayKey } from '../lib/days';
 import { useLanguage, usePlural, useT } from '../hooks/useT';
+import { useToday } from '../hooks/useToday';
 import type { Direction, Interval } from '../lib/money';
 import { stepSection } from '../lib/sectionNav';
 import { seedUser } from '../data/seed';
@@ -236,7 +237,10 @@ export function AppShell() {
    * behaviour — leave the section, come back to today — is exactly preserved.
    */
   const [pinnedTaskDay, setPinnedTaskDay] = useState<string | null>(null);
-  const taskDay = pinnedTaskDay ?? dayKey(new Date());
+  /* STATE, not `dayKey(new Date())` inline: "follow the clock" only follows it
+     if something re-renders when the date turns. See `hooks/useToday.ts`. */
+  const today = useToday();
+  const taskDay = pinnedTaskDay ?? today;
   /**
    * What the expenses section is reading: the subsection, the window and the
    * direction.
@@ -260,6 +264,18 @@ export function AppShell() {
     (patch: Partial<MoneyWindow>) => setMoneyWindow((current) => ({ ...current, ...patch })),
     [],
   );
+  /*
+   * Past midnight, a window that was reading TODAY moves on to the new today.
+   * One that was walked somewhere else stays where it was put — the same line
+   * the tasks' pin draws, with "was on today" standing in for null.
+   */
+  const previousToday = useRef(today);
+  useEffect(() => {
+    const was = previousToday.current;
+    previousToday.current = today;
+    if (was === today) return;
+    setMoneyWindow((current) => (current.anchor === was ? { ...current, anchor: today } : current));
+  }, [today]);
   const [stack, setStack] = useState<Route[]>([]);
   const [query, setQuery] = useState('');
   /*
@@ -419,9 +435,20 @@ export function AppShell() {
       /* Same rule, same reason: the window is somewhere you walked to inside the
          section, not somewhere the app should still be standing next time it is
          opened. Pushing a screen — the history, a category, the keypad — is not
-         leaving, so the window survives the trip that needed it. */
-      if (tab === 'Expenses' && next !== 'Expenses') {
-        setMoneyWindow((current) => ({ ...current, anchor: dayKey(new Date()) }));
+         leaving, so the window survives the trip that needed it.
+
+         Re-seeded on the way IN, from the settings as they are NOW. It used to
+         reset only the anchor on the way out, so `Opens on: Week` changed in
+         Settings did nothing until the next launch — the one moment the shell
+         read it. */
+      if (next === 'Expenses' && tab !== 'Expenses') {
+        const settings = useSettings.getState();
+        setMoneyWindow((current) => ({
+          ...current,
+          anchor: dayKey(new Date()),
+          interval: settings.moneyDefaultInterval,
+          direction: settings.moneyDefaultDirection,
+        }));
       }
       setTab(next);
     },
@@ -953,6 +980,10 @@ export function AppShell() {
     if (!routine) return <Fallback onBack={pop} />;
     return (
       <RoutineEditorScreen
+        /* Keyed by the routine: `Duplicate` swaps the route to the copy with
+           `replaceTop`, and without a key React reused the editor — its draft name
+           and items still the ORIGINAL's, which the next Save wrote over the copy. */
+        key={routine.id}
         routine={routine}
         exercisesById={exercisesById}
         /* The whole library, for the die — see `RoutineEditorScreenProps`. */
@@ -1238,27 +1269,32 @@ export function AppShell() {
     const account = moneyAccounts.find((row) => row.id === top.accountId);
     if (!category || !account) return <Fallback onBack={pop} />;
     return (
-      <CategoryDetailScreen
-        category={category}
-        account={account}
-        interval={top.interval}
-        anchor={top.anchor}
-        onBack={pop}
-        onOpenAmount={(amountId) =>
-          push({ name: 'moneyAmount', amountId, categoryId: null, accountId: null })
-        }
-        /* The window this screen was opened with decides the day, exactly as the
-           tile that opened it does. */
-        onAddAmount={(day) =>
-          push({
-            name: 'moneyAmount',
-            amountId: null,
-            categoryId: category.id,
-            accountId: account.id,
-            day,
-          })
-        }
-      />
+      <View className="flex-1">
+        <CategoryDetailScreen
+          category={category}
+          account={account}
+          interval={top.interval}
+          anchor={top.anchor}
+          onBack={pop}
+          onOpenAmount={(amountId) =>
+            push({ name: 'moneyAmount', amountId, categoryId: null, accountId: null })
+          }
+          /* The window this screen was opened with decides the day, exactly as the
+             tile that opened it does. */
+          onAddAmount={(day) =>
+            push({
+              name: 'moneyAmount',
+              amountId: null,
+              categoryId: category.id,
+              accountId: account.id,
+              day,
+            })
+          }
+        />
+        {/* The keypad pops back HERE when it was opened from this screen, and the
+            toast the tab root renders is not on screen to say so. */}
+        {toast ? <Toast label={toast} /> : null}
+      </View>
     );
   }
 
@@ -1335,17 +1371,24 @@ export function AppShell() {
     const account = moneyAccounts.find((row) => row.id === top.accountId);
     if (!account) return <Fallback onBack={pop} />;
     return (
-      <MoneyHistoryScreen
-        account={account}
-        /* The day the money screen was reading when the ⟲ was tapped. */
-        day={top.day}
-        onBack={pop}
-        /* A row of the day list is an amount, and the editor is where an amount
-           is read and corrected — the same route the category screen pushes. */
-        onOpenAmount={(amountId) =>
-          push({ name: 'moneyAmount', amountId, categoryId: null, accountId: null })
-        }
-      />
+      <View className="flex-1">
+        <MoneyHistoryScreen
+          account={account}
+          /* The day the money screen was reading when the ⟲ was tapped. */
+          day={top.day}
+          /* On the route rather than in the screen, so a trip into the editor and
+             back returns to the day the list had stepped to. */
+          onChangeDay={(day) => replaceTop({ ...top, day })}
+          onBack={pop}
+          /* A row of the day list is an amount, and the editor is where an amount
+             is read and corrected — the same route the category screen pushes. */
+          onOpenAmount={(amountId) =>
+            push({ name: 'moneyAmount', amountId, categoryId: null, accountId: null })
+          }
+        />
+        {/* Same: an amount corrected from the day list lands back here. */}
+        {toast ? <Toast label={toast} /> : null}
+      </View>
     );
   }
 
@@ -1513,7 +1556,7 @@ function WorkoutHistory({
   const toolbar = (
     <View className="mt-md">
       <Segmented
-        options={VIEWS}
+        options={VIEWS.map((option) => ({ ...option, label: t(option.label) }))}
         value={view}
         onChange={setView}
         accessibilityLabel={t('Show the log or the graphs')}
@@ -1566,6 +1609,8 @@ function WorkoutHistory({
  * `Calendar` because three labels have to fit a 360 dp segmented control, and the
  * screen it opens says the word in full.
  */
+// English keys, translated where they are rendered: `Segmented` prints labels as
+// given, so these reached a Russian phone in English.
 const VIEWS = [
   { value: 'log' as const, label: 'Log' },
   { value: 'graphs' as const, label: 'Graphs' },

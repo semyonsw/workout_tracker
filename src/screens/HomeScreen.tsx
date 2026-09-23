@@ -434,8 +434,13 @@ function HeroStat({
 }
 
 /**
- * The sequence, as one scrollable line: `Push › Pull › Push › Boxing`, with the
+ * The sequence, as one wrapping line: `Push › Pull › Push › Boxing`, with the
  * step whose turn it is on a lit pane.
+ *
+ * WRAPPING and not a horizontal `ScrollView`, which it was: the section swipe
+ * (`components/SwipePager.tsx`) claims sideways drags on capture, so a sequence
+ * wider than the screen could not be scrolled at all — flicking it changed
+ * section. Same decision, same reason, as the money screen's subsection chips.
  *
  * A line rather than a calendar grid, because a sequence is an ORDER and not a
  * week: it advances when you train, not when Tuesday arrives. Tapping anywhere on
@@ -447,12 +452,7 @@ function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress:
   return (
     <View className="mt-lg">
       <Kicker className="mx-lg">{t('Sequence')}</Kicker>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, alignItems: 'center' }}
-        className="mt-md"
-      >
+      <View className="mx-lg mt-md flex-row flex-wrap items-center" style={{ rowGap: 8 }}>
         {sequence.steps.map((step, index) => (
           <BubblePressable
             key={step.key}
@@ -499,7 +499,7 @@ function SequenceStrip({ sequence, onPress }: { sequence: SequenceView; onPress:
             </View>
           </BubblePressable>
         ))}
-      </ScrollView>
+      </View>
     </View>
   );
 }

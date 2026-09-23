@@ -379,20 +379,31 @@ export const useMoney = create<MoneyState>()(
       /*
        * 2 — subsections. A stored value from 1 has no `accounts` and no
        * `accountId` anywhere; `sanitizeMoney` seeds the two and files every
-       * existing amount under Cash, so the bump is documentation rather than a
-       * migration function.
+       * existing amount under Cash, so the migration is the identity.
+       *
+       * It has to EXIST all the same. With a version bump and no `migrate`,
+       * zustand does not hand the old blob to `merge` at all — it logs "couldn't
+       * be migrated", merges `undefined`, and the next write saves an empty log
+       * over the one on disk. Every future bump needs one too.
        */
       version: 2,
+      migrate: (persisted) => persisted,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         accounts: state.accounts,
         categories: state.categories,
         amounts: state.amounts,
       }),
-      merge: (persisted, current) => ({
-        ...current,
-        ...sanitizeMoney(persisted as Partial<MoneyValue> | undefined),
-      }),
+      /*
+       * NOTHING STORED IS NOT AN EMPTY LOG. zustand calls `merge` on a first
+       * launch too, with `undefined`, and sanitising that produced no categories
+       * — a fresh install opened on an empty grid instead of the seeds `current`
+       * already holds.
+       */
+      merge: (persisted, current) =>
+        persisted == null
+          ? current
+          : { ...current, ...sanitizeMoney(persisted as Partial<MoneyValue>) },
     },
   ),
 );

@@ -153,6 +153,11 @@ describe('the running balance', () => {
     expect(points.at(-1)?.value).toBe(49600);
   });
 
+  it('starts from the balance the user set by hand, not from zero', () => {
+    const points = moneyBalanceSeries([], 'week', '2026-09-13', 'en', 50000);
+    expect(points.every((p) => p.value === 50000)).toBe(true);
+  });
+
   it('counts a whole-month amount a daily series cannot place into the opening figure', () => {
     const points = moneyBalanceSeries([month(2026, 8, 60000)], 'week', '2026-09-13');
     expect(points.every((p) => p.value === -60000)).toBe(true);

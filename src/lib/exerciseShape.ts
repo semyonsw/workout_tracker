@@ -38,10 +38,10 @@ export interface ShapeInput {
   /**
    * The target is `MAX` — as many as you can — so there is no number to set.
    *
-   * It subtracts from the shape for the same reason a ladder does and with the
-   * opposite argument: a ladder DERIVES every rep, a max REFUSES to name one, and
-   * either way a well asking for a rep target is a second answer to a question
-   * that already has one. See `lib/maxReps.ts`.
+   * It does NOT subtract a well, unlike the ladder: the rep well stays and READS
+   * `MAX`, because `MAX` is one of the values the rep number can take and the
+   * well is where the user goes to change it. It renames the kicker. See
+   * `maxOwnsReps` and `lib/maxReps.ts`.
    */
   countToMax?: boolean;
 }
@@ -51,7 +51,14 @@ function ladderOwnsReps(exercise: ShapeInput): boolean {
   return exercise.ladderOn === true && exercise.countUnit === 'reps';
 }
 
-/** Reps, and `MAX` in place of a target for them. */
+/**
+ * Reps, and `MAX` in place of a target for them.
+ *
+ * Unlike a ladder this does NOT remove the rep well: the well stays and reads
+ * `MAX`, because the well is where the user goes to change the rep number and
+ * `MAX` is one of the values that number can take. Removing it meant the switch
+ * lived three sections further down and the rep target silently vanished.
+ */
 function maxOwnsReps(exercise: ShapeInput): boolean {
   return countsToMax(exercise);
 }
@@ -145,7 +152,7 @@ export function wellsFor(exercise: ShapeInput, lang: Language = 'en'): WellSpec[
   // target to well — the max's own ± is the control. An unweighted laddered
   // exercise therefore has no wells at all, which is correct: one number, and it is
   // in the ladder card.
-  if (ladderOwnsReps(exercise) || maxOwnsReps(exercise)) {
+  if (ladderOwnsReps(exercise)) {
     return exercise.requiresWeight
       ? [{ label: t('default {unit}', lang, { unit: kg }), field: 'weight', unit: kg }]
       : [];

@@ -42,7 +42,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, Text, View } from 'react-native';
+import { Animated, Easing, Text, View } from 'react-native';
+import { Pressable } from './Pressable';
 
 import type { DraftSet } from '../lib/draft';
 import type { FocusPlan } from '../lib/focusPlan';

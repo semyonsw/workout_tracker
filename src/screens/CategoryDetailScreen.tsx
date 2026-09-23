@@ -42,7 +42,8 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable } from '../components/Pressable';
 import { StatusBar } from 'expo-status-bar';
 
 import { ConfirmSheet } from '../components/ConfirmSheet';
@@ -71,6 +72,7 @@ import {
   formatMoney,
 } from '../lib/money';
 import { dayKey } from '../lib/days';
+import { lastGlyph } from '../lib/glyph';
 import { useMoney } from '../state/moneyStore';
 import { useLanguage, useT } from '../hooks/useT';
 import { useSettings } from '../state/settingsStore';
@@ -108,6 +110,26 @@ export function CategoryDetailScreen({
   const currency = useSettings((s) => s.currencyCode);
 
   const [archiving, setArchiving] = useState(false);
+  /*
+   * The name is a LOCAL DRAFT, committed on blur and on the way out.
+   *
+   * It was fed straight from the store, which trims and refuses an empty name —
+   * correctly, for a stored value, and fatally for one being typed: the space in
+   * "Eating out" was trimmed off under the cursor, so it came out "Eatingout",
+   * and clearing the field to retype it snapped the old name back. Same fix and
+   * same reason as the currency field in `MoneySettingsScreen`.
+   */
+  const [nameDraft, setNameDraft] = useState(category.name);
+  const commitName = () => {
+    if (nameDraft.trim() === '') setNameDraft(category.name);
+    else updateCategory(category.id, { name: nameDraft });
+  };
+  // Back commits too: leaving with the keyboard up unmounts the field before its
+  // blur can run.
+  const leave = () => {
+    commitName();
+    onBack();
+  };
 
   const rows = useMemo(
     () => amountsIn(inAccount(amounts, account.id), category.id, interval, anchor),
@@ -121,7 +143,7 @@ export function CategoryDetailScreen({
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker={t('Expenses')} onBack={onBack} bordered={false} />
+      <ScreenHeader kicker={t('Expenses')} onBack={leave} bordered={false} />
 
       <ScrollView
         className="flex-1"
@@ -140,9 +162,7 @@ export function CategoryDetailScreen({
           <View className="h-row w-row items-center justify-center rounded-surface border border-hairline bg-surface-alt">
             <TextInput
               value={category.glyph}
-              onChangeText={(text) =>
-                updateCategory(category.id, { glyph: [...text].slice(-1).join('') })
-              }
+              onChangeText={(text) => updateCategory(category.id, { glyph: lastGlyph(text) })}
               cursorColor={palette.greenBright}
               selectionColor={palette.greenBright}
               accessibilityLabel={t('Category glyph')}
@@ -151,9 +171,10 @@ export function CategoryDetailScreen({
           </View>
           <View className="ml-md flex-1">
             <FieldWell
-              value={category.name}
+              value={nameDraft}
               size="body"
-              onChangeText={(name) => updateCategory(category.id, { name })}
+              onChangeText={setNameDraft}
+              onBlur={commitName}
               accessibilityLabel={t('Category name')}
             />
           </View>

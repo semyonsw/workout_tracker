@@ -41,6 +41,7 @@
  * is the corrupt one".
  */
 
+import { dayKey, daysBetween } from './days';
 import { plural, t, type Language } from './i18n';
 
 /** ISO-8601 instants, as everywhere else in the app. */
@@ -59,8 +60,6 @@ export const AUTO_BACKUP_KEEP = 4;
 /** The cadence range. */
 export const AUTO_BACKUP_INTERVAL_LIMITS = { min: 1, max: 30, step: 1 } as const;
 
-const MS_PER_DAY = 86_400_000;
-
 /** A finite, positive instant, or null. */
 function instant(at: ISOInstant | null | undefined): number | null {
   if (typeof at !== 'string' || at.trim() === '') return null;
@@ -68,14 +67,22 @@ function instant(at: ISOInstant | null | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** Whole days between two instants, floored. Negative clock skew reads as 0. */
+/**
+ * CALENDAR days between two instants, on the phone's own clock. Negative clock
+ * skew reads as 0.
+ *
+ * It used to floor elapsed 24-hour periods, which is a different question: a
+ * backup from 23:00 read `Today` at 08:00 the next morning, and a one-day
+ * interval stamped at 20:00 was not due on a morning launch — so the app opened
+ * every training day and wrote nothing until the evening.
+ */
 export function daysSince(
   at: ISOInstant | null | undefined,
   now: Date = new Date(),
 ): number | null {
   const then = instant(at);
   if (then == null) return null;
-  return Math.max(0, Math.floor((now.getTime() - then) / MS_PER_DAY));
+  return Math.max(0, daysBetween(dayKey(new Date(then)), dayKey(now)));
 }
 
 export interface AutoBackupState {

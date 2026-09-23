@@ -143,8 +143,20 @@ export function weekdayOf(key: string): Weekday | null {
   return weekdayIndex(date) as Weekday;
 }
 
-/** Did this task ask for anything on this day? Before `startedOn`, nothing ever did. */
+/**
+ * Did this task ask for anything on this day? Before `startedOn`, nothing ever did
+ * — and from the day it was ARCHIVED, nothing does.
+ *
+ * That second floor was missing, and `tasksOn` hid the row while `dayProgress`
+ * still counted it: archive one task, tick the other eight, and the ring stopped
+ * at 8/9 on a day that could now never close. The days before the archive keep
+ * asking, which is what "archived tasks keep their history" means.
+ */
 export function asksOn(task: Task, day: string): boolean {
+  if (task.archivedAt !== null) {
+    const archived = new Date(task.archivedAt);
+    if (!Number.isNaN(archived.getTime()) && day >= dayKey(archived)) return false;
+  }
   // A one-day task is its own floor and its own ceiling, so it is answered
   // before `startedOn` is consulted — see the note on `TaskSchedule`.
   if (task.schedule.kind === 'once') return day === task.schedule.day;

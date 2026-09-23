@@ -145,6 +145,7 @@ import {
 import { REST_LIMITS } from '../lib/rest';
 import { describeSetInputs, wellsFor, type WellSpec } from '../lib/exerciseShape';
 import { tap } from '../lib/feedback';
+import { countsToMax, maxLabel } from '../lib/maxReps';
 import {
   describeLadder,
   ladderTargets,
@@ -428,17 +429,11 @@ export function CreateExerciseScreen({
         <Kicker tone="green" className="mx-lg mb-sm mt-xl">
           {t('Set inputs')} · {describeSetInputs(draft, lang)}
         </Kicker>
-        {/* A bodyweight movement with no rep target has NO wells, and the line in
-            their place says WHY — which is a different sentence for each of the
-            two reasons: a ladder derives every set from its max, and a `MAX`
-            target refuses to name one at all. */}
+        {/* A bodyweight ladder has NO wells, and the line in their place says why:
+            the max derives every set. (`MAX` keeps its well — it reads `MAX`.) */}
         {wells.length === 0 ? (
           <Text className="mx-lg text-label text-ink-faint">
-            {draft.countToMax
-              ? t('No number to set — every set of this exercise is as many as you can.')
-              : t(
-                  'The ladder’s max is the only number this exercise needs — it derives every set.',
-                )}
+            {t('The ladder’s max is the only number this exercise needs — it derives every set.')}
           </Text>
         ) : (
           <View className="mx-lg flex-row">
@@ -446,8 +441,8 @@ export function CreateExerciseScreen({
               <View key={well.label} className={index > 0 ? 'ml-sm flex-1' : 'flex-1'}>
                 <NumericWell
                   label={well.label}
-                  value={wellValue(draft, well.field)}
-                  unit={well.unit}
+                  value={wellValue(draft, well.field, lang)}
+                  unit={wellShowsMax(draft, well.field) ? undefined : well.unit}
                   selected={editing === well.field}
                   onPress={() => {
                     tap();
@@ -694,8 +689,12 @@ function WellStepper({
   onClose: () => void;
 }) {
   const t = useT();
+  const lang = useLanguage();
   const { small, large, min, isTime } = stepsFor(well.field, draft);
   const deltas = [-large, -small, small, large];
+  /* The rep well of a rep-counted exercise can BE `MAX` — see `MaxChip`. */
+  const offersMax = well.field === 'count' && supportsLadder(draft.countUnit);
+  const showsMax = wellShowsMax(draft, well.field);
 
   const bump = (delta: number) => {
     tap();
@@ -720,6 +719,20 @@ function WellStepper({
       onChange({ durationSeconds: Math.max(min, draft.durationSeconds + delta) });
       return;
     }
+    /*
+     * A ± on `MAX` hands back a number — the target the draft had before `MAX`
+     * went on, moved by the step — so leaving `MAX` is the same gesture as
+     * changing any number. And stepping BELOW the floor is the way in: `1`, `−1`,
+     * `MAX`, which is where "fewer than one rep" honestly points.
+     */
+    if (showsMax) {
+      onChange({ countToMax: false, targetCount: Math.max(min, draft.targetCount + delta) });
+      return;
+    }
+    if (offersMax && draft.targetCount + delta < min) {
+      onChange(toggleMaxReps(draft, true));
+      return;
+    }
     onChange({ targetCount: Math.max(min, draft.targetCount + delta) });
   };
 
@@ -741,9 +754,9 @@ function WellStepper({
 
         <View className="mx-xs flex-row items-baseline">
           <Text className="text-display font-semibold tabular-nums text-ink">
-            {wellValue(draft, well.field)}
+            {wellValue(draft, well.field, lang)}
           </Text>
-          {well.unit ? (
+          {well.unit && !showsMax ? (
             <Text className="ml-xs text-micro font-semibold uppercase text-ink-faint">
               {well.unit}
             </Text>
@@ -766,6 +779,15 @@ function WellStepper({
 
       <View className="mt-md flex-row items-center justify-between">
         <Kicker>{well.label}</Kicker>
+        {offersMax ? (
+          <MaxChip
+            on={showsMax}
+            onPress={() => {
+              tap();
+              onChange(toggleMaxReps(draft, !showsMax));
+            }}
+          />
+        ) : null}
         <Pressable
           onPress={onClose}
           hitSlop={8}
@@ -861,8 +883,7 @@ function MaxRepsSection({
  *
  * THE PREVIEW IS THE POINT. A max on its own is an abstraction; `16 + 10 + 8 + 8 +
  * 6 · 48 reps` is the session, and it moves as the thumb moves. It previews at
- * FIVE sets because five is the scheme (see `LADDER_SETS`) — the routine decides
- * how many sets it actually plans, and the ladder shapes whatever it asks for.
+ * the draft's own set count — the ladder shapes whatever it is asked for.
  */
 function LadderSection({
   draft,
@@ -875,9 +896,9 @@ function LadderSection({
   const lang = useLanguage();
   const ladder = { max: draft.ladderMax, earned: draft.ladderEarned };
   /*
-   * Previewed at THIS exercise's set count, not at the scheme's five. The two are
-   * the same number for a ladder switched on here (`toggleLadder` asks for five),
-   * and where the user has changed it the preview has to follow — a card promising
+   * Previewed at THIS exercise's set count, not at the scheme's five. Switching
+   * the ladder on keeps whatever count the draft had (`toggleLadder`), and the
+   * preview has to follow it — a card promising
    * `16 + 10 + 8 + 8 + 6` above a `Sets 3` row is one of the two lying.
    */
   const sets = draft.targetSets;
@@ -1092,8 +1113,41 @@ function nextPrepare(current: number): number {
   return PREPARE_CHOICES[(index + 1) % PREPARE_CHOICES.length];
 }
 
-function wellValue(draft: ExerciseDraft, field: WellSpec['field']): string {
+function wellValue(draft: ExerciseDraft, field: WellSpec['field'], lang: Language): string {
   if (field === 'weight') return String(draft.defaultWeightKg);
   if (field === 'duration') return formatClock(draft.durationSeconds);
+  if (wellShowsMax(draft, field)) return maxLabel(lang).toUpperCase();
   return String(draft.targetCount);
+}
+
+/** Is this well the rep target, and is that target `MAX`? */
+function wellShowsMax(draft: ExerciseDraft, field: WellSpec['field']): boolean {
+  return field === 'count' && countsToMax(draft);
+}
+
+/**
+ * `MAX` as a value of the rep number, beside `Done` under the stepper.
+ *
+ * The switch further down says the same thing and explains it; this is where
+ * the thumb already is when it is changing the rep target, which is the moment
+ * somebody decides "no target — as many as I can".
+ */
+function MaxChip({ on, onPress }: { on: boolean; onPress: () => void }) {
+  const t = useT();
+  const lang = useLanguage();
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityState={{ selected: on }}
+      accessibilityLabel={t('Reps to MAX')}
+      className={[
+        'h-hit min-w-[64px] items-center justify-center rounded-pill border px-md',
+        on ? 'border-green bg-green' : 'border-hairline bg-surface-alt',
+      ].join(' ')}
+    >
+      <Text className="text-label font-semibold text-ink">{maxLabel(lang).toUpperCase()}</Text>
+    </Pressable>
+  );
 }

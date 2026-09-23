@@ -44,7 +44,8 @@
  * thing to press.
  */
 
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { Pressable } from '../components/Pressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { commit } from '../lib/feedback';

@@ -382,12 +382,11 @@ describe('the rest an entry is built with', () => {
 });
 
 describe('defaultTargetSets', () => {
-  it('is four sets of reps, twelve rounds, three holds and one distance', () => {
-    // Per unit, because "four" means different things: four sets of reps, twelve
-    // rounds on a bag, three holds of a plank, one swim.
+  it('is four sets, except twelve rounds and one distance', () => {
+    // Per unit only where a set is not a set: twelve rounds on a bag, one swim.
     expect(defaultTargetSets({ countUnit: 'reps' })).toBe(4);
     expect(defaultTargetSets({ countUnit: 'rounds' })).toBe(12);
-    expect(defaultTargetSets({ countUnit: 'seconds' })).toBe(3);
+    expect(defaultTargetSets({ countUnit: 'seconds' })).toBe(4);
     expect(defaultTargetSets({ countUnit: 'meters' })).toBe(1);
   });
 });
@@ -501,10 +500,10 @@ describe('a ladder in a draft session', () => {
     expect(session.entries[0].sets.map((s) => s.count)).toEqual([120, 120, 120]);
   });
 
-  it('plans five sets by default, because five is the scheme', () => {
-    expect(defaultTargetSets({ countUnit: 'reps', ladder: { max: 16, earned: 0 } })).toBe(5);
+  it('plans the same four sets as any new exercise', () => {
+    expect(defaultTargetSets({ countUnit: 'reps', ladder: { max: 16, earned: 0 } })).toBe(4);
     // ...and a ladder that cannot run does not change the answer.
-    expect(defaultTargetSets({ countUnit: 'seconds', ladder: { max: 16, earned: 0 } })).toBe(3);
+    expect(defaultTargetSets({ countUnit: 'seconds', ladder: { max: 16, earned: 0 } })).toBe(4);
   });
 });
 

@@ -48,7 +48,7 @@ No computer setup needed at all:
 5. On Samsung, also set **Battery → Unrestricted** and keep the app out of
    **Sleeping apps**, or its alarms get dropped.
 
-Minimum Android 24 (7.0). Full detail: **[BUILD_ANDROID.md](BUILD_ANDROID.md)**.
+Minimum Android 8.0 (API 26) — Health Connect needs it. Full detail: **[BUILD_ANDROID.md](BUILD_ANDROID.md)**.
 
 ---
 

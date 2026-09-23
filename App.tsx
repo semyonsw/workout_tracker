@@ -62,7 +62,9 @@ import { prepareAudio } from './src/lib/beeper';
 import { ensureTimerChannels, requestNotificationPermission } from './src/lib/notify';
 import { migrateHistoryIfNeeded, useWorkoutHistory } from './src/state/workoutHistoryStore';
 import { useAutoBackup } from './src/hooks/useAutoBackup';
+import { useAutoRounds } from './src/hooks/useAutoRounds';
 import { useReminders } from './src/hooks/useReminders';
+import { useTimerAlerts } from './src/hooks/useTimerAlerts';
 
 /*
  * Timer alerts — rest ending, and the bell on a timed hold.
@@ -193,5 +195,27 @@ function Root() {
   // `chosen` is still read live, for the one transition that has to be instant:
   // the tap on the picker itself.
   if (asking && !chosen) return <LanguageChoiceScreen />;
-  return <AppShell />;
+  return (
+    <>
+      <SessionClock />
+      <AppShell />
+    </>
+  );
+}
+
+/**
+ * The parts of a running workout that must not depend on which screen is up.
+ *
+ * The shell renders only the top of its stack, so anything mounted inside the
+ * session screen stops the moment `Add an exercise` is pushed over it or the user
+ * backs out to Home mid-rest. Two things cannot afford that: the pocket alarms
+ * (`useTimerAlerts`) and the boxing round chain (`useAutoRounds`) — both read the
+ * store and the clock and nothing on screen. A sibling rendering nothing rather
+ * than hooks inside `AppShell`, so a rest starting re-renders this and not the
+ * whole app.
+ */
+function SessionClock() {
+  useTimerAlerts();
+  useAutoRounds();
+  return null;
 }

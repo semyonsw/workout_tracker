@@ -14,7 +14,8 @@
  *     don't travel and a notification arrives too late to get set.
  *  3. IT MUST STILL REACH A PHONE IN A POCKET — a local notification is scheduled
  *     for the deadline the moment rest starts, and cancelled if rest is skipped,
- *     paused or adjusted.
+ *     paused or adjusted. NOT HERE: `hooks/useTimerAlerts.ts`, mounted once in the
+ *     shell, because this hook unmounts whenever the session screen does.
  *  4. IT MUST NOT WAKE THE PHONE FOR NOTHING — the interval only exists while a
  *     timer is actually running (a paused timer has no interval at all), and ticks
  *     at 250 ms rather than every frame: the display shows whole seconds.
@@ -41,15 +42,13 @@
  * one it is showing, so the two can't be confused.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 import { tap, undo } from '../lib/feedback';
-import { cancelTimerAlerts, scheduleTimerAlertPair } from '../lib/notify';
 import { useActiveWorkout, type RestSource } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
-import { useLanguage, useT } from './useT';
 import { setRestBetweenExercises, setRestBetweenSets } from '../state/restSync';
 import { useCountdownBeeps } from './useCountdownBeeps';
 
@@ -93,9 +92,6 @@ export function useRestTimer(): RestTimerApi {
 
   const stepSeconds = useSettings((s) => s.adjustStepSeconds);
   const keepAwakeEnabled = useSettings((s) => s.keepAwakeEnabled);
-  const notifyOnTimerEnd = useSettings((s) => s.notifyOnTimerEnd);
-  const t = useT();
-  const lang = useLanguage();
 
   const isPaused = rest.pausedRemainingMs != null;
 
@@ -116,8 +112,6 @@ export function useRestTimer(): RestTimerApi {
     left: remainingSeconds(rest.endsAt),
   }));
   const ticked = clock.forEndsAt === rest.endsAt ? clock.left : remainingSeconds(rest.endsAt);
-  /** The scheduled alerts for the current deadline: the tick and the tone. */
-  const notificationIds = useRef<string[]>([]);
 
   /*
    * While paused the frozen remainder IS the clock — deriving from `endsAt` would
@@ -177,49 +171,6 @@ export function useRestTimer(): RestTimerApi {
     const sub = AppState.addEventListener('change', onChange);
     return () => sub.remove();
   }, [rest.endsAt]);
-
-  /* --- the cue for a phone in a pocket -------------------------------- */
-  /*
-   * Two alerts, not one: a tick five seconds out and the tone at zero. This is the
-   * ONLY cue that reaches the user when the app is not on screen — a JS interval
-   * playing a WAV does not survive Doze, a restricted battery setting or a
-   * swipe-away, while a scheduled alarm does. See `lib/notify.ts`.
-   */
-  useEffect(() => {
-    let cancelled = false;
-
-    // Any change of deadline — including a pause, which clears it — invalidates
-    // the pending alerts.
-    const clearPending = async () => {
-      const ids = notificationIds.current;
-      notificationIds.current = [];
-      await cancelTimerAlerts(ids);
-    };
-
-    void (async () => {
-      await clearPending();
-      if (!rest.endsAt || !notifyOnTimerEnd) return;
-
-      const ids = await scheduleTimerAlertPair({
-        at: rest.endsAt,
-        getSetTitle: t('Get set'),
-        getSetBody: t('Rest ends in 5 seconds.'),
-        goTitle: t('Rest over'),
-        goBody: t('Next set.'),
-        lang,
-      });
-      if (cancelled) {
-        await cancelTimerAlerts(ids);
-        return;
-      }
-      notificationIds.current = ids;
-    })();
-
-    return () => {
-      cancelled = true;
-      void clearPending();
-    };
-  }, [lang, notifyOnTimerEnd, rest.endsAt, t]);
 
   /* --- keep the screen on while resting ------------------------------ */
   useEffect(() => {

@@ -1,7 +1,7 @@
 # Workout Tracker
 
 [![Install](https://img.shields.io/badge/install-one%20double--click-2b8a3e)](INSTALL.md)
-[![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-3ddc84)](INSTALL.md)
+[![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-3ddc84)](INSTALL.md)
 [![Stack](https://img.shields.io/badge/stack-Expo%2054%20%C2%B7%20RN%200.81%20%C2%B7%20TS-000020)](#what-it-does)
 [![Tests](https://img.shields.io/badge/tests-700%2B-1f9d55)](#tests)
 [![Storage](https://img.shields.io/badge/storage-local--first-0b7285)](#what-it-does)

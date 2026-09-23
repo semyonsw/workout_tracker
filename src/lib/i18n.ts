@@ -163,6 +163,11 @@ const RU: Record<string, string> = {
   'Back to the workout': 'Вернуться к тренировке',
   Sequence: 'Последовательность',
   Today: 'Сегодня',
+  // The training history's three views. `Cal` is the English label's short form;
+  // Russian has room for the word.
+  Log: 'Журнал',
+  Graphs: 'Графики',
+  Cal: 'Календарь',
   'Other routines': 'Другие программы',
   'Start a workout': 'Начать тренировку',
   Recent: 'Недавние',

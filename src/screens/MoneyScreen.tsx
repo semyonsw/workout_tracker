@@ -90,7 +90,8 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
+import { Pressable } from '../components/Pressable';
 import { StatusBar } from 'expo-status-bar';
 
 import { BalanceSheet } from '../components/BalanceSheet';

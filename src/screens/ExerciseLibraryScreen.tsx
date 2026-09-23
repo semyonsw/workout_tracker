@@ -55,7 +55,8 @@
  */
 
 import { useMemo } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
+import { Pressable } from '../components/Pressable';
 
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Icon } from '../components/Icon';

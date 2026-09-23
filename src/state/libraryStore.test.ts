@@ -263,7 +263,7 @@ describe('appendToRoutine', () => {
    * editable in the routine editor afterwards, which is what makes it a starting
    * point again.
    */
-  it('starts a hold at three sets, not four — nobody plans four two-minute planks', () => {
+  it('starts a hold at the same four sets as any new exercise', () => {
     const routineId = seedRoutines[0].id;
     const timed = seedExercises.find((e) => e.countUnit === 'seconds');
     if (!timed) throw new Error('no time-counted exercise in the fixtures');
@@ -271,7 +271,7 @@ describe('appendToRoutine', () => {
     useLibrary.getState().appendToRoutine(routineId, timed.id);
     const items = useLibrary.getState().routines.find((r) => r.id === routineId)?.items ?? [];
 
-    expect(items[items.length - 1].targetSets).toBe(3);
+    expect(items[items.length - 1].targetSets).toBe(4);
   });
 
   it('starts a distance at one set — a distance is done once', () => {
@@ -443,6 +443,18 @@ describe('the training sequence', () => {
     useLibrary.getState().removeSequenceStep(0);
 
     // `c` was next up before and is still next up after.
+    expect(routineIds()).toEqual([b.id, c.id]);
+    expect(seq().cursor).toBe(1);
+  });
+
+  it('keeps the cursor on the same step when a routine above it is deleted', () => {
+    const [a, b, c] = useLibrary.getState().routines;
+    for (const id of [a.id, b.id, a.id, c.id]) useLibrary.getState().addSequenceStep(id);
+    useLibrary.getState().setSequenceCursor(3);
+
+    // Both of `a`'s steps sit above the cursor, so `c` must still be next.
+    useLibrary.getState().deleteRoutine(a.id);
+
     expect(routineIds()).toEqual([b.id, c.id]);
     expect(seq().cursor).toBe(1);
   });

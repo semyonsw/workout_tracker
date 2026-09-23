@@ -23,8 +23,9 @@
  * set up last week, and every one of them would read as a day you let go by.
  *
  * Rehydration is TOTAL and it replaces rather than merges, like `libraryStore`:
- * a first launch has nothing persisted, so `merge` is not called and the seeds
- * stand; every launch after that is the user's list, seeds included or deleted.
+ * a first launch has nothing persisted, so the seeds stand — `merge` IS called
+ * then, with `undefined`, and says so explicitly; every launch after that is the
+ * user's list, seeds included or deleted.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -400,10 +401,11 @@ export const useTasks = create<TasksState>()(
       migrate: renameSeedTasks,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({ tasks: state.tasks, log: state.log }),
-      merge: (persisted, current) => ({
-        ...current,
-        ...sanitizeTasks(persisted as Partial<TasksValue> | undefined),
-      }),
+      // `undefined` on a first launch: keep the seeds rather than sanitise nothing.
+      merge: (persisted, current) =>
+        persisted == null
+          ? current
+          : { ...current, ...sanitizeTasks(persisted as Partial<TasksValue>) },
     },
   ),
 );

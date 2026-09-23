@@ -86,7 +86,9 @@ import type { CountUnit, Exercise, ID, RepLadder } from '../types/models';
 export const LADDER_MAX_LIMITS = { min: 1, max: 100 } as const;
 
 /**
- * The set count the scheme is written for, and what a new ladder plans.
+ * The set count the scheme is written for — what the previews and the history
+ * screen describe it at. NOT what a new exercise plans: that is `DEFAULT_SETS`
+ * in `lib/draft.ts`, for a ladder as for anything else.
  *
  * Five is not a preference — every published version of this table is five sets,
  * and five is what makes the total come out at three times the max. Any other

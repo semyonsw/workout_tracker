@@ -35,7 +35,25 @@ import { useEffect } from 'react';
 import { autoBackupBaseName, shouldBackUpNow } from '../lib/autoBackup';
 import { deleteFile, writeToFolder } from '../lib/backupFile';
 import { exportBackupText } from '../state/dataTransfer';
+import { useLibrary } from '../state/libraryStore';
+import { useMoney } from '../state/moneyStore';
 import { useSettings } from '../state/settingsStore';
+import { useTasks } from '../state/tasksStore';
+
+/**
+ * Have the AsyncStorage stores finished reading from disk?
+ *
+ * The delay below is the expectation and this is the check. A backup written
+ * before hydration is a file of seeds and empties that then gets stamped as the
+ * newest copy and rotates the oldest good one out — so a slow launch skips the
+ * write (and the stamp) rather than risk it. History is not in the list: it is
+ * read synchronously from SQLite before the first render.
+ */
+function storesHydrated(): boolean {
+  return [useSettings, useLibrary, useTasks, useMoney].every((store) =>
+    store.persist.hasHydrated(),
+  );
+}
 
 /**
  * How long after launch to consider writing, in ms.
@@ -72,6 +90,7 @@ export async function runBackupNow(force = false): Promise<{ wrote: boolean; nam
     intervalDays: settings.autoBackupIntervalDays,
   });
   if (!force && !due) return { wrote: false };
+  if (!storesHydrated()) return { wrote: false };
 
   try {
     const text = exportBackupText();

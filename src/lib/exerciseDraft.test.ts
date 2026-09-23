@@ -13,7 +13,6 @@ import {
 } from './exerciseDraft';
 import { defaultTargetSets } from './draft';
 import { REST_LIMITS } from './rest';
-import { LADDER_SETS } from './repLadder';
 import { TARGET_SETS_LIMITS } from './routinePlan';
 import type { Exercise } from '../types/models';
 
@@ -408,9 +407,15 @@ describe('the max is the only rep number', () => {
     expect(draftToExercise(off, 'ex_x', 'u1').defaultCount).toBe(16);
   });
 
-  it('asks for the scheme’s five sets when switched on', () => {
+  it('keeps the set count the user already has when switched on', () => {
     const on = toggleLadder(emptyExerciseDraft('Pull-ups'), true);
-    expect(on.targetSets).toBe(LADDER_SETS);
+    expect(on.targetSets).toBe(4);
+    const six = toggleLadder({ ...emptyExerciseDraft('Pull-ups'), targetSets: 6 }, true);
+    expect(six.targetSets).toBe(6);
+  });
+
+  it('starts a new exercise at four sets even when every exercise is a ladder', () => {
+    expect(emptyExerciseDraft('Pull-ups', undefined, 120, true).targetSets).toBe(4);
   });
 
   it('leaves a hold alone — its duration is not a rep target', () => {

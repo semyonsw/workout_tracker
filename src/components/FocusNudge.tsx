@@ -25,7 +25,8 @@
  * where a thumb finds them without looking.
  */
 
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { Pressable } from './Pressable';
 
 import type { DraftSet } from '../lib/draft';
 import { useLanguage } from '../hooks/useT';

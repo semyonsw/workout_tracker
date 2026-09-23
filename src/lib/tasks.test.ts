@@ -160,6 +160,20 @@ describe('the day', () => {
     expect(dayProgress(tasks, marks, '2026-09-13')).toEqual({ done: 1, total: 2, fraction: 0.5 });
   });
 
+  /*
+   * The list hid an archived row and the ring still counted it, so the day could
+   * never close. It stops asking from the day it was archived; before that, it is
+   * history and keeps counting.
+   */
+  it('stops counting an archived task from the day it was archived', () => {
+    const archived = task({ id: 'b', order: 1, archivedAt: '2026-09-13T09:00:00' });
+    const tasks = [task({ id: 'a', order: 0 }), archived];
+    const marks: TaskLog = { a: { '2026-09-13': { mark: 'done', note: '' } } };
+    expect(dayProgress(tasks, marks, '2026-09-13')).toEqual({ done: 1, total: 1, fraction: 1 });
+    expect(dayProgress(tasks, marks, '2026-09-14').total).toBe(1);
+    expect(asksOn(archived, '2026-09-12')).toBe(true);
+  });
+
   it('reads full on a day that asked for nothing', () => {
     expect(dayProgress([], {}, '2026-09-13').fraction).toBe(1);
   });

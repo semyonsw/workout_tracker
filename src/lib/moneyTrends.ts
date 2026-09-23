@@ -190,12 +190,18 @@ export function moneyTrendSeries(
  * bucket, which means a weekly balance line steps at the start of the month it
  * covers rather than on rent day. That is the same honest limitation the daily
  * series has, for the same reason.
+ *
+ * `openingBalance` is the subsection's own `opening` — what the user said they
+ * had when they last set the figure by hand. Without it the line was the sum of
+ * the log alone, so a Cash set to 50,000 with nothing logged drew a flat zero
+ * under a hero reading 50,000.
  */
 export function moneyBalanceSeries(
   amounts: readonly Amount[],
   range: TrendRange,
   today: string,
   lang: Language = 'en',
+  openingBalance = 0,
 ): MoneyTrendPoint[] {
   const from = moneyRangeStart(amounts, range, today);
   const byMonth = bucketOf(range) === 'month';
@@ -203,7 +209,7 @@ export function moneyBalanceSeries(
   const index = new Map(buckets.map((bucket) => [bucket.key, bucket]));
   const keys = new Set(buckets.map((bucket) => bucket.key));
 
-  let opening = 0;
+  let opening = Number.isFinite(openingBalance) ? openingBalance : 0;
   for (const amount of amounts) {
     /*
      * A day in the FUTURE — the editor's stepper has no ceiling, and dating next

@@ -150,7 +150,17 @@ export function buildCompletedWorkout(
   const volume = sessionVolume(session, bodyweightKg);
 
   const exercises: CompletedExercise[] = [];
+  /*
+   * ONE LINE PER EXERCISE, however many cards it had. The picker lets the same
+   * movement be added twice in a session, and `rows` below is every working row
+   * for the exercise — so each card used to get a line holding ALL of them: two
+   * identical rows in the log, the set count doubled, and a duplicate React key
+   * that opened both when either was tapped. The first card's place in the order
+   * is the line's place.
+   */
+  const listed = new Set<string>();
   for (const entry of session.entries) {
+    if (listed.has(entry.exercise.id)) continue;
     // Same rule as `draftToSetHistory`: only what actually happened.
     const done = entry.sets.filter((s) => s.isCompleted);
     if (done.length === 0) continue;
@@ -161,6 +171,7 @@ export function buildCompletedWorkout(
     if (rows.length === 0) continue;
     const { lead, drops, topWeightKg } = summarizeSessionSets(rows, entry.exercise, lang);
 
+    listed.add(entry.exercise.id);
     exercises.push({
       exerciseId: entry.exercise.id,
       name: entry.exercise.name,

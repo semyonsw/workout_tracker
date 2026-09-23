@@ -55,8 +55,8 @@ export function ConfirmSheet({
   const t = useT();
   const insets = useSafeAreaInsets();
   // The nav pill is a sibling of the whole section and would paint over this.
-  // See `components/overlay.ts`.
-  useIsOverlay();
+  // See `components/overlay.ts`. Back is `Keep` — never the destructive answer.
+  useIsOverlay(onCancel);
   const keep = cancelLabel ?? t('Cancel');
 
   /* Scrim fades in; the sheet fades and rises the last 24dp under it — the same

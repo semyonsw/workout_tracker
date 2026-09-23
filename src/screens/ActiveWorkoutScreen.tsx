@@ -118,10 +118,10 @@
  *   • `focusOpen` is screen-local and NOT persisted, for the same reason
  *     `collapsedId` is not: reopening the app should show you the session, not the
  *     fact that focus mode was open at some point.
- *   • NO PILL RENDERS WHILE IT IS OPEN. `useRestTimer` and `useSetTimer` schedule
- *     notifications, count the last seconds out loud and hold the keep-awake
- *     lock; the sheet runs its own instance of each, and two live instances would
- *     double all three. The deadline lives in the store, so the hand-off costs
+ *   • NO PILL RENDERS WHILE IT IS OPEN. `useRestTimer` and `useSetTimer` count the
+ *     last seconds out loud and hold the keep-awake lock; the sheet runs its own
+ *     instance of each, and two live instances would double both. (The pocket
+ *     alarms are not theirs — `useTimerAlerts`, once, in `App.tsx`.) The deadline lives in the store, so the hand-off costs
  *     nothing — see `FocusMode`'s header.
  *
  * ── HOW THE DRAG WORKS ──────────────────────────────────────────────────────
@@ -152,7 +152,6 @@ import { useLanguage, useT } from '../hooks/useT';
 import { describeDeload } from '../lib/deload';
 import type { DraftEntry, DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
-import { useAutoRounds } from '../hooks/useAutoRounds';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
 import { resolveRest } from '../lib/rest';
 import { describeLadderOutcomes, ladderOutcomes } from '../lib/repLadder';
@@ -318,17 +317,6 @@ export function ActiveWorkoutScreen({
   const commitSetTimer = useActiveWorkout((s) => s.commitSetTimer);
   const startRestNow = useActiveWorkout((s) => s.startRestNow);
   const setSessionEffort = useActiveWorkout((s) => s.setSessionEffort);
-
-  /*
-   * THE ROUND CHAIN, mounted once and here.
-   *
-   * A boxing session advances without a thumb — bell, rest, next round — and the
-   * only thing standing between a spent rest deadline and the next round's clock
-   * is something that looks at the time. This screen is the one component alive for
-   * the whole session (focus mode is a sheet over it, not a route), which makes it
-   * the one place a single instance can live. See `hooks/useAutoRounds.ts`.
-   */
-  useAutoRounds();
 
   /*
    * The live between-sets setting. Each card resolves its OWN rest from it

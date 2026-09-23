@@ -165,6 +165,27 @@ describe('exercise shape', () => {
     expect(hold.map((w) => w.label)).toEqual(['duration']);
   });
 
+  /*
+   * `MAX` is a value of the rep number, not a replacement for it: the well stays
+   * and the create screen renders `MAX` in it.
+   */
+  it('keeps the rep well under a MAX target', () => {
+    const weighted = wellsFor({
+      requiresWeight: true,
+      countUnit: 'reps',
+      loadMode: 'external',
+      countToMax: true,
+    });
+    expect(weighted.map((w) => w.field)).toEqual(['weight', 'count']);
+    const bodyweight = wellsFor({
+      requiresWeight: false,
+      countUnit: 'reps',
+      loadMode: 'none',
+      countToMax: true,
+    });
+    expect(bodyweight.map((w) => w.field)).toEqual(['count']);
+  });
+
   it('says so in the kicker, which is the receipt for the missing well', () => {
     expect(
       describeSetInputs({

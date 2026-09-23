@@ -95,7 +95,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Easing, ScrollView, Text, View } from 'react-native';
+import { Pressable } from '../components/Pressable';
 import { StatusBar } from 'expo-status-bar';
 
 import { DayDial } from '../components/DayDial';

@@ -212,6 +212,12 @@ somewhere off the phone. That is the seatbelt for every install below.
 
 ## ⚠️ An APK built without the release keystore cannot update your install
 
+> **Superseded.** The install on the phone today is signed with the stock React
+> Native debug keystore (`CN=Android Debug`, SHA-256 `FA:C6:17:45…`), which
+> `npx expo prebuild` regenerates identically on any machine — so a fresh clone
+> CAN build an APK that updates the phone. `CLAUDE.md` is the current authority
+> on signing; the text below is the history of the release-keystore era.
+
 Android identifies an app by **package name + signing key**. The release keystore
 lives on the Windows machine (see [Signing](#signing--read-this-before-you-lose-it)),
 NOT in this repo — so a build made anywhere else falls back to the debug key and
@@ -288,7 +294,7 @@ GitHub will host for free. Same download, same "open it and tap install".
    cue plays on the media stream so it can be heard over music, which also means
    it obeys the media slider rather than the ringer.
 
-Minimum Android 24 (7.0); the S24 ships far newer.
+Minimum Android 8.0 (API 26), set by Health Connect; the S24 ships far newer.
 
 ## Rebuild after a code change
 
@@ -424,6 +430,12 @@ and install over the top. The install keeps existing data.
 anything; `versionCode` is what Android compares.
 
 ## Signing — read this before you lose it
+
+> **Superseded.** The install on the phone today is signed with the stock React
+> Native debug keystore (`CN=Android Debug`, SHA-256 `FA:C6:17:45…`), which
+> `npx expo prebuild` regenerates identically on any machine — so a fresh clone
+> CAN build an APK that updates the phone. `CLAUDE.md` is the current authority
+> on signing; the text below is the history of the release-keystore era.
 
 An APK signed with a different key than the one already installed **cannot update
 it** — see the box at the top of this file. That is not hypothetical: it is

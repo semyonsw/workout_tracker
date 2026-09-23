@@ -112,6 +112,13 @@ export function QuickAdjust({
    */
   const bump = (delta: number) => {
     tap();
+    // A chip tapped mid-type takes what was typed first. The session list keeps
+    // the keyboard up across taps, so the field's blur never ran and the typed
+    // number was thrown away under a nudge of the old one.
+    if (typing) {
+      commitTyped();
+      return;
+    }
     onChange(nudgeSet(set, field, delta, unitSystem));
   };
 
@@ -230,7 +237,13 @@ export function QuickAdjust({
         </Pressable>
 
         <Pressable
-          onPress={onClose}
+          onPress={() => {
+            // Commit BEFORE closing: closing unmounts the field, and its blur —
+            // the only other commit — does not run for an unmounted input, so
+            // `82.5`, `Done` used to keep the old weight.
+            if (typing) commitTyped();
+            onClose();
+          }}
           hitSlop={8}
           className="h-hit justify-center"
           accessibilityRole="button"

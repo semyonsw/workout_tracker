@@ -157,9 +157,11 @@ export async function writeToAppFolder(
   baseName: string,
   contents: string,
   extension = 'json',
+  lang: Language = 'en',
 ): Promise<string> {
   const folder = appFolderUri();
-  if (!folder) throw new Error(t('This device has no writable app folder.', 'ru'));
+  // In the caller's language: this message reaches the screen via `describeError`.
+  if (!folder) throw new Error(t('This device has no writable app folder.', lang));
   const fileUri = `${folder}${baseName}.${extension}`;
   await FileSystem.writeAsStringAsync(fileUri, contents);
   return fileUri.replace('file://', '');
@@ -201,7 +203,7 @@ async function saveTextFile(
   lang: Language,
 ): Promise<SaveOutcome> {
   if (!canPickFolder()) {
-    const path = await writeToAppFolder(baseName, contents, extension);
+    const path = await writeToAppFolder(baseName, contents, extension, lang);
     return { saved: true, name: `${baseName}.${extension}`, where: path };
   }
 

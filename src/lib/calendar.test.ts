@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  dayKey,
-  describeMonth,
-  monthGrid,
-  trainingMonths,
-  WEEKDAY_INITIALS,
-  workoutsByDay,
-} from './calendar';
+import { describeMonth, monthGrid, trainingMonths, workoutsByDay } from './calendar';
+import { dayKey, WEEKDAY_INITIALS } from './days';
 import type { CompletedWorkout } from './completedWorkout';
 
 /**

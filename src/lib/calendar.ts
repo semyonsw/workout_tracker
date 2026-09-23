@@ -43,11 +43,6 @@ import { MONTH_NAMES, dayKey, weekdayIndex } from './days';
 import { plural, t, type Language } from './i18n';
 import type { CompletedWorkout } from './completedWorkout';
 
-// `dayKey` and the weekday order live in `lib/days.ts` now — three logs hang off
-// the same calendar. Re-exported because this module's callers have always got
-// them from here.
-export { dayKey, WEEKDAY_INITIALS } from './days';
-
 /** One cell. `day` is null for the leading blanks before the 1st. */
 export interface CalendarCell {
   /** Day of the month, or null for padding. */

@@ -73,7 +73,16 @@ export function MoneySettingsScreen({ onBack }: { onBack: () => void }) {
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
-      <ScreenHeader kicker={t('Expenses settings')} onBack={onBack} bordered={false} />
+      <ScreenHeader
+        kicker={t('Expenses settings')}
+        /* Commits on the way out as well as on blur: `‹` with the keyboard up
+           unmounts the field before its blur runs, and `USD` was lost. */
+        onBack={() => {
+          if (draft !== settings.currencyCode) settings.setCurrencyCode(draft);
+          onBack();
+        }}
+        bordered={false}
+      />
 
       <ScrollView
         className="flex-1"

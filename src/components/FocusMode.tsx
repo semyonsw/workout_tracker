@@ -69,10 +69,10 @@
  *
  * ── THE TWO TIMER HOOKS LIVE HERE, AND THE PILLS UNMOUNT ────────────────────
  *
- * `useRestTimer` and `useSetTimer` are not passive readers: they schedule the
- * notifications that reach a phone in a pocket, count the last seconds out loud and
- * hold the keep-awake lock. Two live instances of either would double every one of
- * those. So the session screen renders no pill while focus mode is open, and the
+ * `useRestTimer` and `useSetTimer` are not passive readers: they count the last
+ * seconds out loud and hold the keep-awake lock. Two live instances of either would
+ * double both. (The alarms that reach a phone in a pocket are scheduled once, in
+ * `App.tsx` — `hooks/useTimerAlerts.ts`.) So the session screen renders no pill while focus mode is open, and the
  * hand-off is clean in both directions — the effects cancel on unmount and
  * re-arm on mount, against a deadline that lives in the store rather than in
  * either component.

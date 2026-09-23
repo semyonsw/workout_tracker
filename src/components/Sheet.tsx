@@ -39,8 +39,8 @@ export function Sheet({ title, onDismiss, children }: SheetProps) {
   const t = useT();
   const insets = useSafeAreaInsets();
   // The nav pill is a sibling of the whole section and would paint over this.
-  // See `components/overlay.ts`.
-  useIsOverlay();
+  // See `components/overlay.ts`. Back dismisses, like the scrim.
+  useIsOverlay(onDismiss);
 
   const scrim = useRef(new Animated.Value(0)).current;
   const sheet = useRef(new Animated.Value(0)).current;

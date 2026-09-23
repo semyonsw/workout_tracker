@@ -75,7 +75,8 @@
  */
 
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable } from '../components/Pressable';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -88,14 +89,7 @@ import { pressedStyle } from '../components/motion';
 import { Separator, TextButton } from '../components/primitives';
 import { dayKey, formatLongDay, formatMonth, parseDay, shiftDay } from '../lib/days';
 import { tap } from '../lib/feedback';
-import {
-  type Amount,
-  type AmountWhen,
-  type Direction,
-  type MoneyAccount,
-  type MoneyCategory,
-  formatValue,
-} from '../lib/money';
+import { type Amount, type AmountWhen, type Direction, formatValue } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useLanguage, useT } from '../hooks/useT';
 import { useSettings } from '../state/settingsStore';
@@ -878,8 +872,3 @@ function PickRow({
     </Pressable>
   );
 }
-
-/* Kept for the type the store hands back, so a caller that passes a stale
-   account or category still type-checks against the same shapes this screen
-   reads. */
-export type { MoneyAccount, MoneyCategory };

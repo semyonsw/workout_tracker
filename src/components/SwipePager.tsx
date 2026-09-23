@@ -36,6 +36,7 @@ import { useMemo, useRef, type ReactNode } from 'react';
 import { PanResponder, View } from 'react-native';
 
 import { isReordering } from '../hooks/useDragReorder';
+import { isOverlayOpen } from './overlay';
 
 /** How far sideways before this is a swipe and not a tap that moved. */
 const THRESHOLD = 24;
@@ -67,6 +68,10 @@ export function SwipePager({ onSwipe, children }: SwipePagerProps) {
           // runs parent-first, so without this a drag that wandered sideways would
           // change section and drop the row somewhere nobody chose.
           !isReordering() &&
+          // Nor while a sheet is up: sheets are not `Modal`s, they live inside the
+          // section, and a sideways drag across one changed section and unmounted
+          // it with a half-typed task in it.
+          !isOverlayOpen() &&
           Math.abs(gesture.dx) > THRESHOLD &&
           Math.abs(gesture.dx) > Math.abs(gesture.dy) * DOMINANCE,
         /*
@@ -76,7 +81,7 @@ export function SwipePager({ onSwipe, children }: SwipePagerProps) {
          * should land where it started.
          */
         onPanResponderRelease: (_event, gesture) => {
-          if (isReordering()) return;
+          if (isReordering() || isOverlayOpen()) return;
           if (Math.abs(gesture.dx) < THRESHOLD) return;
           if (Math.abs(gesture.dx) <= Math.abs(gesture.dy) * DOMINANCE) return;
           onSwipeRef.current(gesture.dx < 0 ? 1 : -1);

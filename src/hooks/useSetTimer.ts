@@ -29,11 +29,9 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 import { commit, countFinal, tap, undo } from '../lib/feedback';
-import { cancelTimerAlerts, scheduleTimerAlertPair } from '../lib/notify';
-import { readSetTimer, workEndsAt, type SetTimerReading } from '../lib/setTimer';
+import { readSetTimer, type SetTimerReading } from '../lib/setTimer';
 import { useActiveWorkout, type SetTimerState } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
-import { useLanguage, useT } from './useT';
 import { useCountdownBeeps } from './useCountdownBeeps';
 
 const TICK_MS = 250;
@@ -65,13 +63,8 @@ export function useSetTimer(): SetTimerApi {
 
   const stepSeconds = useSettings((s) => s.adjustStepSeconds);
   const keepAwakeEnabled = useSettings((s) => s.keepAwakeEnabled);
-  const notifyOnTimerEnd = useSettings((s) => s.notifyOnTimerEnd);
-  const t = useT();
-  const lang = useLanguage();
 
   const [now, setNow] = useState(() => Date.now());
-  /** The scheduled alerts for the bell: the tick and the tone. */
-  const notificationIds = useRef<string[]>([]);
   /** Guards the one-shot events against a second tick for the same timer. */
   const committedFor = useRef<number | null>(null);
   const wentToWorkFor = useRef<number | null>(null);
@@ -162,51 +155,8 @@ export function useSetTimer(): SetTimerApi {
     }
   }, [commitSetTimer, reading, timer]);
 
-  /* --- the bell, for a phone in a pocket ------------------------------ */
-  /*
-   * A plank is the case that needs this most: the phone is on the floor under you,
-   * the screen is off, and the JS interval that plays the in-app count-in may not
-   * be running at all. The scheduled pair — a tick five seconds out, the bell at
-   * zero — is what actually rings. See `lib/notify.ts`.
-   */
-  useEffect(() => {
-    let cancelled = false;
-
-    const clearPending = async () => {
-      const ids = notificationIds.current;
-      notificationIds.current = [];
-      await cancelTimerAlerts(ids);
-    };
-
-    void (async () => {
-      await clearPending();
-      if (!timer || !notifyOnTimerEnd) return;
-
-      const endsAt = workEndsAt(timer);
-      if (endsAt == null) return; // an open hold has no bell to ring
-
-      const ids = await scheduleTimerAlertPair({
-        at: endsAt,
-        getSetTitle: t('Almost'),
-        getSetBody: t('5 seconds left.'),
-        goTitle: t('Time'),
-        goBody: t('Set logged — rest.'),
-        lang,
-      });
-      if (cancelled) {
-        await cancelTimerAlerts(ids);
-        return;
-      }
-      notificationIds.current = ids;
-    })();
-
-    return () => {
-      cancelled = true;
-      void clearPending();
-    };
-    // `workSeconds` is in the dep list via `timer` identity: every ± replaces the
-    // object, which reschedules the bell.
-  }, [lang, notifyOnTimerEnd, t, timer]);
+  /* The bell for a phone in a pocket is scheduled by `hooks/useTimerAlerts.ts`,
+     once, in the shell — this hook unmounts whenever the session screen does. */
 
   /* --- keep the screen on for the whole hold -------------------------- */
   useEffect(() => {

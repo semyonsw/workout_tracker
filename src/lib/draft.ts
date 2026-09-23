@@ -24,7 +24,7 @@ import { countUnitLabel, effectiveLoadKg, formatDuration } from './units';
 import { resolveRest } from './rest';
 import { summarizeSessionSets } from './history';
 import { evaluateOverload, type OverloadVerdict } from './progressiveOverload';
-import { LADDER_SETS, describeLadder, ladderOf, ladderTargets } from './repLadder';
+import { describeLadder, ladderOf, ladderTargets } from './repLadder';
 import { countsToMax, maxLabel } from './maxReps';
 import { exerciseBests, type BodyweightLookup, type ExerciseBests } from './records';
 import { evaluateDeload, type DeloadVerdict } from './deload';
@@ -313,6 +313,17 @@ export function defaultTargetCount(exercise: Pick<Exercise, 'countUnit' | 'defau
 }
 
 /**
+ * What a new exercise plans when nobody has said otherwise: four sets.
+ *
+ * One number, asked for by name. It used to be four for reps, three for a hold
+ * and five for a ladder, and the difference showed up exactly where it hurt — a
+ * new exercise with `Make every exercise a rep ladder` on opened at five, and a
+ * plank appended to a routine planned three, so "new exercise" had no single
+ * answer and the user had to correct it by hand every time.
+ */
+export const DEFAULT_SETS = 4;
+
+/**
  * How many sets a brand-new routine item plans, by count unit.
  *
  * `appendToRoutine` used to write a bare `4` here (12 for rounds), and because
@@ -329,26 +340,20 @@ export function defaultTargetCount(exercise: Pick<Exercise, 'countUnit' | 'defau
  * the create/edit screen's `Sets` row. Everything below it is the fallback for a
  * shipped exercise and for rows made before that row existed.
  *
- * Per unit, because "four" means different things: four sets of reps, twelve
- * rounds on a bag, three holds of a plank (nobody plans four two-minute planks),
- * and one swim — a distance is done once.
- *
- * A LADDER ASKS FOR FIVE, because five is the scheme: it is what every published
- * version of that table is written for, and it is what makes the session total
- * come out at three times the max. The routine can still plan four or six and the
- * ladder will shape them (`ladderForMax` generalises), but a ladder that starts
- * life at four sets starts life as a different program.
+ * Per unit only where a "set" is not a set: twelve rounds on a bag, and one swim
+ * — a distance is done once. Everything else is `DEFAULT_SETS`,
+ * holds and ladders included: a ladder shapes whatever count it is given
+ * (`ladderForMax` generalises), so four sets is still a ladder, and the user asked
+ * for four as the one starting point.
  */
 export function defaultTargetSets(
   exercise: Pick<Exercise, 'countUnit'> & { ladder?: RepLadder; defaultSets?: number },
 ): number {
   const own = finiteOrNull(exercise.defaultSets);
   if (own != null && own >= 1) return Math.round(own);
-  if (ladderOf(exercise)) return LADDER_SETS;
   if (exercise.countUnit === 'rounds') return 12;
-  if (exercise.countUnit === 'seconds') return 3;
   if (exercise.countUnit === 'meters') return 1;
-  return 4;
+  return DEFAULT_SETS;
 }
 
 export interface BuildDraftParams {
@@ -766,9 +771,4 @@ export function sessionVolume(session: DraftSession, bodyweightKg?: number | nul
   }
 
   return { kg: Math.round(kg), unweighable };
-}
-
-/** Just the kilograms — the shape `CompletedWorkout.totalVolumeKg` stores. */
-export function totalVolumeKg(session: DraftSession, bodyweightKg?: number | null): number {
-  return sessionVolume(session, bodyweightKg).kg;
 }

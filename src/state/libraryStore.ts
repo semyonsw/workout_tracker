@@ -484,12 +484,20 @@ export const useLibrary = create<LibraryState>()(
       deleteRoutine: (routineId) => {
         const { routines, sequence } = get();
         const routineIds = sequence.routineIds.filter((id) => id !== routineId);
+        /*
+         * Every removed step ABOVE the cursor moves the next one up a place, the
+         * same arithmetic `removeSequenceStep` does for one step. Keeping the old
+         * index skipped a step: [A, B, C, D] on C, delete A, and D was next.
+         */
+        const removedAbove = sequence.routineIds
+          .slice(0, sequence.cursor)
+          .filter((id) => id === routineId).length;
         set({
           routines: routines.filter((r) => r.id !== routineId),
           sequence:
             routineIds.length === sequence.routineIds.length
               ? sequence
-              : withSteps(sequence, routineIds, sequence.cursor),
+              : withSteps(sequence, routineIds, sequence.cursor - removedAbove),
         });
       },
 
