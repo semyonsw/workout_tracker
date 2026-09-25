@@ -4,6 +4,7 @@ import {
   WEIGHT_STEP_COARSE_KG,
   WEIGHT_STEP_FINE_KG,
   effectiveLoadKg,
+  formatElapsed,
   resolveIncrementKg,
   weightSteps,
 } from './units';
@@ -96,5 +97,26 @@ describe('effectiveLoadKg', () => {
 
   it('leaves an external set with no weight on it unweighable too', () => {
     expect(effectiveLoadKg(null, 'external', 82)).toBeNull();
+  });
+});
+
+describe('formatElapsed', () => {
+  it('reads m:ss under an hour', () => {
+    expect(formatElapsed(0)).toBe('0:00');
+    expect(formatElapsed(4 * 60_000 + 2_000)).toBe('4:02');
+  });
+
+  it('floors, because a session counts up', () => {
+    expect(formatElapsed(59_999)).toBe('0:59');
+    expect(formatElapsed(60_000)).toBe('1:00');
+  });
+
+  it('grows an hour column past an hour', () => {
+    expect(formatElapsed(72 * 60_000 + 4_000)).toBe('1:12:04');
+  });
+
+  it('never goes negative, and survives a clock that is not a number', () => {
+    expect(formatElapsed(-5_000)).toBe('0:00');
+    expect(formatElapsed(Number.NaN)).toBe('0:00');
   });
 });

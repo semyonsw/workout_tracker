@@ -136,6 +136,18 @@ interface WorkoutHistoryState {
    */
   loadFailed: boolean;
   /**
+   * Whether the log has been READ — successfully, or by the retry that follows a
+   * failed first read. False only in the window between a module-scope read that
+   * threw and `reloadHistory`'s second attempt from `App.tsx`.
+   *
+   * It is what Home's skeleton and the launch screen's `workouts` chip wait on:
+   * an empty log shown in that window is the empty-to-full flash the skeleton
+   * exists to prevent, and it is also indistinguishable from never having
+   * trained. After the retry it is true whatever the retry found — the screens
+   * have their own words for "could not be read" (`loadFailed`).
+   */
+  ready: boolean;
+  /**
    * The one pinned workout number, or null for "the oldest one is 1".
    *
    * See `WorkoutNumberAnchor`: people arrive with a training history the app has
@@ -311,6 +323,7 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
   workouts: initial.workouts,
   numbering: loadNumbering(initial.workouts),
   loadFailed: initial.failed,
+  ready: !initial.failed,
 
   /**
    * Read the log off disk again, and adopt what is there.
@@ -329,10 +342,10 @@ export const useWorkoutHistory = create<WorkoutHistoryState>()((set, get) => ({
   reloadHistory: () => {
     const { workouts, failed } = loadWorkouts();
     if (failed) {
-      set({ loadFailed: true });
+      set({ loadFailed: true, ready: true });
       return get().workouts.length;
     }
-    set({ workouts, numbering: loadNumbering(workouts), loadFailed: false });
+    set({ workouts, numbering: loadNumbering(workouts), loadFailed: false, ready: true });
     return workouts.length;
   },
 

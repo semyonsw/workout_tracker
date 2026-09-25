@@ -51,27 +51,41 @@
  * component: a bracket around a single exercise says nothing, and one is easy to
  * produce by removing a partner mid-session.
  *
- * ── `ADD SET` AND `REMOVE SET` ARE ONE CONTROL, SPLIT IN TWO ────────────────
+ * ── THE PLAN IS BEHIND THE ✎ ────────────────────────────────────────────────
  *
- * Sets are decided in the gym: four today, three when the fourth isn't there. The
- * two halves of the footer are the whole of that decision, they cost one tap each,
- * and `Remove set` always takes the BOTTOM row — the one that hasn't happened yet.
- * On an exercise down to its last row it relabels itself `Remove exercise`, because
- * that is what removing that row does (see `activeWorkoutStore.removeSet`); the
- * label changes so the outcome is never a surprise.
+ * An open card used to carry every control that changes the PLAN — `Add set`,
+ * `Remove set`, `Warm-up`, `Edit exercise`, `Remove exercise` — under its sets,
+ * all the time, on every card, for the whole session. Those are decisions made
+ * two or three times a workout, and they sat a thumb's width from the ✓ that is
+ * pressed sixty times. So they moved behind a 36 dp ✎ beside the card's name.
  *
- * ── AND `REMOVE EXERCISE` IS ITS OWN ROW ────────────────────────────────────
+ *   • OUTSIDE EDIT MODE the footer is one row: `⏸ Rest 1:30 | ▶ Focus`. Rest on
+ *     demand, and the door into focus mode on the card that holds the next set.
+ *   • IN EDIT MODE the ✎ becomes a green `Done` pill, `EDITING PLAN` appears over
+ *     the name, every set row grows its own coral `−` (so you remove the set you
+ *     mean, not the bottom one), and the footer becomes `+ Add set`, `+ Warm-up`
+ *     (only before anything is logged), `✎ Rest, targets and cue`, and a coral
+ *     `− Remove exercise`.
  *
- * Because "I'm not doing this today" was five taps of `Remove set` and a sixth
- * that finally took the exercise with it — an ordinary decision, made at the rack,
- * priced like an undo. It is the last row of the open card, under `Rest`, and it
- * only renders while there is more than one set: at one set the footer's own
- * remove half already IS this button and already says so, and two controls with
- * the same label in one card is one of them being noise.
+ * Edit mode belongs to the SCREEN, not to the card (`editingExerciseId`): at most
+ * one card is in it, and it ends only on `Done`. Shutting the card or logging a
+ * set does not end it — a user in the middle of reshaping an exercise who logs a
+ * set on the way has not said they are finished reshaping it.
  *
- * It asks first when there is something to lose — the screen owns that sheet, the
- * same way it owns the one behind `Discard`. Sets already logged are the only
- * thing in this app that cannot be reconstructed.
+ * ── ROWS ARRIVE AND LEAVE ───────────────────────────────────────────────────
+ *
+ * A row added — `Add set`, a warm-up, an Undo — grows in from zero height; a row
+ * removed slides right and closes, and only THEN leaves the store (`GrowIn`). The
+ * last row of an exercise is not removed on its own: removing it is removing the
+ * exercise, so it goes through the same path `Remove exercise` does, and gets the
+ * same Undo.
+ *
+ * ── `REMOVE EXERCISE` NO LONGER ASKS ────────────────────────────────────────
+ *
+ * It animates out and the screen shows `Removed Barbell row · Undo` for 4.5 s.
+ * Sets already logged come back with the Undo, which is what the old sheet was
+ * protecting; a question on every removal was that protection charged to the
+ * nine removals out of ten that were meant.
  *
  * A long press LIFTS the card for reordering. The gesture and the movement live in
  * the screen (it owns the geometry of the list); this component only reports the
@@ -80,8 +94,9 @@
  * language as the routine editor's reorder, deliberately.
  */
 
-import { memo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Animated, Text, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 
 import type { DraftEntry, DraftSet } from '../lib/draft';
 import { formatTarget, workingSetLabels } from '../lib/draft';
@@ -89,11 +104,16 @@ import { tap, undo } from '../lib/feedback';
 import { isTimed as isTimedExercise } from '../lib/setTimer';
 import { formatClock } from '../lib/units';
 import type { ID, UnitSystem } from '../types/models';
-import { glow as GLOW, palette } from '../theme/tokens';
+import { curve, danger, glow as GLOW, motion, palette } from '../theme/tokens';
 import { Icon } from './Icon';
 import { useLanguage, useT } from '../hooks/useT';
+import { useMotionScale } from '../hooks/useMotionScale';
+import { GrowIn, Pop, Stagger, usePressScale } from './motion';
 import { OverloadNudge } from './OverloadNudge';
+import { Pressable } from './Pressable';
 import { QuickAdjust } from './QuickAdjust';
+import { RollingNumber } from './RollingNumber';
+import { RunningText } from './RunningText';
 import { SetRow, type SetField } from './SetRow';
 
 interface ExerciseCardProps {
@@ -143,9 +163,18 @@ interface ExerciseCardProps {
   onToggleSet: (setId: ID) => void;
   onPatchSet: (setId: ID, patch: Partial<DraftSet>) => void;
   onAddSet: () => void;
+  /**
+   * Take one row out of the STORE. Called after the row's exit animation, never
+   * before — and never for the last row, which goes through `onRemoveExercise`.
+   */
   onRemoveSet: (setId: ID) => void;
-  /** Drop the bottom row, or the whole exercise when that row is the last one. */
-  onRemoveLastSet: () => void;
+  /**
+   * Session edit mode is on for THIS card — see the file header. The screen owns
+   * it, so at most one card is ever in it.
+   */
+  isEditing?: boolean;
+  /** The ✎ and the `Done` pill. Absent = no edit mode on this card. */
+  onToggleEditing?: () => void;
   onAcceptOverload: () => void;
   onDismissOverload: () => void;
   /**
@@ -191,8 +220,8 @@ interface ExerciseCardProps {
    */
   onStartRest?: () => void;
   /**
-   * Drop this exercise, sets and all. Only the expanded card offers it, and the
-   * screen decides whether to ask first — see the file header.
+   * Drop this exercise, sets and all — edit mode's `Remove exercise`, and the `−`
+   * on its last row. The screen animates the card out and offers the Undo.
    */
   onRemoveExercise?: () => void;
   /**
@@ -229,7 +258,8 @@ function ExerciseCardComponent({
   onPatchSet,
   onAddSet,
   onRemoveSet,
-  onRemoveLastSet,
+  isEditing = false,
+  onToggleEditing,
   onAcceptOverload,
   onDismissOverload,
   onAddWarmup,
@@ -246,6 +276,17 @@ function ExerciseCardComponent({
   const t = useT();
   const lang = useLanguage();
   const [focus, setFocus] = useState<{ setId: ID; field: SetField } | null>(null);
+  /** Rows on their way out — still drawn, closing, and not yet out of the store. */
+  const [leaving, setLeaving] = useState<ReadonlySet<ID>>(() => new Set());
+  /**
+   * The rows this card has already drawn, so a row it has NOT is one that just
+   * arrived and grows in. Seeded with what was there at mount: opening a card is
+   * not four rows arriving.
+   */
+  const known = useRef<Set<ID>>(new Set(entry.sets.map((s) => s.localId)));
+  useEffect(() => {
+    for (const set of entry.sets) known.current.add(set.localId);
+  }, [entry.sets]);
 
   const completed = entry.sets.filter((s) => s.isCompleted).length;
   const total = entry.sets.length;
@@ -262,8 +303,21 @@ function ExerciseCardComponent({
   const isRounds = entry.exercise.countUnit === 'rounds';
   const isTimed = isTimedExercise(entry.exercise);
   const unit = isRounds ? t('round') : t('set');
-  /* The last row cannot be removed without the exercise going with it. Say so. */
-  const removeLabel = total <= 1 ? t('Remove exercise') : t('Remove {unit}', { unit });
+
+  /**
+   * The `−` on a row. The LAST row is the exercise — see the file header — so it
+   * is handed to the screen's removal, Undo and all, rather than to the store.
+   */
+  const removeRow = (setId: ID) => {
+    undo();
+    setFocus(null);
+    const remaining = entry.sets.filter((s) => !leaving.has(s.localId)).length;
+    if (remaining <= 1) {
+      onRemoveExercise?.();
+      return;
+    }
+    setLeaving((current) => new Set(current).add(setId));
+  };
 
   /* ---------------------------------------------------------------- */
   /* Collapsed                                                         */
@@ -318,31 +372,42 @@ function ExerciseCardComponent({
         ].join(' ')}
       >
         <View className="flex-row items-center">
-          <Text
-            numberOfLines={1}
+          {/* The name RUNS rather than ellipsising: two machines whose names
+              differ only at the end are two exercises. See `RunningText`. */}
+          <RunningText
+            text={entry.exercise.name}
+            containerStyle={{ flex: 1 }}
+            fadeColor={isLifted || glowing ? palette.surfaceAlt : palette.surface}
             className={[
-              'flex-1 text-body font-semibold',
+              'text-body font-semibold',
               glowing ? 'text-green-bright' : allDone ? 'text-ink-faint' : 'text-ink',
             ].join(' ')}
-          >
-            {entry.exercise.name}
-          </Text>
+          />
 
-          {/* Progress as text, not a bar: it reads faster and costs no colour.
-              Shifted 14 left when a dot is present so the two never collide. */}
-          <Text
-            className={[
-              'ml-md text-label font-medium tabular-nums text-ink-faint',
-              nudgeWaiting ? 'mr-[14px]' : '',
-            ].join(' ')}
-          >
-            {completed}/{total}
-          </Text>
-          {allDone ? (
-            <View className="ml-sm">
-              <Icon name="check" size={14} color={palette.inkFaint} />
-            </View>
+          {/* The waiting suggestion: one 6 px dot, never a badge. */}
+          {nudgeWaiting ? (
+            <View
+              className="ml-md h-[6px] w-[6px] rounded-pill bg-green-bright"
+              style={{
+                boxShadow: [
+                  { offsetX: 0, offsetY: 0, blurRadius: 8, color: 'rgba(63,169,108,0.8)' },
+                ],
+              }}
+            />
           ) : null}
+
+          {/* Progress as text, rolled when a set lands, and as a ring beside it:
+              the text for reading, the ring for the shape of the list at a glance. */}
+          <RollingNumber
+            value={`${completed}/${total}`}
+            lineHeight={18}
+            duration={450}
+            containerStyle={{ marginLeft: 10 }}
+            className="text-label font-medium text-ink-faint"
+          />
+          <View className="ml-sm">
+            <MiniRing fraction={total > 0 ? completed / total : 0} done={allDone} />
+          </View>
         </View>
 
         {/* One line of context: what happened last time. */}
@@ -351,10 +416,6 @@ function ExerciseCardComponent({
             {entry.lastSessionSummary}
           </Text>
         ) : null}
-
-        {nudgeWaiting ? (
-          <View className="absolute right-lg top-[19px] h-[6px] w-[6px] rounded-pill bg-green-bright" />
-        ) : null}
       </Pressable>
     );
   }
@@ -362,82 +423,108 @@ function ExerciseCardComponent({
   /* ---------------------------------------------------------------- */
   /* Expanded                                                          */
   /* ---------------------------------------------------------------- */
+  const showRest = onStartRest != null && restSeconds > 0;
+  const showFocus = onOpenFocus != null;
+
   return (
-    <View className="mb-xl" style={dimmed ? { opacity: 0.4 } : undefined}>
+    <View className="mb-xl mt-xs" style={dimmed ? { opacity: 0.4 } : undefined}>
       {/* Header — name, then the target, then what it was last time. The last
           clause drops to ink-faint: it's reference, not instruction. It is also
           the expanded card's grab handle: long-pressing a set row would fight the
           row's own controls, and this is the one part of the card that isn't one. */}
-      <Pressable
-        onPress={onToggleExpanded}
-        onLongPress={onLift}
-        delayLongPress={280}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: true }}
-        accessibilityLabel={entry.exercise.name}
-        accessibilityHint={
-          onLift
-            ? t('Tap to close its sets. Long press, then slide to reorder')
-            : t('Tap to close its sets')
-        }
-        className="mx-lg mb-md"
-      >
-        <View className="flex-row items-center">
+      <View className="mx-lg mb-md flex-row items-start">
+        <Pressable
+          onPress={onToggleExpanded}
+          onLongPress={onLift}
+          delayLongPress={280}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: true }}
+          accessibilityLabel={entry.exercise.name}
+          accessibilityHint={
+            onLift
+              ? t('Tap to close its sets. Long press, then slide to reorder')
+              : t('Tap to close its sets')
+          }
+          className="flex-1"
+        >
+          {/* The mode, said in words over the name, for as long as it lasts. */}
+          {isEditing ? (
+            <Stagger rise={6} duration={240}>
+              <Text className="mb-xs text-micro font-semibold uppercase text-green-bright">
+                {t('Editing plan')}
+              </Text>
+            </Stagger>
+          ) : null}
           <Text
-            className={[
-              'flex-1 text-title font-medium',
-              isLifted ? 'text-green-bright' : 'text-ink',
-            ].join(' ')}
+            className={['text-title font-medium', isLifted ? 'text-green-bright' : 'text-ink'].join(
+              ' ',
+            )}
           >
             {entry.exercise.name}
           </Text>
-          {/* The affordance for shutting it. `chevron-down` is what the routine
-              editor's open row uses, for the same "this closes" meaning. */}
-          <View className="ml-md">
-            <Icon name="chevron-down" size={18} color={palette.inkFaint} />
-          </View>
-        </View>
-        <Text className="mt-xs text-label tabular-nums text-ink-muted">
-          {formatTarget(entry, lang)}
-          {entry.exercise.isUnilateral ? (
-            <Text className="text-label text-ink-faint"> · {t('each side')}</Text>
-          ) : null}
-          {entry.lastSessionShort ? (
-            <Text className="text-label text-ink-faint">
-              {' '}
-              · {t('last: {what}', { what: entry.lastSessionShort })}
+          <Text className="mt-xs text-label tabular-nums text-ink-muted">
+            {formatTarget(entry, lang)}
+            {entry.exercise.isUnilateral ? (
+              <Text className="text-label text-ink-faint"> · {t('each side')}</Text>
+            ) : null}
+            {entry.lastSessionShort ? (
+              <Text className="text-label text-ink-faint">
+                {' '}
+                · {t('last: {what}', { what: entry.lastSessionShort })}
+              </Text>
+            ) : null}
+          </Text>
+
+          {/*
+            A BEST, ONCE IT HAS HAPPENED — and only once it has.
+
+            Appended to this line rather than given a block of its own, because it is
+            the same kind of statement as `last:`: what the log now says about this
+            movement. `green-bright` is the app's one accent and it is doing the same
+            job here it does everywhere else — this is new — but there is no medal, no
+            banner and no sound. `lib/records.ts` has the argument: other trackers
+            announce a PR mid-set, and that is a different product's idea of why
+            somebody trains.
+          */}
+          {bestLine ? (
+            <Text className="mt-xs text-label tabular-nums text-green-bright">
+              {t('New best')} · {bestLine}
             </Text>
           ) : null}
-        </Text>
 
-        {/*
-          A BEST, ONCE IT HAS HAPPENED — and only once it has.
+          {/* THE CUE. Only on the OPEN card — this whole block is the expanded
+              header — because that is the card you are working out of, and a
+              reminder about elbow position on four collapsed rows is noise. Faint
+              and single-line: it is reference, and it must never compete with the
+              numbers below it. */}
+          {entry.exercise.cue ? (
+            <Text numberOfLines={1} className="mt-xs text-label text-ink-faint">
+              {entry.exercise.cue}
+            </Text>
+          ) : null}
+        </Pressable>
 
-          Appended to this line rather than given a block of its own, because it is
-          the same kind of statement as `last:`: what the log now says about this
-          movement. `green-bright` is the app's one accent and it is doing the same
-          job here it does everywhere else — this is new — but there is no medal, no
-          banner and no sound. `lib/records.ts` has the argument: other trackers
-          announce a PR mid-set, and that is a different product's idea of why
-          somebody trains.
-        */}
-        {bestLine ? (
-          <Text className="mt-xs text-label tabular-nums text-green-bright">
-            {t('New best')} · {bestLine}
-          </Text>
+        {/* THE DOOR INTO EDIT MODE, and the way out of it. */}
+        {onToggleEditing ? (
+          isEditing ? (
+            <DonePill onPress={onToggleEditing} />
+          ) : (
+            <EditCircle onPress={onToggleEditing} name={entry.exercise.name} />
+          )
         ) : null}
 
-        {/* THE CUE. Only on the OPEN card — this whole block is the expanded
-            header — because that is the card you are working out of, and a
-            reminder about elbow position on four collapsed rows is noise. Faint
-            and single-line: it is reference, and it must never compete with the
-            numbers below it. */}
-        {entry.exercise.cue ? (
-          <Text numberOfLines={1} className="mt-xs text-label text-ink-faint">
-            {entry.exercise.cue}
-          </Text>
-        ) : null}
-      </Pressable>
+        {/* The affordance for shutting it. `chevron-down` is what the routine
+            editor's open row uses, for the same "this closes" meaning. */}
+        <Pressable
+          onPress={onToggleExpanded}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={t('Tap to close its sets')}
+          className="ml-xs h-[36px] w-[36px] items-center justify-center"
+        >
+          <Icon name="chevron-down" size={18} color={palette.inkFaint} />
+        </Pressable>
+      </View>
 
       {/*
         A STALL, stated and nothing else — no `Use` button beside it.
@@ -481,7 +568,19 @@ function ExerciseCardComponent({
         ].join(' ')}
       >
         {entry.sets.map((set, index) => (
-          <View key={set.localId}>
+          <GrowIn
+            key={set.localId}
+            appear={!known.current.has(set.localId)}
+            leaving={leaving.has(set.localId)}
+            onLeft={() => {
+              setLeaving((current) => {
+                const next = new Set(current);
+                next.delete(set.localId);
+                return next;
+              });
+              onRemoveSet(set.localId);
+            }}
+          >
             {/* Separators inset 16 from the left, so the index column reads as
                 one continuous ruler down the card. */}
             {index > 0 ? <View className="ml-lg h-hairline bg-hairline" /> : null}
@@ -505,6 +604,8 @@ function ExerciseCardComponent({
               isTimed={isTimed}
               isTiming={timingSetId === set.localId}
               availablePlatesKg={availablePlatesKg}
+              /* Edit mode's `−`, on every row — see the file header. */
+              onRemove={isEditing ? () => removeRow(set.localId) : undefined}
               onPressTimer={() => {
                 setFocus(null); // the clock and the editor never share the row
                 onPressTimer(set.localId);
@@ -524,185 +625,337 @@ function ExerciseCardComponent({
             />
 
             {focus?.setId === set.localId ? (
-              <QuickAdjust
-                field={focus.field}
-                set={set}
-                exercise={entry.exercise}
-                unitSystem={unitSystem}
-                onChange={(patch) => onPatchSet(set.localId, patch)}
-                onClose={() => setFocus(null)}
-                onRemoveSet={() => {
-                  setFocus(null);
-                  onRemoveSet(set.localId);
-                }}
-              />
+              /* The inline editor opens by growing its own height, so the rows
+                 under it are pushed rather than jumped. */
+              <GrowIn duration={260}>
+                <QuickAdjust
+                  field={focus.field}
+                  set={set}
+                  exercise={entry.exercise}
+                  unitSystem={unitSystem}
+                  onChange={(patch) => onPatchSet(set.localId, patch)}
+                  onClose={() => setFocus(null)}
+                  onRemoveSet={() => removeRow(set.localId)}
+                />
+              </GrowIn>
             ) : null}
-          </View>
+          </GrowIn>
         ))}
 
-        {/* Full-bleed hairline: the footer is not a set, so its rule isn't inset. */}
-        <View className="h-hairline bg-hairline" />
-        <View className="flex-row">
-          <Pressable
-            onPress={() => {
-              tap();
-              onAddSet();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={t('Add {unit}', { unit })}
-            className="h-row flex-1 flex-row items-center justify-center"
-          >
-            <Icon name="plus" size={14} color={palette.inkFaint} />
-            <Text className="ml-sm text-label text-ink-muted">{t('Add {unit}', { unit })}</Text>
-          </Pressable>
-
-          {/* The opposite mark in the opposite half: `−` is `+` with its vertical
-              stroke removed, the same pairing the library uses for add and delete.
-              It always takes the BOTTOM row — the one that hasn't happened. */}
-          <View className="w-hairline bg-hairline" />
-          <Pressable
-            onPress={() => {
-              undo();
-              onRemoveLastSet();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={removeLabel}
-            className="h-row flex-1 flex-row items-center justify-center"
-          >
-            <Icon name="minus" size={14} color={palette.inkFaint} />
-            <Text className="ml-sm text-label text-ink-muted">{removeLabel}</Text>
-          </Pressable>
-        </View>
-
-        {/* WARM-UP, and it states the numbers it is about to add.
-            Its own full-width row rather than a third of the one above, for the
-            same reason `Rest` gets one: it is not a decision about the set count.
-            It names the weights because a button that silently inserts three rows
-            at the top of the exercise you are about to start is one the user has to
-            undo to find out about — and because seeing `40 × 5 · 60 × 5 · 80 × 3`
-            is how you notice that today's working weight is wrong. */}
-        {onAddWarmup && warmupSummary ? (
-          <>
+        {isEditing ? (
+          <GrowIn key="editing" duration={motion.row}>
+            {/* Full-bleed hairline: the footer is not a set, so its rule isn't inset. */}
             <View className="h-hairline bg-hairline" />
-            <Pressable
-              onPress={() => {
-                tap();
-                onAddWarmup();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t('Add warm-up sets: {what}', { what: warmupSummary })}
-              className="min-h-row flex-row items-center justify-center px-lg py-sm"
-            >
-              <Icon name="plus" size={13} color={palette.greenBright} />
-              <Text className="ml-sm text-label font-medium text-green-bright">{t('Warm-up')}</Text>
-              <Text
-                numberOfLines={1}
-                className="ml-sm flex-shrink text-label tabular-nums text-ink-faint"
-              >
-                {warmupSummary}
-              </Text>
-            </Pressable>
-          </>
-        ) : null}
+            <View className="flex-row">
+              <FooterButton
+                icon="plus"
+                label={t('Add {unit}', { unit })}
+                tone="green"
+                onPress={() => {
+                  tap();
+                  onAddSet();
+                }}
+              />
+              {/* WARM-UP, and it states the numbers it is about to add — because a
+                  button that silently inserts three rows at the top of the exercise
+                  is one the user has to undo to find out about, and because seeing
+                  `40 × 5 · 60 × 5` is how you notice today's working weight is
+                  wrong. Only before anything is logged: `warmupSets` decides. */}
+              {onAddWarmup && warmupSummary ? (
+                <>
+                  <View className="w-hairline bg-hairline" />
+                  <Pressable
+                    onPress={() => {
+                      tap();
+                      onAddWarmup();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('Add warm-up sets: {what}', { what: warmupSummary })}
+                    style={({ pressed }) =>
+                      pressed ? { backgroundColor: 'rgba(63,169,108,0.08)' } : undefined
+                    }
+                    className="h-row flex-1 items-center justify-center px-sm"
+                  >
+                    <Text className="text-label font-medium text-green-bright">
+                      {`+ ${t('Warm-up')}`}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      className="text-[11px] tabular-nums text-ink-faint"
+                      allowFontScaling={false}
+                    >
+                      {warmupSummary}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
 
-        {/* Rest, on demand — its own row under the two set controls rather than a
-            third of the same one: it is not about the set count, and three targets
-            in one 56 dp row is one mis-tap wide. Not on the pill either, because
-            the pill does not exist when there is no rest to show. */}
-        {onStartRest && restSeconds > 0 ? (
+            {/* The plan's own numbers — rest, defaults, targets, the cue — in the
+                exercise editor, mid-workout. Ink-muted rather than green: it
+                changes the plan, it does not advance it. */}
+            {onEditExercise ? (
+              <>
+                <View className="h-hairline bg-hairline" />
+                <FooterButton
+                  icon="edit"
+                  label={t('Rest, targets and cue')}
+                  tone="muted"
+                  accessibilityLabel={t('Edit {name}: rest, defaults and targets', {
+                    name: entry.exercise.name,
+                  })}
+                  onPress={() => {
+                    tap();
+                    onEditExercise();
+                  }}
+                />
+              </>
+            ) : null}
+
+            {/* The way out of an exercise in one tap, in the one hue that means
+                "this deletes plan". It does not ask: the screen offers the Undo. */}
+            {onRemoveExercise ? (
+              <>
+                <View className="h-hairline bg-hairline" />
+                <FooterButton
+                  icon="minus"
+                  label={t('Remove exercise')}
+                  tone="danger"
+                  accessibilityLabel={t('Remove {name} from this workout', {
+                    name: entry.exercise.name,
+                  })}
+                  onPress={() => {
+                    undo();
+                    onRemoveExercise();
+                  }}
+                />
+              </>
+            ) : null}
+          </GrowIn>
+        ) : showRest || showFocus ? (
           <>
+            {/* Full-bleed hairline: the footer is not a set, so its rule isn't inset. */}
             <View className="h-hairline bg-hairline" />
-            <Pressable
-              onPress={onStartRest}
-              accessibilityRole="button"
-              accessibilityLabel={t('Start a {clock} rest', { clock: formatClock(restSeconds) })}
-              className="h-row flex-row items-center justify-center"
-            >
-              <Icon name="pause" size={13} color={palette.inkFaint} />
-              <Text className="ml-sm text-label tabular-nums text-ink-muted">
-                {t('Rest {clock}', { clock: formatClock(restSeconds) })}
-              </Text>
-            </Pressable>
-          </>
-        ) : null}
-
-        {/* FOCUS MODE, named. The two gestures that also open it — the up-next
-            row's numbers, and a long press on that row — are not discoverable on
-            their own, and every other affirmative action in this card is offered
-            as a row of exactly this shape.
-
-            Above `Remove exercise` and below `Rest`, with the other two
-            full-width affirmative rows, rather than at the very bottom: a control
-            you press mid-set should not sit under the one that deletes the
-            exercise. */}
-        {onOpenFocus ? (
-          <>
-            <View className="h-hairline bg-hairline" />
-            <Pressable
-              onPress={() => {
-                tap();
-                onOpenFocus();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t('Open focus mode on your next set')}
-              className="h-row flex-row items-center justify-center"
-            >
-              <Icon name="play" size={14} color={palette.greenBright} />
-              <Text className="ml-sm text-label font-medium text-green-bright">{t('Focus')}</Text>
-            </Pressable>
-          </>
-        ) : null}
-
-        {/* EDIT THIS EXERCISE, from inside the workout. Between `Focus` and
-            `Remove exercise`: it is an affirmative action like the rows above it,
-            and it is the one you reach for a moment before you would otherwise
-            reach for the destructive one — "this rest is wrong" and "I'm not doing
-            this" are neighbouring thoughts at the rack. Ink-muted rather than
-            green: it changes the plan, it does not advance it. */}
-        {onEditExercise ? (
-          <>
-            <View className="h-hairline bg-hairline" />
-            <Pressable
-              onPress={() => {
-                tap();
-                onEditExercise();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t('Edit {name}: rest, defaults and targets', {
-                name: entry.exercise.name,
-              })}
-              className="h-row flex-row items-center justify-center"
-            >
-              <Icon name="edit" size={13} color={palette.inkFaint} />
-              <Text className="ml-sm text-label text-ink-muted">{t('Edit exercise')}</Text>
-            </Pressable>
-          </>
-        ) : null}
-
-        {/* The way out of an exercise in one tap. Its own full-width row for the
-            same reason `Rest` has one: it is not a decision about the set count,
-            and it must not sit a thumb's width from `Add set`. */}
-        {onRemoveExercise && total > 1 ? (
-          <>
-            <View className="h-hairline bg-hairline" />
-            <Pressable
-              onPress={() => {
-                undo();
-                onRemoveExercise();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t('Remove {name} from this workout', {
-                name: entry.exercise.name,
-              })}
-              className="h-row flex-row items-center justify-center"
-            >
-              <Icon name="minus" size={13} color={palette.inkFaint} />
-              <Text className="ml-sm text-label text-ink-muted">{t('Remove exercise')}</Text>
-            </Pressable>
+            <View className="flex-row">
+              {/* Rest, on demand — the answer to "auto-rest is off, so how do I
+                  run a rest at all", and the way back from a `Skip` you didn't
+                  mean. */}
+              {showRest ? (
+                <FooterButton
+                  icon="pause"
+                  label={t('Rest {clock}', { clock: formatClock(restSeconds) })}
+                  tone="muted"
+                  accessibilityLabel={t('Start a {clock} rest', {
+                    clock: formatClock(restSeconds),
+                  })}
+                  onPress={() => onStartRest?.()}
+                />
+              ) : null}
+              {/* FOCUS MODE, named, on the card that holds the next set. The two
+                  gestures that also open it — the up-next row's numbers and a long
+                  press on that row — are not discoverable on their own. */}
+              {showFocus ? (
+                <>
+                  {showRest ? <View className="w-hairline bg-hairline" /> : null}
+                  <FooterButton
+                    icon="play"
+                    label={t('Focus')}
+                    tone="green"
+                    accessibilityLabel={t('Open focus mode on your next set')}
+                    onPress={() => {
+                      tap();
+                      onOpenFocus?.();
+                    }}
+                  />
+                </>
+              ) : null}
+            </View>
           </>
         ) : null}
       </View>
     </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * One cell of the footer: an icon and a label, 56 high, centred. Every row and
+ * half-row of both footers is one of these, so the two modes are the same shape.
+ */
+function FooterButton({
+  icon,
+  label,
+  tone,
+  onPress,
+  accessibilityLabel,
+}: {
+  icon: 'plus' | 'minus' | 'edit' | 'pause' | 'play';
+  label: string;
+  tone: 'green' | 'muted' | 'danger';
+  onPress: () => void;
+  accessibilityLabel?: string;
+}) {
+  const color =
+    tone === 'green' ? palette.greenBright : tone === 'danger' ? danger : palette.inkMuted;
+  const glyph = tone === 'muted' ? palette.inkFaint : color;
+  const wash =
+    tone === 'danger'
+      ? 'rgba(224,115,95,0.08)'
+      : tone === 'green'
+        ? 'rgba(63,169,108,0.08)'
+        : 'rgba(236,241,238,0.04)';
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      style={({ pressed }) => (pressed ? { backgroundColor: wash } : undefined)}
+      className="h-row flex-1 flex-row items-center justify-center px-sm"
+    >
+      <Icon name={icon} size={13} color={glyph} />
+      <Text
+        numberOfLines={1}
+        style={{ color }}
+        className={['ml-sm text-label tabular-nums', tone === 'muted' ? '' : 'font-medium'].join(
+          ' ',
+        )}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * The ✎: a 36 dp glass circle beside the name. It sinks and tilts −12° under the
+ * finger — a pencil being picked up — which is the only flourish in the card.
+ */
+function EditCircle({ onPress, name }: { onPress: () => void; name: string }) {
+  const t = useT();
+  const press = usePressScale(0.88, -12);
+  return (
+    <Pressable
+      onPress={() => {
+        tap();
+        onPress();
+      }}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={t('Edit the plan of {name}', { name })}
+      className="ml-sm"
+    >
+      <Animated.View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 9999,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(236,241,238,0.055)',
+          borderWidth: 1,
+          borderColor: 'rgba(236,241,238,0.07)',
+          transform: press.style.transform,
+        }}
+      >
+        <Icon name="edit" size={16} color={palette.inkMuted} />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+/** `✓ Done` — the only way out of edit mode, and it arrives with a pop. */
+function DonePill({ onPress }: { onPress: () => void }) {
+  const t = useT();
+  return (
+    <Pop duration={300} style={{ marginLeft: 8 }}>
+      <Pressable
+        onPress={() => {
+          tap();
+          onPress();
+        }}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={t('Done editing the plan')}
+        style={{
+          height: 36,
+          paddingHorizontal: 14,
+          borderRadius: 9999,
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: palette.green,
+          borderWidth: 1,
+          borderColor: 'rgba(63,169,108,0.5)',
+          boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 14, color: 'rgba(63,169,108,0.3)' }],
+        }}
+      >
+        <Icon name="check" size={14} color={palette.ink} />
+        <Text
+          allowFontScaling={false}
+          style={{ fontSize: 13, marginLeft: 6 }}
+          className="font-semibold text-ink"
+        >
+          {t('Done')}
+        </Text>
+      </Pressable>
+    </Pop>
+  );
+}
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const RING_SIZE = 22;
+const RING_STROKE = 2.5;
+const RING_R = (RING_SIZE - RING_STROKE * 2) / 2 + RING_STROKE / 2;
+const RING_LENGTH = 2 * Math.PI * RING_R;
+
+/**
+ * The collapsed card's progress ring: 22 dp, a hairline track, `green-bright`
+ * fill — `ink-faint` once the exercise is done, because done is history — and
+ * the arc travels to its new share over 600 ms when a set lands.
+ */
+function MiniRing({ fraction, done }: { fraction: number; done: boolean }) {
+  const scale = useMotionScale();
+  const clamped = Math.max(0, Math.min(1, fraction));
+  const v = useRef(new Animated.Value(clamped)).current;
+  useEffect(() => {
+    Animated.timing(v, {
+      toValue: clamped,
+      duration: 600 * scale,
+      easing: curve(motion.ease),
+      // strokeDashoffset is an SVG prop, not a transform: JS driver.
+      useNativeDriver: false,
+    }).start();
+  }, [clamped, scale, v]);
+  return (
+    <Svg
+      width={RING_SIZE}
+      height={RING_SIZE}
+      style={{ transform: [{ rotate: '-90deg' }] }}
+      accessibilityElementsHidden
+      importantForAccessibility="no"
+    >
+      <Circle
+        cx={RING_SIZE / 2}
+        cy={RING_SIZE / 2}
+        r={RING_R}
+        fill="none"
+        stroke={palette.hairline}
+        strokeWidth={RING_STROKE}
+      />
+      <AnimatedCircle
+        cx={RING_SIZE / 2}
+        cy={RING_SIZE / 2}
+        r={RING_R}
+        fill="none"
+        stroke={done ? palette.inkFaint : palette.greenBright}
+        strokeWidth={RING_STROKE}
+        strokeLinecap="round"
+        strokeDasharray={RING_LENGTH}
+        strokeDashoffset={v.interpolate({ inputRange: [0, 1], outputRange: [RING_LENGTH, 0] })}
+      />
+    </Svg>
   );
 }
 

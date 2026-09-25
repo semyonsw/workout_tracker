@@ -1136,6 +1136,16 @@ describe('a log that could not be read is not an empty log', () => {
     expect(useWorkoutHistory.getState().loadFailed).toBe(false);
   });
 
+  it('is ready once the retry has run, whatever the first read did', () => {
+    // A failed first read: the skeleton and the launch chip are still waiting.
+    useWorkoutHistory.setState({ workouts: [], loadFailed: true, ready: false });
+    expect(useWorkoutHistory.getState().ready).toBe(false);
+
+    useWorkoutHistory.getState().reloadHistory();
+
+    expect(useWorkoutHistory.getState().ready).toBe(true);
+  });
+
   it('brings the pinned workout number back with it', () => {
     const saved = useWorkoutHistory
       .getState()

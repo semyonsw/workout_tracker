@@ -29,11 +29,14 @@
  * rest day would be the same lie the bar told.
  */
 
-import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Animated, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
-import { palette } from '../theme/tokens';
+import { useMotionScale } from '../hooks/useMotionScale';
+import { curve, motion, palette } from '../theme/tokens';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 interface ProgressRingProps {
   /** 0–1. Clamped here, because a total of zero is a real input. */
@@ -46,10 +49,26 @@ interface ProgressRingProps {
   children?: ReactNode;
 }
 
+/**
+ * THE ARC TRAVELS to a new share over `motion.ring` (700 ms) — stepping a month,
+ * switching direction, saving an amount — rather than redrawing. Six tiles whose
+ * rings all move at once is how a new month reads as a new month. JS-driven:
+ * `strokeDashoffset` is an SVG prop, not a transform.
+ */
 export function ProgressRing({ fraction, size, stroke, children }: ProgressRingProps) {
   const clamped = Math.max(0, Math.min(1, fraction));
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
+  const scale = useMotionScale();
+  const v = useRef(new Animated.Value(clamped)).current;
+  useEffect(() => {
+    Animated.timing(v, {
+      toValue: clamped,
+      duration: motion.ring * scale,
+      easing: curve(motion.ease),
+      useNativeDriver: false,
+    }).start();
+  }, [clamped, scale, v]);
 
   return (
     <View style={{ width: size, height: size }} className="items-center justify-center">
@@ -69,19 +88,22 @@ export function ProgressRing({ fraction, size, stroke, children }: ProgressRingP
           stroke={palette.greenDim}
           strokeWidth={stroke}
         />
-        {clamped > 0 ? (
-          <Circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={palette.greenBright}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={length}
-            strokeDashoffset={length * (1 - clamped)}
-          />
-        ) : null}
+        <AnimatedCircle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={palette.greenBright}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={length}
+          strokeDashoffset={v.interpolate({ inputRange: [0, 1], outputRange: [length, 0] })}
+          // An empty share draws no cap: a round cap on a zero-length arc is a dot.
+          strokeOpacity={v.interpolate({
+            inputRange: [0, 0.001, 1],
+            outputRange: [0, 1, 1],
+          })}
+        />
       </Svg>
       {children}
     </View>

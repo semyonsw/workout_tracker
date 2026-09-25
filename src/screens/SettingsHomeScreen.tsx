@@ -74,7 +74,7 @@ import {
   useBarInsets,
 } from '../components/glass';
 import { pressedStyle } from '../components/motion';
-import { Kicker, Separator, SettingRow, StepperRow, TextButton } from '../components/primitives';
+import { Kicker, Separator, StepperRow, TextButton, Toggle } from '../components/primitives';
 import { runBackupNow } from '../hooks/useAutoBackup';
 import { describeBackupAge } from '../lib/autoBackup';
 import {
@@ -98,7 +98,7 @@ import { commit, tap } from '../lib/feedback';
 import { LANGUAGES, LANGUAGE_LABELS, LANGUAGE_NAMES, type Language } from '../lib/i18n';
 import { applyBackup, currentSnapshot, exportBackupText } from '../state/dataTransfer';
 import { SETTING_LIMITS, useSettings } from '../state/settingsStore';
-import { palette, radius } from '../theme/tokens';
+import { danger, palette, radius } from '../theme/tokens';
 
 /** A file that has been read and understood, waiting for a yes. */
 interface PendingImport {
@@ -323,29 +323,32 @@ export function SettingsHomeScreen({
               mark: the routine list, the tick, and the symbol amounts are counted
               in. The badge is what makes this list read as a map.
 
-              Three separate panes with 8 of air between them rather than one
-              card split by hairlines — a door is a thing, and three doors in one
-              box read as three lines in a list. */}
-          <View className="mx-lg">
+              ONE card now, split by hairlines inset 64 so they start where the
+              words do — the motion pass's reading of it: three panes stacked with
+              air between them read as three separate things competing with the
+              hero below, and these are one map of the app. */}
+          <GlassSurface tier="card" radius={radius.row} shadow="e1" flat className="mx-lg">
             <SectionRow
               label={t('Workout settings')}
               hint={t('Rest, plates, weekly targets')}
               icon="routines"
               onPress={onOpenWorkoutSettings}
             />
+            <View className="ml-[64px] h-hairline bg-hairline" />
             <SectionRow
               label={t('Daily tasks settings')}
               hint={t('The automatic tick')}
               icon="check"
               onPress={onOpenTaskSettings}
             />
+            <View className="ml-[64px] h-hairline bg-hairline" />
             <SectionRow
               label={t('Expenses settings')}
               hint={t('What amounts are counted in')}
               icon="money"
               onPress={onOpenMoneySettings}
             />
-          </View>
+          </GlassSurface>
           <Text className="mx-lg mt-sm text-label text-ink-faint">
             {t(
               'Each one holds only what its own section reads. Rest, plates and weekly targets are training; the automatic tick is the daily tasks; what amounts are counted in is the expenses.',
@@ -402,25 +405,37 @@ export function SettingsHomeScreen({
           </GlassSurface>
 
           <GlassSurface tier="well" radius={radius.row} flat className="mx-lg">
-            <SettingRow
-              label={t('Back up automatically')}
-              value={
-                !settings.autoBackupEnabled
-                  ? 'Off'
-                  : settings.autoBackupFolderUri == null
-                    ? t('Needs a folder')
-                    : `${t('Every {days} days', { days: settings.autoBackupIntervalDays })} · ${folderLabel(settings.autoBackupFolderUri, language)}`
-              }
-              valueTone={
-                settings.autoBackupEnabled && settings.autoBackupFolderUri == null
-                  ? 'muted'
-                  : 'faint'
-              }
-              onPress={() => {
-                tap();
-                settings.setAutoBackupEnabled(!settings.autoBackupEnabled);
-              }}
-            />
+            {/* A REAL SWITCH now, with the state in words under the label — it
+                was a row that toggled when tapped, which is a switch nobody could
+                see was one. */}
+            <View className="min-h-[64px] flex-row items-center px-lg py-[10px]">
+              <View className="flex-1 pr-md">
+                <Text className="text-body font-medium text-ink">{t('Back up automatically')}</Text>
+                <Text
+                  numberOfLines={2}
+                  className={[
+                    'mt-[2px] text-label',
+                    settings.autoBackupEnabled && settings.autoBackupFolderUri == null
+                      ? 'text-ink-muted'
+                      : 'text-ink-faint',
+                  ].join(' ')}
+                >
+                  {!settings.autoBackupEnabled
+                    ? t('Off')
+                    : settings.autoBackupFolderUri == null
+                      ? t('Needs a folder')
+                      : `${t('Every {days} days', { days: settings.autoBackupIntervalDays })} · ${folderLabel(settings.autoBackupFolderUri, language)}`}
+                </Text>
+              </View>
+              <Toggle
+                value={settings.autoBackupEnabled}
+                accessibilityLabel={t('Back up automatically')}
+                onChange={(next) => {
+                  tap();
+                  settings.setAutoBackupEnabled(next);
+                }}
+              />
+            </View>
             {settings.autoBackupEnabled ? (
               <>
                 <Separator inset={0} />
@@ -462,8 +477,9 @@ export function SettingsHomeScreen({
           {/* PLACEMENT RULE 5. The one action on this screen that cannot be
               undone is plain text in a dashed box at the foot of the scroll —
               deliberately out of the thumb's arc. A reset should cost a scroll,
-              not a flick. Still no red: this app has one hue, and a destructive
-              action states what it does rather than shouting a colour. */}
+              not a flick. Its label is `danger` coral — the one non-green hue,
+              which the motion pass allows on exactly the controls that delete
+              plan, and this is the one on this screen that does. */}
           <BubblePressable
             onPress={() => setConfirmingReset(true)}
             radius={16}
@@ -485,8 +501,8 @@ export function SettingsHomeScreen({
           >
             <Text
               allowFontScaling={false}
-              style={{ fontSize: 13 }}
-              className="font-medium text-ink-muted"
+              style={{ fontSize: 13, color: danger }}
+              className="font-medium"
             >
               {t('Reset every setting to its default')}
             </Text>
@@ -585,7 +601,7 @@ export function SettingsHomeScreen({
 /* ------------------------------------------------------------------ */
 
 /**
- * One of the three doors at the top, as its own pane.
+ * One of the three doors at the top, as a row of the one card.
  *
  * The leading tile is the section's own mark, in the same green square the tab
  * it belongs to would draw — which is what makes this list read as the app's map
@@ -604,10 +620,9 @@ function SectionRow({
   onPress: () => void;
 }) {
   return (
-    <GlassSurface tier="card" radius={radius.row} shadow="e1" flat className="mb-sm">
+    <View>
       <BubblePressable
         onPress={onPress}
-        radius={radius.row}
         accessibilityRole="button"
         accessibilityLabel={`${label}. ${hint}`}
         style={(state) => [
@@ -656,6 +671,6 @@ function SectionRow({
         </View>
         <Icon name="chevron-right" size={16} color={palette.inkFaint} />
       </BubblePressable>
-    </GlassSurface>
+    </View>
   );
 }

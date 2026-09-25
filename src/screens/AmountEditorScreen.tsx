@@ -5,7 +5,8 @@
  *   │ ‹  NEW EXPENSE                               │  ← no Save in this bar
  *   │ AMOUNT · AMD                                 │
  *   │ 2,400 AMD                                    │  ← 60 dp, glowing once typed
- *   │ (🧊 Food ▾) (💵 Cash ▾) (Expense|Income)     │
+ *   │ (🧊 Food)(🚌 Transport)(🏠 Home)(💊 Health)  │  ← pick the category here
+ *   │ (💵 Cash ▾) (Expense|Income)                 │
  *   │ (‹ Today, 18 Sep ›) (Day|Month) (＋ Note)     │
  *   │                            ╭ ✓ Save ╮         │  ← floats over the keypad
  *   │ ┌──────┐┌──────┐┌──────┐                     │
@@ -48,6 +49,17 @@
  * two days the wrong total. The `day` prop carries it; `lib/money.ts` works out
  * which day a window means.
  *
+ * ── THE MOTION PASS ───────────────────────────────────────────────────────
+ *
+ *   • It ARRIVES like a sheet, sliding up over 400 ms.
+ *   • THE CATEGORY IS PICKED ON THIS SCREEN — every live category as a 32 dp
+ *     chip, the chosen one filled — instead of behind a chip that opened a second
+ *     sheet. It is the one field that changes what an amount is ABOUT, and
+ *     correcting it used to cost two taps and a sheet.
+ *   • THE AMOUNT ROLLS as digits land, faint at zero, ink once typed.
+ *   • A KEY SINKS to 0.92 and tints green under the finger.
+ *   • Saving says what was saved on the way out: `Food · 1,200 AMD saved`.
+ *
  * ── AND SAVE LEFT THE CORNER ──────────────────────────────────────────────
  *
  * It was a pill in the header, which is the single worst place for the one
@@ -74,8 +86,8 @@
  * lie every time you open it. See `lib/money.ts`.
  */
 
-import { useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Pressable } from '../components/Pressable';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,16 +97,28 @@ import { Sheet } from '../components/Sheet';
 import { Icon } from '../components/Icon';
 import { BubblePressable } from '../components/bubbles';
 import { FloatingAction, Lamps, SpecularEdge } from '../components/glass';
-import { pressedStyle } from '../components/motion';
+import { pressedStyle, usePressScale } from '../components/motion';
+import { RollingNumber } from '../components/RollingNumber';
+import { useMotionScale } from '../hooks/useMotionScale';
 import { Separator, TextButton } from '../components/primitives';
 import { dayKey, formatLongDay, formatMonth, parseDay, shiftDay } from '../lib/days';
 import { tap } from '../lib/feedback';
-import { type Amount, type AmountWhen, type Direction, formatValue } from '../lib/money';
+import {
+  type Amount,
+  type AmountWhen,
+  type Direction,
+  formatMoney,
+  formatValue,
+} from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useLanguage, useT } from '../hooks/useT';
 import { useSettings } from '../state/settingsStore';
-import { focalType, palette, radius } from '../theme/tokens';
+import { curve, focalType, motion, palette, radius } from '../theme/tokens';
 import type { ID } from '../types/models';
+
+/** A key's height and the air around it — 52 high, 8 apart. */
+const KEY_HEIGHT = 52;
+const KEY_GAP = 8;
 
 /** The twelve keys, in reading order. `back` is the ⌫. */
 const KEYS: readonly (string | 'back')[] = [
@@ -161,7 +185,7 @@ interface AmountEditorScreenProps {
    * the chevron, hardware back, deleting the amount — means exactly the same
    * thing, and a `onSaved` beside an `onBack` is two doors where there is one.
    */
-  onBack: (saved?: boolean) => void;
+  onBack: (saved?: boolean, summary?: string) => void;
 }
 
 export function AmountEditorScreen({
@@ -216,7 +240,7 @@ export function AmountEditorScreen({
   const [note, setNote] = useState(amount?.note ?? '');
   const [deleting, setDeleting] = useState(false);
   /** Which picker is open. Closed is the normal state of all three. */
-  const [picking, setPicking] = useState<'category' | 'account' | 'note' | null>(null);
+  const [picking, setPicking] = useState<'account' | 'note' | null>(null);
   /** Said out loud when `Save` is pressed with nothing typed. */
   const [complaint, setComplaint] = useState(false);
 
@@ -259,7 +283,17 @@ export function AmountEditorScreen({
     };
     if (amount) updateAmount(amount.id, draft);
     else addAmount(draft);
-    onBack(true);
+    /* What was saved, in the words the toast will say over the section:
+       `Food · 1,200 AMD saved`. */
+    onBack(
+      true,
+      chosen
+        ? t('{category} · {amount} saved', {
+            category: chosen.name,
+            amount: formatMoney(value, currency),
+          })
+        : undefined,
+    );
   };
 
   const stepWhen = (delta: number) => {
@@ -285,10 +319,26 @@ export function AmountEditorScreen({
      rather than to the bottom of the screen: four rows of 58 plus their 5 of
      margin apiece, plus the block's own 10 of padding. The gesture strip is NOT
      in here — `FloatingAction` adds it, the same way it does in every section. */
-  const keypadHeight = 4 * (58 + 10) + 10;
+  const keypadHeight = 4 * (KEY_HEIGHT + KEY_GAP) + 10;
+
+  /* It arrives like a sheet: translateY from the bottom edge, 400 ms, base curve. */
+  const { height } = useWindowDimensions();
+  const motionScale = useMotionScale();
+  const rise = useRef(new Animated.Value(motionScale === 0 ? 0 : height)).current;
+  useEffect(() => {
+    Animated.timing(rise, {
+      toValue: 0,
+      duration: 400 * motionScale,
+      easing: curve(motion.ease),
+      useNativeDriver: true,
+    }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rise]);
 
   return (
-    <View className="flex-1 bg-bg">
+    <Animated.View
+      style={{ flex: 1, backgroundColor: palette.bg, transform: [{ translateY: rise }] }}
+    >
       <StatusBar style="light" />
       <Lamps section="Expenses" />
 
@@ -334,27 +384,27 @@ export function AmountEditorScreen({
           >
             {`${t('Amount')} · ${currency}`}
           </Text>
-          <View className="mt-xs flex-row items-baseline">
-            <Text
-              allowFontScaling={false}
-              numberOfLines={1}
-              accessibilityLabel={t('Amount in {currency}', { currency })}
+          <View className="mt-xs flex-row items-end">
+            {/* It ROLLS as digits land — the number is seen growing. */}
+            <RollingNumber
+              value={formatValue(value)}
+              lineHeight={focalType.amount.lineHeight}
+              duration={350}
+              accessibilityLabel={`${t('Amount in {currency}', { currency })}: ${formatValue(value)}`}
               style={[
-                focalType.amount,
+                {
+                  fontSize: focalType.amount.fontSize,
+                  letterSpacing: focalType.amount.letterSpacing,
+                },
                 digits === ''
                   ? undefined
                   : { textShadowColor: 'rgba(63,169,108,0.22)', textShadowRadius: 30 },
               ]}
-              className={[
-                'font-semibold tabular-nums',
-                digits === '' ? 'text-ink-faint' : 'text-ink',
-              ].join(' ')}
-            >
-              {formatValue(value)}
-            </Text>
+              className={['font-semibold', digits === '' ? 'text-ink-faint' : 'text-ink'].join(' ')}
+            />
             <Text
               allowFontScaling={false}
-              style={{ fontSize: 22 }}
+              style={{ fontSize: 22, lineHeight: 26, marginBottom: 7 }}
               className="ml-sm font-semibold text-ink-muted"
             >
               {currency}
@@ -369,21 +419,31 @@ export function AmountEditorScreen({
 
         {/* THE ANSWERED FIELDS, as one wrapping row. Four kickers and 400 dp of
             scroll used to be here. */}
-        <View className="mt-lg flex-row flex-wrap px-lg">
-          <Chip
-            label={chosen ? `${chosen.glyph}  ${chosen.name}` : t('Pick a category')}
-            tone="lit"
-            chevron
-            onPress={() => {
-              tap();
-              setPicking('category');
-            }}
-            accessibilityLabel={
-              chosen
-                ? t('Category: {name}. Change it.', { name: chosen.name })
-                : t('Pick a category')
-            }
-          />
+        {/* THE CATEGORY, picked right here: every live one as a chip, the
+            chosen one filled. See the file header. */}
+        <View
+          accessibilityRole="radiogroup"
+          accessibilityLabel={t('Category')}
+          className="mt-lg flex-row flex-wrap px-lg"
+          style={{ gap: 6 }}
+        >
+          {live.map((option) => (
+            <CategoryChip
+              key={option.id}
+              glyph={option.glyph}
+              name={option.name}
+              selected={option.id === category}
+              onPress={() => {
+                tap();
+                setComplaint(false);
+                setCategory(option.id);
+              }}
+            />
+          ))}
+        </View>
+
+        {/* THE OTHER ANSWERED FIELDS, as one wrapping row. */}
+        <View className="mt-md flex-row flex-wrap px-lg">
           <Chip
             label={chosenAccount ? `${chosenAccount.glyph}  ${chosenAccount.name}` : '—'}
             chevron
@@ -487,29 +547,6 @@ export function AmountEditorScreen({
         onPress={save}
       />
 
-      {picking === 'category' ? (
-        <Sheet title={t('Category')} onDismiss={() => setPicking(null)}>
-          <View className="overflow-hidden rounded-surface bg-surface-alt">
-            {live.map((option, index) => (
-              <View key={option.id}>
-                {index > 0 ? <Separator inset={16} /> : null}
-                <PickRow
-                  glyph={option.glyph}
-                  name={option.name}
-                  selected={option.id === category}
-                  onPress={() => {
-                    tap();
-                    setCategory(option.id);
-                    setPicking(null);
-                  }}
-                />
-              </View>
-            ))}
-          </View>
-          <TextButton label={t('Cancel')} onPress={() => setPicking(null)} />
-        </Sheet>
-      ) : null}
-
       {picking === 'account' ? (
         <Sheet title={t('Subsection')} onDismiss={() => setPicking(null)}>
           <View className="overflow-hidden rounded-surface bg-surface-alt">
@@ -570,14 +607,14 @@ export function AmountEditorScreen({
           onCancel={() => setDeleting(false)}
         />
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 
 /* ------------------------------------------------------------------ */
 
 /**
- * One key. 58 tall, `card` glass, and its own shadow — twelve panes sitting on
+ * One key. 52 tall, `card` glass, radius 18 — twelve panes sitting on
  * the page rather than twelve holes cut in it.
  *
  * `flat`: twelve `BlurView`s in one grid is four times the budget this app gives
@@ -588,45 +625,102 @@ export function AmountEditorScreen({
 function Key({ value, onPress }: { value: string | 'back'; onPress: () => void }) {
   const t = useT();
   const back = value === 'back';
+  const press = usePressScale(0.92);
   return (
-    <BubblePressable
-      onPress={onPress}
-      radius={radius.row}
-      accessibilityRole="button"
-      accessibilityLabel={back ? t('Delete the last digit') : value}
-      style={(state) => [
-        pressedStyle(state),
-        {
-          flex: 1,
-          margin: 5,
-          height: 58,
+    <Animated.View style={{ flex: 1, margin: KEY_GAP / 2, transform: press.style.transform }}>
+      <BubblePressable
+        onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        radius={radius.row}
+        accessibilityRole="button"
+        accessibilityLabel={back ? t('Delete the last digit') : value}
+        style={({ pressed }) => ({
+          height: KEY_HEIGHT,
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: radius.row,
           overflow: 'hidden',
           borderWidth: 1,
           borderColor: 'rgba(236,241,238,0.06)',
-          backgroundColor: back ? 'rgba(236,241,238,0.028)' : 'rgba(236,241,238,0.055)',
-          boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 16, color: 'rgba(0,0,0,0.35)' }],
-        },
-      ]}
-    >
-      <SpecularEdge color="rgba(236,241,238,0.1)" radius={radius.row} />
-      {back ? (
-        <Icon name="backspace" size={22} color={palette.inkMuted} />
-      ) : (
+          // Under the finger it tints green: the key being pressed is the one
+          // thing on the pad that is currently the answer.
+          backgroundColor: pressed
+            ? 'rgba(63,169,108,0.18)'
+            : back
+              ? 'rgba(236,241,238,0.028)'
+              : 'rgba(236,241,238,0.055)',
+        })}
+      >
+        <SpecularEdge color="rgba(236,241,238,0.08)" radius={radius.row} />
+        {back ? (
+          <Icon name="backspace" size={22} color={palette.inkMuted} />
+        ) : (
+          <Text
+            allowFontScaling={false}
+            style={{ fontSize: value === '000' ? 17 : 24 }}
+            className={[
+              'tabular-nums text-ink',
+              value === '000' ? 'font-semibold' : 'font-medium',
+            ].join(' ')}
+          >
+            {value}
+          </Text>
+        )}
+      </BubblePressable>
+    </Animated.View>
+  );
+}
+
+/**
+ * One category, as a 32 dp chip on the keypad: the glyph and the name, filled
+ * green when it is the one this amount is in.
+ */
+function CategoryChip({
+  glyph,
+  name,
+  selected,
+  onPress,
+}: {
+  glyph: string;
+  name: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const press = usePressScale(0.92);
+  return (
+    <Animated.View style={{ transform: press.style.transform }}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        accessibilityRole="radio"
+        accessibilityState={{ selected }}
+        accessibilityLabel={name}
+        style={{
+          height: 32,
+          paddingHorizontal: 12,
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderRadius: radius.pill,
+          borderWidth: 1,
+          borderColor: selected ? 'rgba(63,169,108,0.5)' : palette.hairline,
+          backgroundColor: selected ? palette.green : 'rgba(236,241,238,0.035)',
+        }}
+      >
+        <Text allowFontScaling={false} style={{ fontSize: 12 }}>
+          {glyph}
+        </Text>
         <Text
           allowFontScaling={false}
-          style={{ fontSize: value === '000' ? 17 : 24 }}
-          className={[
-            'tabular-nums text-ink',
-            value === '000' ? 'font-semibold' : 'font-medium',
-          ].join(' ')}
+          numberOfLines={1}
+          style={{ fontSize: 12, marginLeft: 6, maxWidth: 140 }}
+          className={selected ? 'font-semibold text-ink' : 'font-medium text-ink-muted'}
         >
-          {value}
+          {name}
         </Text>
-      )}
-    </BubblePressable>
+      </Pressable>
+    </Animated.View>
   );
 }
 

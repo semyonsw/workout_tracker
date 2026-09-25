@@ -66,6 +66,17 @@
  *     common edit, and the row's own editor is one ✓ or one tap on another row
  *     away. What that buys is the numbers you are about to lift at 56 dp instead
  *     of 30, on a screen with nothing else on it.
+ *   • IN EDIT MODE EVERY ROW GROWS A `−` ON THE LEFT — a 28 dp coral ring that
+ *     pops in and removes THAT row. It used to be one `Remove set` that always
+ *     took the bottom row, which is the right answer for "three today, not four"
+ *     and the wrong one for "that warm-up was a mistake". Coral is `danger`, the
+ *     one non-green hue, and it only exists inside edit mode.
+ *   • THE ✓ IS CAUGHT, AND THE ROW FLASHES. On the tap that logs it the fill pops
+ *     in on the overshoot curve and the whole row washes green and fades — both
+ *     only on the transition, never on a row that was already logged when the
+ *     card opened, so opening a finished exercise is not a light show.
+ *   • THE RING BREATHES. Its glow swells between 16 and 30 dp over 2.6 s, which is
+ *     how the one row on a bench-height phone says "here" without being read.
  *   • A BARBELL LIFT gets what goes on the bar, under the weight cell:
  *     `20 + 2×10 + 2×2.5`. Only when the exercise declares a `barWeightKg`, so a
  *     machine, a dumbbell and a cable stack never show one — a plate breakdown for
@@ -76,8 +87,8 @@
  *     tempting place in the codebase to break that.
  */
 
-import { memo } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, Text, View } from 'react-native';
 
 import { commit, tap, undo } from '../lib/feedback';
 import type { DraftSet } from '../lib/draft';
@@ -86,8 +97,10 @@ import { describePlates, platesFor } from '../lib/plates';
 import { maxLabel, showsMaxLabel } from '../lib/maxReps';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useLanguage, useT } from '../hooks/useT';
-import { glow as GLOW, halo, palette } from '../theme/tokens';
+import { useMotionScale } from '../hooks/useMotionScale';
+import { danger, glow as GLOW, palette } from '../theme/tokens';
 import { Icon } from './Icon';
+import { Flash, Pop, usePressScale } from './motion';
 
 export type SetField = 'weight' | 'count';
 
@@ -134,6 +147,11 @@ interface SetRowProps {
   onToggleComplete: () => void;
   /** Start the clock, or — while it runs — stop it and log what it read. */
   onPressTimer?: () => void;
+  /**
+   * Session edit mode: present = draw the `−` and remove THIS row with it.
+   * Absent everywhere outside edit mode, which is what hides it.
+   */
+  onRemove?: () => void;
 }
 
 function SetRowComponent({
@@ -151,10 +169,23 @@ function SetRowComponent({
   onFocusField,
   onToggleComplete,
   onPressTimer,
+  onRemove,
 }: SetRowProps) {
   const t = useT();
   const lang = useLanguage();
   const done = set.isCompleted;
+  /*
+   * THE MOMENT A SET IS LOGGED, as opposed to the fact that it is. The pop and
+   * the flash are keyed on the transition, so a row that mounts already logged —
+   * a finished card opened to read it — renders at rest. See the file header.
+   */
+  const wasDone = useRef(done);
+  const [loggedAt, setLoggedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (done && !wasDone.current) setLoggedAt(Date.now());
+    if (!done) setLoggedAt(null);
+    wasDone.current = done;
+  }, [done]);
   /*
    * A logged set is not "up next" however the card labels it: the ring means DO
    * THIS, and the row it belongs on moves the instant the ✓ lands.
@@ -228,6 +259,13 @@ function SetRowComponent({
    */
   const rowChildren = (
     <>
+      {/* The flash. First child so everything paints over it; it takes nothing. */}
+      {loggedAt != null ? <Flash key={loggedAt} /> : null}
+
+      {/* EDIT MODE's own control, and the only thing in the row that moves the
+          numbers: 38 dp in from the left, the row's content slides over by it. */}
+      {onRemove ? <RemoveMark onPress={onRemove} /> : null}
+
       {/* Set index — never a tap target, purely a landmark. `W` for a warm-up:
           see the file header. It goes green and up a size on the ringed row with
           the numbers beside it: it is the label OF those numbers, and a micro
@@ -328,10 +366,25 @@ function SetRowComponent({
         accessibilityLabel={done ? t('Undo set') : t('Complete set')}
         className={[
           'h-hit w-hit items-center justify-center rounded-pill',
-          done ? 'bg-green' : 'border border-hairline',
+          done ? '' : 'border',
         ].join(' ')}
+        style={done ? undefined : { borderColor: ring ? 'rgba(63,169,108,0.5)' : palette.hairline }}
       >
-        <Icon name="check" size={20} color={done ? palette.ink : palette.inkFaint} />
+        {done ? (
+          /* The fill, caught: it pops in on the overshoot curve when THIS tap
+             logged it, and simply is there on a row that was logged already. */
+          loggedAt != null ? (
+            <Pop key={loggedAt} duration={340} style={DONE_FILL}>
+              <Icon name="check" size={20} color={palette.ink} />
+            </Pop>
+          ) : (
+            <View style={DONE_FILL}>
+              <Icon name="check" size={20} color={palette.ink} />
+            </View>
+          )
+        ) : (
+          <Icon name="check" size={20} color={ring ? palette.greenBright : palette.inkFaint} />
+        )}
       </Pressable>
 
       {/*
@@ -340,27 +393,7 @@ function SetRowComponent({
         AROUND the row rather than as the card's own edge. Zero layout cost: see the
         file header on why this is not a border.
       */}
-      {ring ? (
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: 6,
-            right: 6,
-            top: 4,
-            bottom: 4,
-            borderRadius: 16,
-            borderWidth: 2,
-            borderColor: palette.greenBright,
-            // `halo.single` — and the name is the rule: EXACTLY ONE of these per
-            // screen. It is the brightest thing in the app for the same reason
-            // it is the rarest, and the ring has to bloom as much as the
-            // numerals inside it do or the outline reads as the sharper of two
-            // edges. See `theme/tokens.ts`.
-            boxShadow: [...halo.single],
-          }}
-        />
-      ) : null}
+      {ring ? <UpNextRing /> : null}
     </>
   );
 
@@ -375,6 +408,126 @@ function SetRowComponent({
     </Pressable>
   ) : (
     <View className={rowClass}>{rowChildren}</View>
+  );
+}
+
+/**
+ * The ring around the up-next row, and its breath.
+ *
+ * `halo.single`'s rule still holds — EXACTLY ONE of these per screen — and the
+ * ring still has to bloom as much as the numerals inside it do. What the motion
+ * pass adds is that the bloom BREATHES, 16 ↔ 30 dp and 0.45 ↔ 0.8 over 2.6 s: a
+ * `boxShadow` cannot animate, so it is two fixed rings, the brighter one's opacity
+ * swinging over the dimmer. Native-driven, so a rest ticking four times a second
+ * on the JS thread cannot make it stutter. Still with reduced motion on.
+ */
+function UpNextRing() {
+  const scale = useMotionScale();
+  const breath = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (scale === 0) return undefined;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breath, {
+          toValue: 1,
+          duration: 1300,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(breath, {
+          toValue: 0,
+          duration: 1300,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [breath, scale]);
+
+  return (
+    <>
+      <View
+        pointerEvents="none"
+        style={[
+          RING_BOX,
+          {
+            borderWidth: 2,
+            borderColor: palette.greenBright,
+            boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 16, color: 'rgba(63,169,108,0.45)' }],
+          },
+        ]}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          RING_BOX,
+          {
+            opacity: breath,
+            boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 30, color: 'rgba(63,169,108,0.8)' }],
+          },
+        ]}
+      />
+    </>
+  );
+}
+
+/** Inset 6/4 so the ring reads as AROUND the row rather than as the card's edge. */
+const RING_BOX = {
+  position: 'absolute',
+  left: 6,
+  right: 6,
+  top: 4,
+  bottom: 4,
+  borderRadius: 16,
+} as const;
+
+/** The logged ✓'s fill — the commit gradient's end, on the 44 dp target. */
+const DONE_FILL = {
+  width: 44,
+  height: 44,
+  borderRadius: 9999,
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: palette.green,
+  borderWidth: 1,
+  borderColor: 'rgba(63,169,108,0.5)',
+} as const;
+
+/**
+ * Edit mode's `−`: 28 dp, a 1.5 dp coral ring, coral minus, 10 of air before the
+ * set number. It pops in when edit mode opens and sinks under the finger.
+ */
+function RemoveMark({ onPress }: { onPress: () => void }) {
+  const t = useT();
+  const press = usePressScale(0.85);
+  return (
+    <Pop duration={260} style={{ marginRight: 10 }}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={t('Remove this set')}
+      >
+        <Animated.View
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 9999,
+            borderWidth: 1.5,
+            borderColor: danger,
+            alignItems: 'center',
+            justifyContent: 'center',
+            transform: press.style.transform,
+          }}
+        >
+          <Icon name="minus" size={12} color={danger} />
+        </Animated.View>
+      </Pressable>
+    </Pop>
   );
 }
 

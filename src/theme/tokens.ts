@@ -7,8 +7,10 @@
  * SVG fills and strokes, the timer's numerals, and the app's one shadow.
  *
  * Rules encoded here:
- *  - ONE hue. Near-black page, one green scale, nothing else. No red for
- *    destructive, no amber for warnings, no colour-coded categories.
+ *  - ONE hue. Near-black page, one green scale, nothing else. No amber for
+ *    warnings, no colour-coded categories. The single, deliberate exception is
+ *    `danger` below — coral on the handful of controls that delete plan — and it
+ *    is one constant so it can be turned back into `inkMuted` in one line.
  *  - Green-on-black TEXT is `greenBright` only; `green` fails contrast at small
  *    sizes and is for fills. Text on a `green` fill is `ink` at 600.
  *  - TWO radii (14 for surfaces, pill for the rest), both in `tailwind.config.js`.
@@ -18,6 +20,8 @@
  *  - Numbers are always tabular. A weight that shifts by a pixel when it goes
  *    from 9 to 10 reps is the difference between "app" and "instrument".
  */
+
+import { Easing } from 'react-native';
 
 export const palette = {
   bg: '#060807', // page — near-black with a faint green cast (OLED off-pixels)
@@ -456,3 +460,70 @@ export const floatingSlot = { right: 16, bottom: 92, height: 60, paddingH: 24 } 
  * and the floating action's clearance.
  */
 export const barInset = { top: 64, bottom: 178 } as const;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOTION — the redesign's second pass, and the one thing it adds to this file
+   that is about TIME rather than about paint.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Three curves and a short list of durations. Every animation the motion pass
+ * added uses one of these, multiplied by `useMotionScale()` so Android's "Remove
+ * animations" turns the whole pass into end states at once.
+ *
+ *   ease   — anything arriving or moving. The base curve the app already had.
+ *   pop    — a thing that is CAUGHT: a ✓, the Done pill, the DONE press. It
+ *            overshoots, and the overshoot is the acknowledgement.
+ *   spring — a sliding thumb or pane: the tab bar, a segmented control, the
+ *            language switch. A slight overshoot, less than `pop`, because a thumb
+ *            that lands is a position and not an event.
+ *
+ * NUMBERS, NOT `Easing` OBJECTS, so the table stays data a test can read and a
+ * designer can diff against the handoff. `curve()` turns one into an easing.
+ */
+export const motion = {
+  ease: [0.2, 0.8, 0.2, 1] as const,
+  pop: [0.34, 1.56, 0.64, 1] as const,
+  spring: [0.34, 1.25, 0.64, 1] as const,
+  /** Scale-down on press. */
+  press: 140,
+  /** A section, a card, a row arriving: fade and rise. */
+  enter: 320,
+  /** A bottom sheet or focus mode sliding up. */
+  sheet: 420,
+  /** A set row growing in or shrinking out. */
+  row: 300,
+  /** Rolling digits. */
+  roll: 650,
+  /** A progress ring re-filling. */
+  ring: 700,
+  /** A logged set's green flash. */
+  flash: 900,
+  /** Focus mode's DONE ripple. */
+  ripple: 700,
+  /** One beat of the final-ten-seconds pulse. */
+  pulseMs: 1000,
+  /** One breath of the workout hero's halo. */
+  halo: 6000,
+} as const;
+
+/**
+ * THE ONE NON-GREEN HUE, and the rule that keeps it rare: destructive actions,
+ * and only where they are already out of the way — the per-row `−` and
+ * `Remove exercise` inside session edit mode, and the Settings reset.
+ *
+ * It exists because edit mode puts a delete next to every set row, and in green
+ * a `−` beside a ✓ reads as another way of logging. Set this to
+ * `palette.inkMuted` and the app is one hue again.
+ */
+export const danger = '#E0735F';
+
+/**
+ * One of the `motion` curves as an `Easing`, for `Animated.timing`.
+ *
+ * The only thing in this file that imports React Native, and it is here rather
+ * than beside the hook because a curve and its name belong in the same table.
+ */
+export function curve(c: readonly [number, number, number, number]): (value: number) => number {
+  return Easing.bezier(c[0], c[1], c[2], c[3]);
+}

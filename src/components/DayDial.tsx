@@ -11,12 +11,11 @@
  *
  * ── WHY IT IS NOT `ProgressRing` WITH A BIGGER `size` ─────────────────────
  *
- * `ProgressRing` draws a static arc, and it is right to: a category tile's share
- * of a month has nothing to animate, and six of them arriving at once want to be
- * cheap. This one is the hero of its screen and it has two things that one does
- * not — the arc TRAVELS to its new value, and the halo behind it is a function
- * of that value rather than a constant. Both are per-frame work, and putting
- * them behind a prop on the shared ring would make every tile pay for a
+ * `ProgressRing`'s arc travels too, since the motion pass — a new month moves
+ * every tile's share at once, and that movement is how a new month reads as one.
+ * What this one has that the tiles do not is the HALO behind it, a function of
+ * the value rather than a constant, and the dial's own size and 760 ms timing.
+ * Putting those behind props on the shared ring would make six tiles carry a
  * capability only the dial uses.
  *
  * ── AND WHY IT IS `Animated` RATHER THAN REANIMATED ───────────────────────

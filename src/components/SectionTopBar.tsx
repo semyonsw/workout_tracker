@@ -73,6 +73,7 @@ import { Icon, type IconName } from './Icon';
 import { BubblePressable } from './bubbles';
 import { GlassBar, SpecularEdge } from './glass';
 import { pressedStyle } from './motion';
+import { SlidingThumb } from './SlidingThumb';
 import { useT } from '../hooks/useT';
 import { palette, radius } from '../theme/tokens';
 
@@ -217,6 +218,10 @@ function TopBarButton({ action }: { action: TopBarAction }) {
  * band as the glyph row beside it and a segmented control is 44 with its own
  * track. It is still the same idea — one of two, the selected one on green — so
  * it reads as the app's vocabulary rather than as a new control.
+ *
+ * The green is ONE 44 × 26 pill that SLIDES between the two letters (300 ms, a
+ * slight overshoot) rather than each letter lighting its own background: the
+ * change of language is a change of position, and the pane says where it went.
  */
 export function LanguageToggle({
   options,
@@ -228,6 +233,10 @@ export function LanguageToggle({
   onSelect: (value: string) => void;
 }) {
   const t = useT();
+  const index = Math.max(
+    0,
+    options.findIndex((option) => option.value === active),
+  );
   return (
     <View
       accessibilityRole="radiogroup"
@@ -238,6 +247,19 @@ export function LanguageToggle({
       }}
       className="h-[34px] flex-row items-center rounded-pill border p-[3px]"
     >
+      <SlidingThumb
+        index={index}
+        count={options.length}
+        trackWidth={options.length * SEGMENT + 6}
+        inset={3}
+        duration={300}
+        bezier={[0.34, 1.3, 0.64, 1]}
+        style={{
+          borderRadius: 9999,
+          backgroundColor: palette.green,
+          boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 14, color: 'rgba(63,169,108,0.3)' }],
+        }}
+      />
       {options.map((option) => {
         const selected = option.value === active;
         return (
@@ -248,28 +270,14 @@ export function LanguageToggle({
             accessibilityRole="radio"
             accessibilityState={{ selected }}
             accessibilityLabel={option.name}
-            style={(state) => [
-              pressedStyle(state),
-              selected
-                ? {
-                    // The same specular the rest of the lit surfaces carry, so
-                    // the selected half reads as a pane rather than as a swatch.
-                    boxShadow: [
-                      { offsetX: 0, offsetY: 0, blurRadius: 14, color: 'rgba(63,169,108,0.3)' },
-                    ],
-                  }
-                : undefined,
-            ]}
-            className={[
-              'h-[28px] items-center justify-center rounded-pill px-md',
-              selected ? 'bg-green' : '',
-            ].join(' ')}
+            style={pressedStyle}
+            className="h-[28px] w-[44px] items-center justify-center rounded-pill"
           >
             <Text
               allowFontScaling={false}
               className={[
                 'text-label',
-                selected ? 'font-semibold text-ink' : 'font-medium text-ink-faint',
+                selected ? 'font-semibold text-ink' : 'font-semibold text-ink-faint',
               ].join(' ')}
             >
               {option.label}
@@ -280,3 +288,6 @@ export function LanguageToggle({
     </View>
   );
 }
+
+/** One letter's cell, and the width the thumb covers. */
+const SEGMENT = 44;

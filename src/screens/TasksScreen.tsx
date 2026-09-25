@@ -92,21 +92,37 @@
  * there is nothing there to tick, and a screen offering to let you tick it would
  * be offering to lie. The `›` is at 25% on today rather than absent, so the dial
  * does not shift sideways when you step back to yesterday.
+ *
+ * ── THE MOTION PASS ───────────────────────────────────────────────────────
+ *
+ *   • The done / left counts ROLL, and so does each row's streak.
+ *   • The mark sinks to 0.88 under the thumb — it is pressed without being
+ *     looked at, so the press has to be felt in the finger's own movement.
+ *   • THE DAY BUBBLE. Scroll the dial away and a small copy of it follows you at
+ *     the top: a mini ring, the date, `3 of 6 done` and the share. Ticking a row
+ *     while scrolled down refills it, rolls its numbers and grows its halo with
+ *     the day; at 100% the share turns solid green. Tapping it scrolls back up.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, ScrollView, Text, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 import { Pressable } from '../components/Pressable';
 import { StatusBar } from 'expo-status-bar';
 
 import { DayDial } from '../components/DayDial';
+import { FloatingBubble, useHeroRecede } from '../components/FloatingBubble';
+import { RollingNumber, RollingPhrase } from '../components/RollingNumber';
+import { FADE_ON, RunningText } from '../components/RunningText';
+import { useBubbleOnScroll } from '../hooks/useBubbleOnScroll';
+import { useMotionScale } from '../hooks/useMotionScale';
 import { Icon } from '../components/Icon';
 import { ReorderRow } from '../components/ReorderRow';
 import { SectionTopBar } from '../components/SectionTopBar';
 import { SparkBurst, SPARK_MS } from '../components/SparkBurst';
 import { StreakFlame } from '../components/StreakFlame';
 import { CommitMark, FloatingAction, GlassSurface, Lamps, useBarInsets } from '../components/glass';
-import { pressedStyle } from '../components/motion';
+import { pressedStyle, usePressScale } from '../components/motion';
 import { Kicker } from '../components/primitives';
 import { TaskEditorSheet } from '../components/TaskEditorSheet';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
@@ -114,10 +130,12 @@ import { useLanguage, useT } from '../hooks/useT';
 import {
   dayKey,
   formatLongDay,
+  formatShortDay,
   monthNames,
   parseDay,
   shiftDay,
   weekdayIndex,
+  weekdayLabels,
   weekdayNames,
 } from '../lib/days';
 import {
@@ -133,7 +151,7 @@ import {
 } from '../lib/tasks';
 import type { Language } from '../lib/i18n';
 import { useTasks } from '../state/tasksStore';
-import { focalType, palette, radius, textGlow } from '../theme/tokens';
+import { curve, focalType, motion, palette, radius, textGlow } from '../theme/tokens';
 import type { ID } from '../types/models';
 
 interface TasksScreenProps {
@@ -247,6 +265,10 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
   );
   const liftedTask = lifted ? (rows.find((row) => row.id === lifted) ?? null) : null;
 
+  /* The day bubble, and the dial stepping back while it is up. */
+  const { visible: bubbleUp, onScroll, scrollRef, scrollToTop } = useBubbleOnScroll();
+  const heroRecede = useHeroRecede(bubbleUp);
+
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
@@ -261,6 +283,9 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
       />
 
       <ScrollView
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         className="flex-1"
         contentContainerStyle={{ paddingTop: bars.top, paddingBottom: bars.bottom }}
         showsVerticalScrollIndicator={false}
@@ -293,7 +318,13 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
             {/* THE DAY DIAL. The date is inside the fraction rather than above
                 it: one object answering "what day, and how did it go" instead of
                 a pager, a bar and a sentence stacked in reading order. */}
-            <View className="mt-md flex-row items-center justify-center px-lg">
+            <Animated.View
+              style={[
+                { marginTop: 12, flexDirection: 'row', alignItems: 'center' },
+                { justifyContent: 'center', paddingHorizontal: 16 },
+                heroRecede,
+              ]}
+            >
               <Pressable
                 onPress={() => onChangeDay(shiftDay(day, -1))}
                 hitSlop={10}
@@ -354,7 +385,7 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
               >
                 <Icon name="chevron-right" size={20} color={palette.inkMuted} />
               </Pressable>
-            </View>
+            </Animated.View>
 
             <View className="mt-md flex-row items-center justify-center px-lg">
               <Kicker tone={isToday ? 'green' : 'faint'}>
@@ -370,12 +401,12 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
                 <Text className="text-label text-ink-muted">{t('Nothing asked for today')}</Text>
               ) : (
                 <>
-                  <CountPill label={t('{count} done', { count: progress.done })} tone="done" />
+                  <CountPill template={t('{count} done')} count={progress.done} tone="done" />
                   {open > 0 ? (
-                    <CountPill label={t('{count} left', { count: open })} tone="left" />
+                    <CountPill template={t('{count} left')} count={open} tone="left" />
                   ) : null}
                   {excused > 0 ? (
-                    <CountPill label={t('{count} on purpose', { count: excused })} tone="excused" />
+                    <CountPill template={t('{count} on purpose')} count={excused} tone="excused" />
                   ) : null}
                 </>
               )}
@@ -466,6 +497,19 @@ export function TasksScreen({ onOpenTask, onOpenHistory, day, onChangeDay }: Tas
           already is when the last mark lands. */}
       {celebrating ? <SparkBurst y={bars.top + 100} /> : null}
 
+      {/* THE DAY BUBBLE — the dial, carried along once it has scrolled away. */}
+      {lifted ? null : (
+        <DayBubble
+          visible={bubbleUp}
+          day={day}
+          isToday={isToday}
+          done={progress.done}
+          total={progress.total}
+          fraction={progress.fraction}
+          onTop={scrollToTop}
+        />
+      )}
+
       {/* `Add task` — the same slot, in the same place, as every other section's
           one commit action. It was a dashed row at the foot of the list, which
           is a target that moves as the day fills. */}
@@ -507,8 +551,20 @@ function monthLabel(day: string, lang: Language): string {
   return `${monthNames(lang)[date.getMonth()].slice(0, 3)} ${date.getFullYear()}`;
 }
 
-/** One of the three counts under the dial. 30 tall, and the third one dashed. */
-function CountPill({ label, tone }: { label: string; tone: 'done' | 'left' | 'excused' }) {
+/**
+ * One of the three counts under the dial. 30 tall, the third one dashed, and the
+ * number ROLLS when a mark moves it.
+ */
+function CountPill({
+  template,
+  count,
+  tone,
+}: {
+  /** Translated with its `{count}` hole still in it — see `RollingPhrase`. */
+  template: string;
+  count: number;
+  tone: 'done' | 'left' | 'excused';
+}) {
   const done = tone === 'done';
   const excused = tone === 'excused';
   return (
@@ -533,15 +589,16 @@ function CountPill({ label, tone }: { label: string; tone: 'done' | 'left' | 'ex
             : 'rgba(236,241,238,0.04)',
       }}
     >
-      <Text
-        allowFontScaling={false}
+      <RollingPhrase
+        template={template}
+        values={{ count }}
+        lineHeight={18}
+        duration={450}
         className={[
-          'text-label font-medium tabular-nums',
+          'text-label font-medium',
           done ? 'text-green-bright' : excused ? 'text-ink-faint' : 'text-ink-muted',
         ].join(' ')}
-      >
-        {label}
-      </Text>
+      />
     </View>
   );
 }
@@ -568,6 +625,7 @@ function TaskRow({
   const t = useT();
   const done = mark === 'done';
   const missed = mark === 'missed';
+  const press = usePressScale(0.88);
 
   return (
     <GlassSurface
@@ -596,6 +654,8 @@ function TaskRow({
       <View style={{ height: 72, flexDirection: 'row', alignItems: 'center' }}>
         <Pressable
           onPress={onToggle}
+          onPressIn={press.onPressIn}
+          onPressOut={press.onPressOut}
           onLongPress={onLongPress}
           delayLongPress={280}
           accessibilityRole="checkbox"
@@ -607,7 +667,9 @@ function TaskRow({
           // this screen that is pressed without being looked at.
           className="h-[72px] w-[60px] items-center justify-center"
         >
-          <Mark mark={mark} />
+          <Animated.View style={{ transform: press.style.transform }}>
+            <Mark mark={mark} />
+          </Animated.View>
         </Pressable>
 
         <Pressable
@@ -621,14 +683,15 @@ function TaskRow({
           className="h-[72px] flex-1 flex-row items-center pr-lg"
         >
           <View className="flex-1 pr-md">
-            <Text
-              numberOfLines={1}
+            {/* The name RUNS: `Evening Bible reading and a short journal entry`
+                is one task, and its end is the part that says which one. */}
+            <RunningText
+              text={task.name}
               allowFontScaling={false}
+              fadeColor={done ? '#0D1B13' : missed ? palette.bg : FADE_ON.card}
               style={{ fontSize: 15, lineHeight: 20 }}
               className={missed ? 'text-ink-muted' : 'text-ink'}
-            >
-              {task.name}
-            </Text>
+            />
             <Text
               numberOfLines={1}
               allowFontScaling={false}
@@ -725,4 +788,179 @@ function answerOf(mark: TaskMark | null): string {
   if (mark === 'done') return 'Done';
   if (mark === 'missed') return 'Missed on purpose';
   return 'Not answered';
+}
+
+/* ------------------------------------------------------------------ */
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const MINI = 44;
+const MINI_R = 19;
+const MINI_STROKE = 3.5;
+const MINI_LENGTH = 2 * Math.PI * MINI_R;
+
+/**
+ * THE DAY BUBBLE — the dial at a tenth of its size.
+ *
+ *   ╭────────────────────────────────────────╮
+ *   │ (25)  TODAY · THU               ( 50% ) │
+ *   │       25 September                      │
+ *   │       3 of 6 done                       │
+ *   ╰────────────────────────────────────────╯
+ *
+ * The mini ring refills over 760 ms as marks land, the counts and the share roll,
+ * and the capsule's green halo grows with the day — blur 14 → 36, alpha 0.14 →
+ * 0.48 — so a nearly finished day glows brighter than an empty one even at the
+ * top of a scrolled list. At 100% the share pill turns solid green. Tapping any
+ * of it scrolls back to the dial.
+ */
+function DayBubble({
+  visible,
+  day,
+  isToday,
+  done,
+  total,
+  fraction,
+  onTop,
+}: {
+  visible: boolean;
+  day: string;
+  isToday: boolean;
+  done: number;
+  total: number;
+  fraction: number;
+  onTop: () => void;
+}) {
+  const t = useT();
+  const lang = useLanguage();
+  const scale = useMotionScale();
+  const clamped = Math.max(0, Math.min(1, fraction));
+  const full = total > 0 && done >= total;
+  const percent = Math.round(clamped * 100);
+  const ring = useRef(new Animated.Value(clamped)).current;
+  useEffect(() => {
+    Animated.timing(ring, {
+      toValue: clamped,
+      duration: 760 * scale,
+      easing: curve(motion.ease),
+      useNativeDriver: false,
+    }).start();
+  }, [clamped, ring, scale]);
+
+  const date = parseDay(day);
+  const weekday = date ? weekdayLabels(lang)[weekdayIndex(date)] : '';
+  const kicker = isToday ? `${t('Today')} · ${weekday}` : weekday;
+
+  return (
+    <FloatingBubble
+      visible={visible}
+      haloFraction={clamped}
+      contentStyle={{ gap: 12, paddingRight: 18 }}
+      accessibilityLabel={`${isToday ? t('Today') : weekdayName(day, lang)}, ${t(
+        '{done} of {total} done',
+        { done, total },
+      )}, ${t('{percent} percent', { percent })}`}
+    >
+      <Pressable
+        onPress={onTop}
+        accessibilityRole="button"
+        accessibilityLabel={t('Back to the dial')}
+        style={{ width: MINI, height: MINI, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Svg
+          width={MINI}
+          height={MINI}
+          style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}
+        >
+          <Circle
+            cx={MINI / 2}
+            cy={MINI / 2}
+            r={MINI_R}
+            fill="rgba(6,8,7,0.35)"
+            stroke={palette.greenDim}
+            strokeWidth={MINI_STROKE}
+          />
+          <AnimatedCircle
+            cx={MINI / 2}
+            cy={MINI / 2}
+            r={MINI_R}
+            fill="none"
+            stroke={palette.greenBright}
+            strokeWidth={MINI_STROKE}
+            strokeLinecap="round"
+            strokeDasharray={MINI_LENGTH}
+            strokeDashoffset={ring.interpolate({
+              inputRange: [0, 1],
+              outputRange: [MINI_LENGTH, 0],
+            })}
+          />
+        </Svg>
+        <Text
+          allowFontScaling={false}
+          style={{
+            fontSize: 16,
+            letterSpacing: -0.5,
+            textShadowColor: 'rgba(63,169,108,0.4)',
+            textShadowRadius: 12,
+          }}
+          className="font-bold tabular-nums text-ink"
+        >
+          {dayNumber(day)}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        onPress={onTop}
+        accessibilityRole="button"
+        accessibilityLabel={t('Back to the dial')}
+      >
+        <Text
+          allowFontScaling={false}
+          style={{ fontSize: 9, letterSpacing: 1 }}
+          className="font-semibold uppercase text-green-bright"
+        >
+          {kicker}
+        </Text>
+        <Text
+          allowFontScaling={false}
+          numberOfLines={1}
+          style={{ fontSize: 14, marginTop: 2 }}
+          className="font-semibold text-ink"
+        >
+          {formatShortDay(day, lang)}
+        </Text>
+        <RollingPhrase
+          template={t('{done} of {total} done')}
+          values={{ done, total }}
+          lineHeight={14}
+          duration={500}
+          containerStyle={{ marginTop: 1 }}
+          style={{ fontSize: 11 }}
+          className="text-ink-muted"
+        />
+      </Pressable>
+
+      <Pressable
+        onPress={onTop}
+        accessibilityRole="button"
+        accessibilityLabel={t('Back to the dial')}
+        style={{
+          height: 26,
+          paddingHorizontal: 10,
+          justifyContent: 'center',
+          borderRadius: radius.pill,
+          borderWidth: 1,
+          borderColor: 'rgba(63,169,108,0.3)',
+          backgroundColor: full ? palette.green : 'rgba(63,169,108,0.14)',
+        }}
+      >
+        <RollingNumber
+          value={`${percent}%`}
+          lineHeight={16}
+          duration={700}
+          style={{ fontSize: 12 }}
+          className={['font-bold', full ? 'text-ink' : 'text-green-bright'].join(' ')}
+        />
+      </Pressable>
+    </FloatingBubble>
+  );
 }

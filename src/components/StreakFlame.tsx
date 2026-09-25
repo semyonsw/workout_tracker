@@ -27,9 +27,10 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Text, View } from 'react-native';
+import { Animated, Easing, View } from 'react-native';
 
 import { Icon } from './Icon';
+import { RollingNumber } from './RollingNumber';
 import { palette, radius } from '../theme/tokens';
 
 /** A week, and three weeks. The two numbers this badge is a function of. */
@@ -106,13 +107,15 @@ export function StreakFlame({ streak }: { streak: number }) {
       >
         <Icon name="flame" size={13} color={warm ? palette.greenBright : palette.inkMuted} />
       </Animated.View>
-      <Text
-        allowFontScaling={false}
+      {/* The number ROLLS when a mark moves it — a streak that grows is seen
+          growing, on the row that grew it. */}
+      <RollingNumber
+        value={String(streak)}
+        lineHeight={16}
+        duration={450}
         style={{ fontSize: 12, color: warm ? palette.greenBright : palette.inkMuted }}
-        className="font-semibold tabular-nums"
-      >
-        {streak}
-      </Text>
+        className="font-semibold"
+      />
     </View>
   );
 }

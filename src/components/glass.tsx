@@ -7,7 +7,8 @@
  *   GlassSurface   layer 2: a blurred, tinted pane with a border and a shadow
  *   GlassBar       layer 4: the top bar and the nav pill, content scrolling under
  *   FloatingAction layer 3: the one commit action, right:16 bottom:92
- *   Toast          what a commit says on its way out
+ *   Toast          what a commit says on its way out — and, for a removal, the
+ *                  one tap that takes it back
  *
  * ── WHY THE LIGHT HAS TO BE UNDER THE GLASS ───────────────────────────────
  *
@@ -43,6 +44,7 @@ import { useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
+  Pressable,
   Text,
   View,
   useWindowDimensions,
@@ -57,13 +59,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BubblePressable } from './bubbles';
 import { Icon, type IconName } from './Icon';
+import { Pop, usePressScale } from './motion';
+import { FADE_ON, RunningText } from './RunningText';
+import { useMotionScale } from '../hooks/useMotionScale';
 import {
   LAMPS,
   barInset,
+  curve,
   elevation,
   floatingSlot,
   glassTier,
   halo,
+  motion,
   palette,
   radius as RADIUS,
   specularHeavy,
@@ -98,7 +105,7 @@ import {
  * read as glass; the blur behind a 72 dp card that is 94% opaque is a cost with
  * nothing on the other side of it.
  */
-function Pane({ intensity }: { intensity: number }) {
+export function Pane({ intensity }: { intensity: number }) {
   return (
     <BlurView
       tint="dark"
@@ -457,9 +464,40 @@ export function FloatingAction({
 }) {
   const insets = useSafeAreaInsets();
   const filled = variant === 'filled' && !asleep;
+  const motionScale = useMotionScale();
+  /*
+   * THE MOTION PASS, three parts and none of them in the way:
+   *   • it ARRIVES — fade and a 10 dp rise, 200 ms after its section, so the
+   *     section is on screen before the thing you press in it;
+   *   • it SINKS to 0.94 under the thumb and settles back on the overshoot curve;
+   *   • `asleep` → awake is a 300 ms fade to full, not a switch, so the keypad's
+   *     Save wakes on the first digit rather than appearing.
+   */
+  const arrive = useRef(new Animated.Value(motionScale === 0 ? 1 : 0)).current;
+  const wake = useRef(new Animated.Value(asleep ? 0.55 : 1)).current;
+  const press = usePressScale(0.94);
+  useEffect(() => {
+    Animated.timing(arrive, {
+      toValue: 1,
+      duration: 420 * motionScale,
+      delay: 200 * motionScale,
+      easing: curve(motion.ease),
+      useNativeDriver: true,
+    }).start();
+    // Mount only: the arrival is the section's, not the label's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrive]);
+  useEffect(() => {
+    Animated.timing(wake, {
+      toValue: asleep ? 0.55 : 1,
+      duration: 300 * motionScale,
+      easing: curve(motion.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [asleep, motionScale, wake]);
 
   return (
-    <View
+    <Animated.View
       style={{
         position: 'absolute',
         right: floatingSlot.right,
@@ -472,14 +510,21 @@ export function FloatingAction({
         // `Open Pull (Tension on Back)` at 16/600 is wider than a 360 dp phone.
         // The pill floats OVER the list, so it must not be allowed to span it:
         // past three quarters of the width it stops reading as a layer and
-        // starts reading as a bar that has come loose.
+        // starts reading as a bar that has come loose. The label RUNS inside
+        // that cap instead of being cut — see `RunningText`.
         maxWidth: '76%',
         boxShadow: [...(filled ? halo.floating : []), ...elevation.e2],
-        opacity: asleep ? 0.55 : 1,
+        opacity: Animated.multiply(arrive, wake),
+        transform: [
+          { translateY: arrive.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+          ...press.style.transform,
+        ],
       }}
     >
       <BubblePressable
         onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
         radius="pill"
         // A green ring on a green fill is invisible; ink is the only colour that
         // can be seen leaving this surface.
@@ -533,18 +578,17 @@ export function FloatingAction({
             <Icon name={icon} size={17} color={filled ? palette.ink : palette.inkMuted} />
           </View>
         ) : null}
-        <Text
+        <RunningText
+          text={label}
           allowFontScaling={false}
-          numberOfLines={1}
-          // `shrink`, so the label ellipsises inside the capped pill instead
-          // of pushing the icon out of it.
-          style={{ color: filled ? palette.ink : palette.inkMuted, flexShrink: 1 }}
+          style={{ color: filled ? palette.ink : palette.inkMuted }}
           className="text-body font-semibold"
-        >
-          {label}
-        </Text>
+          // The fill's END colour: the fade has to match what is behind the
+          // label's right edge, and that is the bottom of the gradient's run.
+          fadeColor={filled ? FADE_ON.gradient : '#161817'}
+        />
       </BubblePressable>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -562,11 +606,62 @@ export function FloatingPair({
   primary,
   bottom = 24,
 }: {
-  secondary: { label: string; onPress: () => void };
+  /** Absent = the pair collapses to the primary alone, which pops in. */
+  secondary?: { label: string; onPress: () => void };
   primary: { label: string; icon?: IconName; onPress: () => void };
   bottom?: number;
 }) {
   const insets = useSafeAreaInsets();
+  const primaryPress = usePressScale(0.94);
+  const secondaryPress = usePressScale(0.94);
+
+  const primaryPill = (
+    <Animated.View
+      style={{
+        borderRadius: RADIUS.pill,
+        boxShadow: [...halo.floating, ...elevation.e2],
+        transform: primaryPress.style.transform,
+      }}
+    >
+      <BubblePressable
+        onPress={primary.onPress}
+        onPressIn={primaryPress.onPressIn}
+        onPressOut={primaryPress.onPressOut}
+        radius="pill"
+        bubbleColor={palette.ink}
+        accessibilityRole="button"
+        accessibilityLabel={primary.label}
+        style={{
+          height: 64,
+          borderRadius: RADIUS.pill,
+          overflow: 'hidden',
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: secondary ? 24 : 26,
+        }}
+      >
+        <LinearGradient
+          colors={[...COMMIT_GRADIENT]}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        />
+        <SpecularEdge color={specularHeavy} radius={RADIUS.pill} height={2} />
+        {primary.icon ? (
+          <View style={{ marginRight: 9 }}>
+            <Icon name={primary.icon} size={17} color={palette.ink} />
+          </View>
+        ) : null}
+        <Text
+          allowFontScaling={false}
+          numberOfLines={1}
+          style={{ color: palette.ink }}
+          className="text-body font-semibold"
+        >
+          {primary.label}
+        </Text>
+      </BubblePressable>
+    </Animated.View>
+  );
+
   return (
     <View
       style={{
@@ -577,83 +672,68 @@ export function FloatingPair({
         alignItems: 'flex-end',
       }}
     >
-      <View style={{ borderRadius: RADIUS.pill, boxShadow: [...elevation.e2], marginRight: 10 }}>
-        <BubblePressable
-          onPress={secondary.onPress}
-          radius="pill"
-          accessibilityRole="button"
-          accessibilityLabel={secondary.label}
-          style={{
-            height: 52,
-            borderRadius: RADIUS.pill,
-            overflow: 'hidden',
-            justifyContent: 'center',
-            paddingHorizontal: 18,
-          }}
-        >
-          <Pane intensity={26} />
-          <View
-            pointerEvents="none"
+      {secondary ? (
+        <>
+          <Animated.View
             style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(236,241,238,0.07)',
               borderRadius: RADIUS.pill,
-              borderWidth: 1,
-              borderColor: 'rgba(236,241,238,0.10)',
+              boxShadow: [...elevation.e2],
+              marginRight: 10,
+              transform: secondaryPress.style.transform,
             }}
-          />
-          <SpecularEdge color="rgba(236,241,238,0.14)" radius={RADIUS.pill} />
-          <Text
-            allowFontScaling={false}
-            numberOfLines={1}
-            style={{ color: palette.inkMuted }}
-            className="text-label font-medium"
           >
-            {secondary.label}
-          </Text>
-        </BubblePressable>
-      </View>
-
-      <View style={{ borderRadius: RADIUS.pill, boxShadow: [...halo.floating, ...elevation.e2] }}>
-        <BubblePressable
-          onPress={primary.onPress}
-          radius="pill"
-          bubbleColor={palette.ink}
-          accessibilityRole="button"
-          accessibilityLabel={primary.label}
-          style={{
-            height: 64,
-            borderRadius: RADIUS.pill,
-            overflow: 'hidden',
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: 24,
-          }}
-        >
-          <LinearGradient
-            colors={[...COMMIT_GRADIENT]}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          />
-          <SpecularEdge color={specularHeavy} radius={RADIUS.pill} height={2} />
-          {primary.icon ? (
-            <View style={{ marginRight: 9 }}>
-              <Icon name={primary.icon} size={17} color={palette.ink} />
-            </View>
-          ) : null}
-          <Text
-            allowFontScaling={false}
-            numberOfLines={1}
-            style={{ color: palette.ink }}
-            className="text-body font-semibold"
-          >
-            {primary.label}
-          </Text>
-        </BubblePressable>
-      </View>
+            <BubblePressable
+              onPress={secondary.onPress}
+              onPressIn={secondaryPress.onPressIn}
+              onPressOut={secondaryPress.onPressOut}
+              radius="pill"
+              accessibilityRole="button"
+              accessibilityLabel={secondary.label}
+              style={{
+                height: 52,
+                borderRadius: RADIUS.pill,
+                overflow: 'hidden',
+                justifyContent: 'center',
+                paddingHorizontal: 18,
+              }}
+            >
+              <Pane intensity={26} />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(236,241,238,0.07)',
+                  borderRadius: RADIUS.pill,
+                  borderWidth: 1,
+                  borderColor: 'rgba(236,241,238,0.10)',
+                }}
+              />
+              <SpecularEdge color="rgba(236,241,238,0.14)" radius={RADIUS.pill} />
+              <Text
+                allowFontScaling={false}
+                numberOfLines={1}
+                style={{ color: palette.inkMuted }}
+                className="text-label font-medium"
+              >
+                {secondary.label}
+              </Text>
+            </BubblePressable>
+          </Animated.View>
+          {primaryPill}
+        </>
+      ) : (
+        /*
+         * EVERY SET LOGGED: the pair becomes one filled `✓ Finish workout`, and it
+         * POPS in. There is nothing left to focus on, so the ghost `Finish` has
+         * nothing to be the careful alternative to — and the one thing left to do
+         * should arrive the way the ✓ that made it the thing to do did.
+         */
+        <Pop duration={400}>{primaryPill}</Pop>
+      )}
     </View>
   );
 }
@@ -665,51 +745,86 @@ export function FloatingPair({
 /**
  * What a commit says on its way out: a ✓, four words, and gone.
  *
- * It sits in the floating slot's own band (`bottom: 92`) rather than at the top
- * of the screen, because that is where the thumb that just committed something
- * is already looking. `pointerEvents="none"` throughout — it never takes a
- * touch, so pressing the button underneath it twice in a row still works.
+ * It sits just above the floating slot's band rather than at the top of the
+ * screen, because that is where the thumb that just committed something is
+ * already looking — and ABOVE the slot rather than over it, since a toast can
+ * now carry a control and must not sit on top of another one.
  *
- * The caller owns the timeout. A toast that dismissed itself would need to own
- * state that outlives the screen that raised it, and every caller here already
- * has a `useEffect` clearing the message it set.
+ * ── THE ACTION ────────────────────────────────────────────────────────────
+ *
+ * `Removed Barbell row · Undo`. A removal that asks first is ceremony charged to
+ * every removal; one that can be taken back for four and a half seconds costs
+ * nothing when it was meant and one tap when it was not. So a toast can carry ONE
+ * action, after a hairline, in green-bright — and while it has one, the toast
+ * takes touches for that action only. Without one it is `pointerEvents="none"`
+ * throughout, as it always was: pressing the button underneath it twice in a row
+ * still works.
+ *
+ * The caller owns the timeout — 4.5 s with an action, the usual couple of seconds
+ * without. A toast that dismissed itself would need to own state that outlives
+ * the screen that raised it, and every caller here already has a `useEffect`
+ * clearing the message it set. The label RUNS rather than wrapping, so a long
+ * exercise name cannot turn the pill into a paragraph.
  */
-export function Toast({ label }: { label: string }) {
+export interface ToastAction {
+  label: string;
+  onPress: () => void;
+}
+
+/**
+ * Where a toast sits over a section: the floating slot's top (92 + 60) and 12 of
+ * air. The session screen, whose pair sits at 24, passes its own.
+ */
+export const TOAST_BOTTOM = floatingSlot.bottom + floatingSlot.height + 12;
+
+export function Toast({
+  label,
+  action,
+  bottom = TOAST_BOTTOM,
+}: {
+  label: string;
+  action?: ToastAction;
+  bottom?: number;
+}) {
   const insets = useSafeAreaInsets();
-  const enter = useRef(new Animated.Value(0)).current;
+  const motionScale = useMotionScale();
+  const enter = useRef(new Animated.Value(motionScale === 0 ? 1 : 0)).current;
   useEffect(() => {
     Animated.timing(enter, {
       toValue: 1,
-      duration: 220,
-      easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+      duration: 240 * motionScale,
+      easing: curve(motion.ease),
       useNativeDriver: true,
     }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enter]);
 
   return (
     <Animated.View
-      pointerEvents="none"
+      pointerEvents={action ? 'box-none' : 'none'}
       style={{
         position: 'absolute',
         left: 16,
         right: 16,
-        bottom: floatingSlot.bottom + insets.bottom,
+        bottom: bottom + insets.bottom,
         alignItems: 'center',
         opacity: enter,
         transform: [
-          { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+          { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
         ],
       }}
     >
       <View
+        pointerEvents={action ? 'box-none' : 'none'}
         style={{
           height: 44,
+          maxWidth: '100%',
           borderRadius: RADIUS.pill,
           overflow: 'hidden',
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: 18,
-          backgroundColor: 'rgba(14,18,17,0.78)',
+          backgroundColor: 'rgba(14,18,17,0.9)',
           borderWidth: 1,
           borderColor: 'rgba(63,169,108,0.3)',
           boxShadow: [{ offsetX: 0, offsetY: 12, blurRadius: 30, color: 'rgba(0,0,0,0.6)' }],
@@ -724,12 +839,35 @@ export function Toast({ label }: { label: string }) {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(14,18,17,0.78)',
+            backgroundColor: 'rgba(14,18,17,0.9)',
           }}
         />
         <SpecularEdge color="rgba(236,241,238,0.12)" radius={RADIUS.pill} />
         <Icon name="check" size={15} color={palette.greenBright} />
-        <Text className="ml-sm text-label font-medium text-ink">{label}</Text>
+        <RunningText
+          text={label}
+          fadeColor={FADE_ON.bar}
+          containerStyle={{ marginLeft: 8 }}
+          className="text-label font-medium text-ink"
+        />
+        {action ? (
+          <Pressable
+            onPress={action.onPress}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel={action.label}
+            style={{
+              marginLeft: 6,
+              paddingLeft: 12,
+              height: 44,
+              justifyContent: 'center',
+              borderLeftWidth: 1,
+              borderLeftColor: palette.hairline,
+            }}
+          >
+            <Text className="text-label font-semibold text-green-bright">{action.label}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </Animated.View>
   );

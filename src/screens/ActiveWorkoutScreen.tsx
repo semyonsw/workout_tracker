@@ -59,10 +59,18 @@
  *   • `+ Add an exercise` at the bottom — pick anything from the library, or create
  *     something that isn't in it yet, and it lands at the end of THIS session with
  *     one set. Neck work at the end of pull day is not a routine edit.
- *   • `− Remove set` beside `Add set` in every card, taking the bottom row; on an
- *     exercise down to one row it takes the exercise.
+ *   • THE ✎ on the open card — SESSION EDIT MODE. `editingEntryId` below is the
+ *     one card in it: every row grows its own `−`, and `Add set`, `Warm-up`,
+ *     `Rest, targets and cue` and `Remove exercise` replace the footer. It ends on
+ *     `Done` and nothing else. See `ExerciseCard`.
  *   • LONG PRESS, THEN SLIDE to reorder. The order you planned is not the order the
  *     machines are free in.
+ *
+ * REMOVING AN EXERCISE DOES NOT ASK. The card closes and slides out, the entry
+ * leaves the store when it has gone, and a toast says `Removed Barbell row` with
+ * an Undo for 4.5 s that puts the snapshot back at the same index, logged sets
+ * and all (`insertEntry`). The sheet it replaced protected the logged sets; the
+ * Undo protects them too, and costs nothing on the removals that were meant.
  *
  * ── ONE CARD OPEN, OR NONE ──────────────────────────────────────────────────
  *
@@ -144,15 +152,17 @@ import { ExerciseCard } from '../components/ExerciseCard';
 import { FinishSheet } from '../components/FinishSheet';
 import { FocusMode } from '../components/FocusMode';
 import { Icon } from '../components/Icon';
+import { GrowIn } from '../components/motion';
 import { ReorderRow } from '../components/ReorderRow';
 import { RestTimerPill } from '../components/RestTimerPill';
-import { ScreenHeader } from '../components/ScreenHeader';
+import { SessionHeader } from '../components/SessionHeader';
 import { SetTimerPill } from '../components/SetTimerPill';
 import { useLanguage, useT } from '../hooks/useT';
 import { describeDeload } from '../lib/deload';
 import type { DraftEntry, DraftSession, DraftSet } from '../lib/draft';
 import { commit, tap, undo } from '../lib/feedback';
 import { useDragReorder, type CardLayout } from '../hooks/useDragReorder';
+import { ADVANCE_HOLD_MS, holdsAfterFinishing } from '../lib/cardAdvance';
 import { resolveRest } from '../lib/rest';
 import { describeLadderOutcomes, ladderOutcomes } from '../lib/repLadder';
 import { describePlannedSetDiff, performedSetCounts, plannedSetDiff } from '../lib/routinePlan';
@@ -164,7 +174,8 @@ import { formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
 import { platesInForce, useSettings } from '../state/settingsStore';
 import { PrimaryButton } from '../components/primitives';
-import { FloatingPair, Lamps } from '../components/glass';
+import { FloatingPair, Lamps, Toast, type ToastAction } from '../components/glass';
+import { sessionVolume } from '../lib/draft';
 import { palette } from '../theme/tokens';
 import type { ID, RoutineItem, UnitSystem } from '../types/models';
 
@@ -231,7 +242,17 @@ interface ActiveWorkoutScreenProps {
    * follows.
    */
   onEditExercise?: (exerciseId: ID) => void;
+  /**
+   * The ordinal this workout will be saved as — `#92` in the header, `Workout 92`
+   * on the Finish sheet. The shell has the numbering; this screen only prints it.
+   */
+  workoutNumber?: number;
 }
+
+/** How long a toast with an Undo in it stays up. */
+const UNDO_TOAST_MS = 4500;
+/** The session's floating pair is 64 tall at `bottom: 24`; a toast clears it. */
+const SESSION_TOAST_BOTTOM = 104;
 
 export function ActiveWorkoutScreen({
   unitSystem,
@@ -240,6 +261,7 @@ export function ActiveWorkoutScreen({
   onExit,
   onAddExercise,
   onEditExercise,
+  workoutNumber,
 }: ActiveWorkoutScreenProps) {
   const t = useT();
   const lang = useLanguage();
@@ -257,12 +279,27 @@ export function ActiveWorkoutScreen({
   const listTop = useRef(0);
   const [confirming, setConfirming] = useState<'finish' | 'clock' | 'discard' | null>(null);
   /**
-   * The exercise the user asked to remove, held while the sheet asks — and only
-   * ever set when there is something to lose. Removing an exercise nobody has
-   * logged a set into is not a question, and a sheet in front of it would be
-   * ceremony charged for the common case.
+   * The exercise on its way out: still drawn, closing, with the snapshot and the
+   * index its Undo will need. It leaves the store when its card has finished
+   * leaving the screen — see the file header.
    */
-  const [removingEntry, setRemovingEntry] = useState<DraftEntry | null>(null);
+  const [removing, setRemoving] = useState<{ entry: DraftEntry; index: number } | null>(null);
+  /** The one card in session edit mode, or none. See `ExerciseCard`. */
+  const [editingEntryId, setEditingEntryId] = useState<ID | null>(null);
+  /** What the last removal said, and the Undo that goes with it. */
+  const [toast, setToast] = useState<{ text: string; action?: ToastAction; key: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => setToast(null), toast.action ? UNDO_TOAST_MS : 1900);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  /**
+   * A card that has just been finished, held open for one beat before the next
+   * one opens — `lib/cardAdvance.ts` has the rule and the reason.
+   */
+  const [holdOpenId, setHoldOpenId] = useState<ID | null>(null);
   /**
    * The card the user has SHUT, when it is the one the cursor is on.
    *
@@ -305,8 +342,8 @@ export function ActiveWorkoutScreen({
   const addSet = useActiveWorkout((s) => s.addSet);
   const addWarmupSets = useActiveWorkout((s) => s.addWarmupSets);
   const removeSet = useActiveWorkout((s) => s.removeSet);
-  const removeLastSet = useActiveWorkout((s) => s.removeLastSet);
   const removeEntry = useActiveWorkout((s) => s.removeEntry);
+  const insertEntry = useActiveWorkout((s) => s.insertEntry);
   const moveEntry = useActiveWorkout((s) => s.moveEntry);
   const startWorkout = useActiveWorkout((s) => s.startWorkout);
   const discardSession = useActiveWorkout((s) => s.discardSession);
@@ -428,9 +465,42 @@ export function ActiveWorkoutScreen({
     return out;
   }, [session?.entries, lang]);
 
+  /**
+   * THE BEAT AFTER AN EXERCISE'S LAST ✓. The store has already moved the cursor
+   * on; the finished card stays open for `ADVANCE_HOLD_MS` so the ✓ is seen to
+   * land, and then the next card that still has work in it opens.
+   */
+  const previousActive = useRef(activeEntryId);
+  useEffect(() => {
+    const previous = previousActive.current;
+    previousActive.current = activeEntryId;
+    if (previous == null || previous === activeEntryId) return undefined;
+    const finished = useActiveWorkout
+      .getState()
+      .session?.entries.find((entry) => entry.localId === previous);
+    if (!holdsAfterFinishing(finished, Date.now())) return undefined;
+
+    setHoldOpenId(previous);
+    const timer = setTimeout(() => {
+      setHoldOpenId(null);
+      /* The store opens the NEXT card, which may be one already done; the design
+         opens the next one with a set left to do. */
+      const state = useActiveWorkout.getState();
+      const current = state.session?.entries.find((e) => e.localId === state.activeEntryId);
+      if (current && current.sets.every((set) => set.isCompleted)) {
+        const next = upNextSet(state.session);
+        if (next && next.entryId !== current.localId) state.setActiveEntry(next.entryId);
+      }
+    }, ADVANCE_HOLD_MS);
+    return () => {
+      clearTimeout(timer);
+      setHoldOpenId(null);
+    };
+  }, [activeEntryId]);
+
   /** The one open card, or null when the user has shut the one they are on. */
   const expandedEntryId =
-    activeEntryId != null && activeEntryId === collapsedId ? null : activeEntryId;
+    holdOpenId ?? (activeEntryId != null && activeEntryId === collapsedId ? null : activeEntryId);
 
   /**
    * THE set of the whole session that glows — see the file header.
@@ -665,20 +735,39 @@ export function ActiveWorkoutScreen({
   }
 
   /**
-   * Remove an exercise: straight away when nothing has been logged into it, and
-   * behind the sheet when something has. The sheet's job is not to slow the user
-   * down, it is to make sure a workout's record is never lost to one tap.
+   * Remove an exercise: start its card leaving, and remember enough to put it
+   * back. It leaves the STORE in `finishRemoval`, once it has left the screen.
    */
   const handleRemoveEntry = (entry: DraftEntry) => {
-    if (entry.sets.some((set) => set.isCompleted)) {
-      setRemovingEntry(entry);
-      return;
-    }
-    undo();
-    removeEntry(entry.localId);
+    if (removing) return;
+    const index = session.entries.findIndex((e) => e.localId === entry.localId);
+    if (index === -1) return;
+    setRemoving({ entry, index });
   };
 
-  const dimmed = confirming != null || removingEntry != null;
+  const finishRemoval = () => {
+    if (!removing) return;
+    const { entry, index } = removing;
+    setRemoving(null);
+    if (editingEntryId === entry.localId) setEditingEntryId(null);
+    removeEntry(entry.localId);
+    setToast({
+      text: t('Removed {name}', { name: entry.exercise.name }),
+      key: Date.now(),
+      action: {
+        label: t('Undo'),
+        onPress: () => {
+          tap();
+          insertEntry(entry, index);
+          setCollapsedId(null);
+          setToast(null);
+        },
+      },
+    });
+  };
+
+  const dimmed = confirming != null;
+  const allLogged = progress.total > 0 && progress.done === progress.total;
 
   return (
     <View className="flex-1 bg-bg">
@@ -688,44 +777,39 @@ export function ActiveWorkoutScreen({
       {/* The list dims behind a sheet rather than being replaced — the user is
           confirming something about THIS list, and should still see it. */}
       <View className="flex-1" style={dimmed ? { opacity: 0.28 } : undefined}>
-        <ScreenHeader
-          kicker={lifted ? `${t('Moving')} · ${liftedName}` : session.title}
-          kickerTone={lifted ? 'green' : 'faint'}
-          subtitle={
-            lifted
-              ? t('Slide to move it · position {position} of {total}', {
-                  position: reorder.targetIndex + 1,
-                  total: entryIds.length,
-                })
-              : isStarted
-                ? `${t('{done} of {total} sets', {
-                    done: progress.done,
-                    total: progress.total,
-                  })} · ${t('{minutes} min', { minutes: elapsedMinutes })}`
-                : t('{total} sets planned · not started', { total: progress.total })
-          }
+        <SessionHeader
+          title={session.title}
+          done={progress.done}
+          total={progress.total}
+          startedAt={session.startedAt}
+          workoutNumber={workoutNumber ?? null}
           onBack={lifted ? undefined : onExit}
           /*
-           * NO COMMIT ACTION IN THIS BAR — placement rule 1.
-           *
-           * `Finish` and `Start` used to be a pill in this corner, which is the
-           * furthest point on the screen from a right thumb that is otherwise
-           * spending the whole session in the bottom third pressing ✓. They are
-           * the floating pair at the foot of the screen now.
-           *
-           * `Drop` stays, and is the exception that proves the rule: it is not a
-           * commit, it is the escape from a transient mode the header is already
-           * announcing ("MOVING · PULL"), and it has to sit with the sentence
-           * that explains it.
+           * NO COMMIT ACTION IN THIS BAR — placement rule 1. `Finish` and `Start`
+           * are the floating pair at the foot of the screen, where the thumb that
+           * spends the session pressing ✓ already is. `Drop` stays up here because
+           * it is not a commit: it is the escape from a transient mode the header
+           * is already announcing, and it has to sit with the sentence that
+           * explains it.
            */
-          action={lifted ? { label: t('Drop'), onPress: drop } : undefined}
+          moving={
+            lifted
+              ? {
+                  kicker: `${t('Moving')} · ${liftedName}`,
+                  subtitle: t('Slide to move it · position {position} of {total}', {
+                    position: reorder.targetIndex + 1,
+                    total: entryIds.length,
+                  }),
+                  onDrop: drop,
+                  dropLabel: t('Drop'),
+                }
+              : undefined
+          }
         >
           {/* The session's own controls. Hidden mid-move — none of them is about
-              a card in the air. `Start` is repeated as a chip before the workout
-              begins because it is the thing to do, and the header pill alone is
-              easy to read as a page title. */}
+              a card in the air. */}
           {lifted ? null : (
-            <View className="mt-sm flex-row items-center">
+            <View className="flex-row items-center">
               <SessionChip label={t('Stop and exit')} icon="x" onPress={handleStopAndExit} />
               {isStarted ? (
                 <SessionChip
@@ -739,7 +823,7 @@ export function ActiveWorkoutScreen({
               ) : null}
             </View>
           )}
-        </ScreenHeader>
+        </SessionHeader>
 
         {/*
           One pill, two instruments, directly under the header: a rest countdown
@@ -793,68 +877,81 @@ export function ActiveWorkoutScreen({
                     }
                   }}
                 >
-                  <ExerciseCard
-                    entry={entry}
-                    isExpanded={entry.localId === expandedEntryId}
-                    /* The glow, and only for the one card that holds it: the set
+                  <GrowIn
+                    appear={false}
+                    leaving={removing?.entry.localId === entry.localId}
+                    onLeft={finishRemoval}
+                  >
+                    <ExerciseCard
+                      entry={entry}
+                      isExpanded={entry.localId === expandedEntryId}
+                      /* The glow, and only for the one card that holds it: the set
                        after the one last logged, which is not the same question as
                        "is it open" or "is it the cursor". See the file header. */
-                    upNextSetId={upNext?.entryId === entry.localId ? upNext.setId : null}
-                    /* And the door into focus mode, on that same card only —
+                      upNextSetId={upNext?.entryId === entry.localId ? upNext.setId : null}
+                      /* And the door into focus mode, on that same card only —
                        focus mode always shows the work, so the row that opens it
                        belongs where the work is. */
-                    onOpenFocus={
-                      upNext?.entryId === entry.localId ? () => setFocusOpen(true) : undefined
-                    }
-                    unitSystem={unitSystem}
-                    /* The bracket down a superset's left edge. Computed here
+                      onOpenFocus={
+                        upNext?.entryId === entry.localId ? () => setFocusOpen(true) : undefined
+                      }
+                      unitSystem={unitSystem}
+                      /* The bracket down a superset's left edge. Computed here
                        because only the screen can see the cards either side. */
-                    superset={supersetPosition(session.entries, index)}
-                    availablePlatesKg={availablePlatesKg}
-                    timingSetId={setTimer?.entryId === entry.localId ? setTimer.setId : null}
-                    isLifted={isLifted}
-                    dimmed={lifted != null && !isLifted}
-                    restSeconds={resolveRest(entry.exercise, restSeconds).seconds}
-                    onStartRest={entry.localId === activeEntryId ? startRestNow : undefined}
-                    onRemoveExercise={() => handleRemoveEntry(entry)}
-                    /* Only on the open card, like `Rest` and `Focus`: it is a
+                      superset={supersetPosition(session.entries, index)}
+                      availablePlatesKg={availablePlatesKg}
+                      timingSetId={setTimer?.entryId === entry.localId ? setTimer.setId : null}
+                      isLifted={isLifted}
+                      dimmed={lifted != null && !isLifted}
+                      restSeconds={resolveRest(entry.exercise, restSeconds).seconds}
+                      onStartRest={entry.localId === activeEntryId ? startRestNow : undefined}
+                      onRemoveExercise={() => handleRemoveEntry(entry)}
+                      /* SESSION EDIT MODE — one card at a time, ended only by
+                       `Done`. See `ExerciseCard`. */
+                      isEditing={editingEntryId === entry.localId}
+                      onToggleEditing={() =>
+                        setEditingEntryId((current) =>
+                          current === entry.localId ? null : entry.localId,
+                        )
+                      }
+                      /* Only on the open card, like `Rest` and `Focus`: it is a
                        control you press about the exercise you are doing. */
-                    onEditExercise={
-                      onEditExercise ? () => onEditExercise(entry.exercise.id) : undefined
-                    }
-                    onToggleExpanded={() => handleToggleCard(entry.localId)}
-                    // One exercise cannot be reordered, and the gesture would only
-                    // ever end where it started.
-                    onLift={entryIds.length > 1 ? () => lift(entry.localId) : undefined}
-                    onPressTimer={(setId) => handlePressTimer(entry.localId, setId)}
-                    onToggleSet={(setId) => {
-                      const target = entry.sets.find((s) => s.localId === setId);
-                      handleToggleSet(entry.localId, setId, target?.isCompleted ?? false);
-                    }}
-                    onPatchSet={(setId: ID, patch: Partial<DraftSet>) =>
-                      patchSet(entry.localId, setId, patch)
-                    }
-                    /*
+                      onEditExercise={
+                        onEditExercise ? () => onEditExercise(entry.exercise.id) : undefined
+                      }
+                      onToggleExpanded={() => handleToggleCard(entry.localId)}
+                      // One exercise cannot be reordered, and the gesture would only
+                      // ever end where it started.
+                      onLift={entryIds.length > 1 ? () => lift(entry.localId) : undefined}
+                      onPressTimer={(setId) => handlePressTimer(entry.localId, setId)}
+                      onToggleSet={(setId) => {
+                        const target = entry.sets.find((s) => s.localId === setId);
+                        handleToggleSet(entry.localId, setId, target?.isCompleted ?? false);
+                      }}
+                      onPatchSet={(setId: ID, patch: Partial<DraftSet>) =>
+                        patchSet(entry.localId, setId, patch)
+                      }
+                      /*
                       WARM-UP. Decided here rather than in the card because it
                       needs the gym's plates and `lib/warmup.ts` — the card renders
                       the offer and nothing else. Both props go undefined together
                       when there is nothing to add, so the row disappears rather
                       than becoming a control that does nothing.
                     */
-                    bestLine={bestLines[entry.localId] ?? null}
-                    deloadMessage={deloadMessages[entry.localId] ?? null}
-                    warmupSummary={warmupPlans[entry.localId]?.summary ?? null}
-                    onAddWarmup={
-                      warmupPlans[entry.localId]
-                        ? () => addWarmupSets(entry.localId, warmupPlans[entry.localId].sets)
-                        : undefined
-                    }
-                    onAddSet={() => addSet(entry.localId)}
-                    onRemoveSet={(setId) => removeSet(entry.localId, setId)}
-                    onRemoveLastSet={() => removeLastSet(entry.localId)}
-                    onAcceptOverload={() => acceptOverload(entry.localId)}
-                    onDismissOverload={() => dismissOverload(entry.localId)}
-                  />
+                      bestLine={bestLines[entry.localId] ?? null}
+                      deloadMessage={deloadMessages[entry.localId] ?? null}
+                      warmupSummary={warmupPlans[entry.localId]?.summary ?? null}
+                      onAddWarmup={
+                        warmupPlans[entry.localId]
+                          ? () => addWarmupSets(entry.localId, warmupPlans[entry.localId].sets)
+                          : undefined
+                      }
+                      onAddSet={() => addSet(entry.localId)}
+                      onRemoveSet={(setId) => removeSet(entry.localId, setId)}
+                      onAcceptOverload={() => acceptOverload(entry.localId)}
+                      onDismissOverload={() => dismissOverload(entry.localId)}
+                    />
+                  </GrowIn>
                 </ReorderRow>
               );
             })}
@@ -894,7 +991,13 @@ export function ActiveWorkoutScreen({
         Before the workout is started there is nothing to finish and nothing to
         focus on, so the pair is one button and it is the one thing to do.
       */}
-      {dimmed || lifted || focusOpen ? null : isStarted ? (
+      {dimmed || lifted || focusOpen ? null : isStarted && allLogged ? (
+        /* Every set logged: nothing left to focus on, so the pair becomes the one
+           thing left to do, and it pops in. */
+        <FloatingPair
+          primary={{ label: t('Finish workout'), icon: 'check', onPress: handleFinish }}
+        />
+      ) : isStarted ? (
         <FloatingPair
           secondary={{ label: t('Finish'), onPress: handleFinish }}
           primary={{ label: t('Focus'), icon: 'play', onPress: () => setFocusOpen(true) }}
@@ -921,6 +1024,9 @@ export function ActiveWorkoutScreen({
 
       {confirming === 'finish' ? (
         <FinishSheet
+          workoutNumber={workoutNumber ?? null}
+          minutes={isStarted ? elapsedMinutes : null}
+          volumeKg={sessionVolume(session, bodyweightKg ?? null).kg}
           unloggedCount={progress.total - progress.done}
           loggedCount={progress.done}
           planChange={describePlannedSetDiff(planChanges, lang)}
@@ -954,21 +1060,14 @@ export function ActiveWorkoutScreen({
         />
       ) : null}
 
-      {removingEntry ? (
-        <ConfirmSheet
-          title={t('Remove {name}?', { name: removingEntry.exercise.name })}
-          body={t(
-            '{count} logged sets will go with it, and nothing about them reaches your history. The exercise itself stays in your library.',
-            { count: removingEntry.sets.filter((set) => set.isCompleted).length },
-          )}
-          confirmLabel={t('Remove it')}
-          cancelLabel={t('Keep it')}
-          onConfirm={() => {
-            undo();
-            removeEntry(removingEntry.localId);
-            setRemovingEntry(null);
-          }}
-          onCancel={() => setRemovingEntry(null)}
+      {/* Last child, over the floating pair's band rather than on it: this one
+          can carry an Undo, so it takes touches for that and nothing else. */}
+      {toast ? (
+        <Toast
+          key={toast.key}
+          label={toast.text}
+          action={toast.action}
+          bottom={SESSION_TOAST_BOTTOM}
         />
       ) : null}
 

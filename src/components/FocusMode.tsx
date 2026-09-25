@@ -2,23 +2,28 @@
  * FocusMode — the session screen with everything but the work taken away.
  *
  *   ┌──────────────────────────────────────────────┐
- *   │                   ▬▬▬▬                       │  ← the grabber, the way out
- *   │              swipe down to exit              │  ← 3.6 s, then gone
- *   │ PULL + SWIMMING        11 OF 18 SETS · 42 MIN │
- *   ├──────────────────────────────────────────────┤
- *   │  SET 2 OF 4                                  │
- *   │  Weighted 90° pull-ups                       │
+ *   │ (⌄)             SET 2 OF 4                   │  ← the way out, and where you are
+ *   │           Weighted 90° pull-ups              │
+ *   │            last: +32 kg · 5 4                │
  *   │                                              │
- *   │  +32 KG                                 ±    │  ← up to 120 dp, green
- *   │  5 REPS                                      │     and glowing
- *   │  last: +32 kg · 5 4                          │
+ *   │   (−2)      +32 KG       (+2)                │  ← 84 dp, green, glowing
+ *   │   (−1)     × 5 REPS      (+1)                │     with the ± beside them
  *   │                                              │
  *   │                undo last set                 │
  *   │                  ╭─────╮                     │
- *   │                  │  ✓  │                     │  ← 176 dp
+ *   │                  │  ✓  │                     │  ← 176 dp, and a ripple
  *   │                  │DONE │                     │
  *   │                  ╰─────╯                     │
  *   └──────────────────────────────────────────────┘
+ *
+ * ── THE MOTION PASS MOVED THE ± NEXT TO THE NUMBER IT CHANGES ─────────────
+ *
+ * The nudge used to sit behind a `±` you had to open first; the common edit —
+ * one plate, one rep — is now a 48 dp circle either side of the number it moves,
+ * in the app's own steps (`lib/setNudge.ts`: the coarse weight step, the fine
+ * count step). Tapping the numbers still opens the full ± panel for the half-kilo.
+ * The digits ROLL when they change, the sheet arrives sliding up over 420 ms, and
+ * DONE sends out a ripple before the rest ring takes its place.
  *
  * ── THE ONE RULE ────────────────────────────────────────────────────────────
  *
@@ -90,6 +95,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Pressable as StylePressable } from './Pressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
@@ -97,18 +103,24 @@ import type { DraftSet } from '../lib/draft';
 import { describeSetPosition, focusPlan, focusTarget, type FocusTarget } from '../lib/focusPlan';
 import { tap } from '../lib/feedback';
 import { isTimed as isTimedExercise } from '../lib/setTimer';
-import { workCeiling } from '../lib/focusType';
+import { workNumeralSize } from '../lib/focusType';
 import { maxLabel, showsMaxLabel } from '../lib/maxReps';
+import { nudgeSet, nudgeSteps } from '../lib/setNudge';
 import { countUnitLabel, formatCount, formatWeight, unitLabel } from '../lib/units';
 import { useRestTimer } from '../hooks/useRestTimer';
 import { useSetTimer } from '../hooks/useSetTimer';
 import { useActiveWorkout, useSessionProgress } from '../state/activeWorkoutStore';
 import { useSettings } from '../state/settingsStore';
 import { useLanguage, usePlural, useT } from '../hooks/useT';
-import { palette, size, space } from '../theme/tokens';
+import { useMotionScale } from '../hooks/useMotionScale';
+import { curve, focusGlow, motion, palette } from '../theme/tokens';
 import { FocusBottom, FocusDone, FocusFinish } from './FocusControls';
 import { Lamps } from './glass';
-import { FocusNumbers, workLines } from './FocusNumbers';
+import { Icon } from './Icon';
+import { usePressScale } from './motion';
+import { RollingNumber } from './RollingNumber';
+import { RunningText } from './RunningText';
+import { workLines } from './FocusNumbers';
 import { FocusHold } from './FocusHold';
 import { FocusNudge } from './FocusNudge';
 import { FocusRest } from './FocusRest';
@@ -117,13 +129,16 @@ import type { UnitSystem } from '../types/models';
 /** Focus mode's own keep-awake lock. Its own tag, so it cannot fight the timers'. */
 const KEEP_AWAKE_TAG = 'focus-mode';
 
-/** How long the sheet takes to arrive and to leave, and on which curve. */
-const SLIDE_MS = 260;
-const EASING = Easing.bezier(0.2, 0.8, 0.2, 1);
+/**
+ * How long the sheet takes to arrive (`motion.sheet`) and to leave, on the base
+ * curve. Leaving is quicker: something going away should not ask to be watched.
+ */
+const ARRIVE_MS = motion.sheet;
+const LEAVE_MS = 260;
+const EASING = curve(motion.ease);
 
-/** The exit hint's life: long enough to read twice, short enough to forget. */
-const HINT_MS = 3600;
-const HINT_FADE_MS = 600;
+/** DONE logs this long after the press, so its ripple is seen. See `FocusDone`. */
+const DONE_DELAY_MS = 180;
 
 /** Past this much of a downward drag, letting go leaves. */
 const DISMISS_DY = 60;
@@ -148,6 +163,7 @@ interface FocusModeProps {
 
 export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: FocusModeProps) {
   const t = useT();
+  const lang = useLanguage();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
 
@@ -174,49 +190,37 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
   const plan = useMemo(() => focusPlan(session), [session]);
 
   /* --- screen-local view state --------------------------------------- */
-  /** The ± pills, which take the `last:` line's place while they are open. */
+  /** The ± panel under the numbers, opened by tapping them. */
   const [nudgeOpen, setNudgeOpen] = useState(false);
-  /** The grabber goes `ink` while a finger is on it. */
-  const [dragging, setDragging] = useState(false);
+  const motionScale = useMotionScale();
 
-  /* --- the slide, the flash, the hint --------------------------------- */
-  const slide = useRef(new Animated.Value(height)).current;
+  /* --- the slide and the flash ---------------------------------------- */
+  const slide = useRef(new Animated.Value(motionScale === 0 ? 0 : height)).current;
   const flash = useRef(new Animated.Value(0)).current;
-  const hint = useRef(new Animated.Value(1)).current;
   /** Set once the sheet has begun leaving, so it cannot leave twice. */
   const leaving = useRef(false);
 
   useEffect(() => {
     Animated.timing(slide, {
       toValue: 0,
-      duration: SLIDE_MS,
+      duration: ARRIVE_MS * motionScale,
       easing: EASING,
       useNativeDriver: true,
     }).start();
+    // Mount only: the sheet arrives once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slide]);
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.delay(HINT_MS),
-      Animated.timing(hint, {
-        toValue: 0,
-        duration: HINT_FADE_MS,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [hint]);
 
   const close = useCallback(() => {
     if (leaving.current) return;
     leaving.current = true;
     Animated.timing(slide, {
       toValue: height,
-      duration: SLIDE_MS,
+      duration: LEAVE_MS * motionScale,
       easing: EASING,
       useNativeDriver: true,
     }).start(() => onClose());
-  }, [height, onClose, slide]);
+  }, [height, motionScale, onClose, slide]);
 
   /* Android's own back gesture leaves focus mode rather than the session. This
      listener is registered after `AppShell`'s, and the most recent one wins. */
@@ -258,12 +262,10 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
   const drag = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_e, g) => g.dy > 4 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderGrant: () => setDragging(true),
       onPanResponderMove: (_e, g) => {
         slide.setValue(Math.max(0, g.dy));
       },
       onPanResponderRelease: (_e, g) => {
-        setDragging(false);
         if (g.dy > DISMISS_DY || g.vy > DISMISS_VY) {
           closeRef.current();
           return;
@@ -276,7 +278,6 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
         }).start();
       },
       onPanResponderTerminate: () => {
-        setDragging(false);
         slide.setValue(0);
       },
     }),
@@ -294,7 +295,7 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
     flash.setValue(0.85);
     Animated.timing(flash, {
       toValue: 0,
-      duration: SLIDE_MS,
+      duration: LEAVE_MS,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
@@ -350,6 +351,18 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
   /* --- the router. See the file header. ------------------------------- */
   const holdTarget = timer.timer ? focusTarget(session, timer.timer) : null;
   const current = plan.current;
+  /*
+   * WHERE YOU ARE, in the one line at the top: the set position while there is
+   * work, `resting` while the clock runs, and nothing once the session is done —
+   * the body says that itself, in a larger voice.
+   */
+  const kicker = holdTarget
+    ? describeSetPosition(holdTarget, lang)
+    : rest.isActive
+      ? t('Resting')
+      : current
+        ? describeSetPosition(current, lang)
+        : '';
 
   const body = holdTarget ? (
     /* A clock is running: it is the subject, wherever the cursor is. */
@@ -423,57 +436,31 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
           single light source, because it has a single subject. */}
       <Lamps section="Focus" />
 
-      {/* THE WAY OUT, and the only chrome in here. Its own block above the header
-          rule, outside every other control's box, in every state. */}
-      <View {...drag.panHandlers} style={{ paddingTop: insets.top + 4 }}>
-        <Pressable
+      {/* THE WAY OUT, and the only chrome in here: a glass ⌄ in the corner, and
+          the whole top band is also a drag — swipe it down, or tap the ⌄, or use
+          Android's back gesture. Available in every state, including over the
+          inverted slab; focus mode is never a trap. */}
+      <View
+        {...drag.panHandlers}
+        style={{ paddingTop: insets.top + 8 }}
+        className="flex-row items-center px-md pb-sm"
+      >
+        <CloseButton
           onPress={() => {
             tap();
             close();
           }}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel={t('Leave focus mode')}
-          accessibilityHint={t('Swipe down, or tap')}
-          className="h-hit items-center justify-center"
+          label={t('Leave focus mode')}
+          hint={t('Swipe down, or tap')}
+        />
+        <Text
+          numberOfLines={1}
+          allowFontScaling={false}
+          className="flex-1 text-center text-micro font-semibold uppercase text-ink-faint"
         >
-          {({ pressed }) => (
-            /* `ink` while a finger is on it, whether that finger is dragging or
-               tapping — the handle has to acknowledge a press it is about to act
-               on, and a tap is a zero-length swipe. */
-            <View
-              style={{ backgroundColor: dragging || pressed ? palette.ink : palette.inkFaint }}
-              className="h-[4px] w-[36px] rounded-pill"
-            />
-          )}
-        </Pressable>
-
-        {/* Absolutely positioned so its 3.6 seconds of life cost no layout: a hint
-            that reserves a line forever is a permanent gap, and one that unmounts
-            moves the screen under a thumb. */}
-        <Animated.View
-          pointerEvents="none"
-          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, opacity: hint }}
-        >
-          <Text className="text-center text-micro uppercase text-ink-faint">
-            {t('swipe down to exit')}
-          </Text>
-        </Animated.View>
-
-        <View className="mt-lg flex-row items-center border-b border-b-hairline px-lg pb-md">
-          <Text
-            numberOfLines={1}
-            className="flex-1 text-micro font-semibold uppercase text-ink-faint"
-          >
-            {session.title}
-          </Text>
-          <Text className="ml-md text-micro font-semibold uppercase tabular-nums text-ink-faint">
-            {t('{done} of {total} sets', { done: progress.done, total: progress.total })}
-            {elapsedMinutes == null
-              ? ` · ${t('not started')}`
-              : ` · ${t('{minutes} min', { minutes: elapsedMinutes })}`}
-          </Text>
-        </View>
+          {kicker}
+        </Text>
+        <View className="w-hit" />
       </View>
 
       {body}
@@ -495,17 +482,15 @@ export function FocusMode({ unitSystem, elapsedMinutes, onClose, onFinish }: Foc
 /**
  * The set you are about to do, and the one control that says you did it.
  *
- * THE NUMBERS ARE THE TAP TARGET. Tapping them — or the low-contrast `±` in its own
- * 44 dp box, which is the affordance a reveal needs — swaps the `last:` line for
- * the two stepper pills. That is where the up-next row's inline editor went: on the
- * session screen that row's numbers now open focus mode, and this is the editor
- * they open into. Every other row keeps `QuickAdjust` exactly as it was.
+ * The weight at 84 dp in green with the app's focus glow, the count at 84 dp in
+ * ink under it, and a 48 dp ± either side of each — the coarse weight step and
+ * the fine count step, in the user's own units (`lib/setNudge.ts`), so the
+ * common edit is one tap on the number's own row. Tapping the NUMBERS opens the
+ * full panel, which is where the half-kilo lives.
  *
- * The numbers are GREEN and glowing at whatever size the screen can give them,
- * which on an ordinary set is the countdown's own 120 dp. They go to `ink` the
- * moment they stop being what you are about to do and become what you just did:
- * the app's existing "this is a fact now" rule, and the whole argument for the
- * up-next block being ink rather than green.
+ * Both lines share one size: the largest that fits the narrower of the two
+ * beside its circles (`workNumeralSize`), capped at 84 — so `+120 KG` comes down
+ * on its own rather than pushing a circle off the phone.
  */
 function Lift({
   target,
@@ -528,64 +513,204 @@ function Lift({
   const lang = useLanguage();
   const { width, height: screen } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  /* The sheet's height, not the screen's: the status bar and the gesture bar are
-     padding, and budgeting against them over-sizes every line on a tall phone. */
-  const height = screen - insets.top - insets.bottom;
   const { exercise } = target.entry;
-  const lineCount = workLines(target, unitSystem, lang).length;
+  const lines = workLines(target, unitSystem, lang);
+  const countsMax = showsMaxLabel(exercise, target.set);
+
+  /* The width a number has: the gutters, the two circles and their gaps, and —
+     on the count line — the `×` in front of it. */
+  const beside = 2 * (CIRCLE + GAP);
+  const sizes = lines.map((line, index) =>
+    workNumeralSize(
+      [line],
+      width - 32 - beside - (index === lines.length - 1 && lines.length > 1 ? 24 : 0),
+      NUMERAL,
+    ),
+  );
+  /* And the height: two lines of it must leave room for the name, DONE and undo
+     on a short phone — the screen does not scroll. */
+  const sheet = screen - insets.top - insets.bottom;
+  const byHeight = Math.floor((sheet - LIFT_FURNITURE) / (lines.length * 1.1));
+  const numeral = Math.max(40, Math.min(NUMERAL, byHeight, ...sizes));
+  const lineHeight = Math.round(numeral * 1.1);
+
+  const weightStep = nudgeSteps('weight', exercise.countUnit, unitSystem).coarse;
+  const countStep = nudgeSteps('count', exercise.countUnit, unitSystem).fine;
+  const nudge = (field: 'weight' | 'count', delta: number) => {
+    tap();
+    onPatch(nudgeSet(target.set, field, delta, unitSystem));
+  };
+
+  /* The whole number block, read as one sentence and opened as one control. */
+  const spoken = [
+    exercise.requiresWeight
+      ? t('{weight} {unit} by', {
+          weight: formatWeight(target.set.weightKg, unitSystem, exercise.loadMode),
+          unit: unitLabel(unitSystem, lang),
+        })
+      : '',
+    countsMax
+      ? `${maxLabel(lang)}.`
+      : `${formatCount(target.set.count, exercise.countUnit)} ${countUnitLabel(exercise.countUnit, lang)}.`,
+    t('Adjust.'),
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <>
-      <View className="flex-1 justify-center">
-        <View className="px-lg">
-          <Text className="text-micro font-semibold uppercase text-green-bright">
-            {describeSetPosition(target, lang)}
-          </Text>
-          <Text numberOfLines={2} className="mt-xs text-title-lg font-medium text-ink">
-            {exercise.name}
-          </Text>
+      <View className="flex-1 items-center">
+        <View className="mt-[22px] items-center self-stretch px-xl">
+          <RunningText
+            text={exercise.name}
+            fadeColor={palette.bg}
+            containerStyle={{ maxWidth: '100%' }}
+            allowFontScaling={false}
+            style={{ fontSize: 22, lineHeight: 28 }}
+            className="font-medium text-ink"
+          />
         </View>
+        {/* What this exercise did last time. Reference, not instruction — the
+            same `ink-faint` clause the expanded card carries. */}
+        <Text numberOfLines={1} className="mt-xs px-lg text-label tabular-nums text-ink-faint">
+          {target.entry.lastSessionShort
+            ? t('last: {what}', { what: target.entry.lastSessionShort })
+            : ' '}
+        </Text>
 
-        <Pressable
-          onPress={onToggleNudge}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: nudgeOpen }}
-          /* The weight clause is dropped entirely on bodyweight work rather than
-             read as "dash kilograms" — the same absence the cell itself has. */
-          accessibilityLabel={[
-            exercise.requiresWeight
-              ? t('{weight} {unit} by', {
-                  weight: formatWeight(target.set.weightKg, unitSystem, exercise.loadMode),
-                  unit: unitLabel(unitSystem, lang),
-                })
-              : '',
-            showsMaxLabel(exercise, target.set)
-              ? `${maxLabel(lang)}.`
-              : `${formatCount(target.set.count, exercise.countUnit)} ${countUnitLabel(exercise.countUnit, lang)}.`,
-            t('Adjust.'),
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          className="mt-lg flex-row items-center px-lg"
-        >
-          <View className="flex-1">
-            <FocusNumbers
-              target={target}
-              unitSystem={unitSystem}
-              tone="work"
-              ceiling={workCeiling(height, 'lift', lineCount, nudgeOpen)}
-              /* The gutter on both sides, and the ± box beside them. Whatever is
-                 left is what `lib/focusType.ts` gets to fill. */
-              width={width - space.lg * 2 - size.hit}
+        {exercise.requiresWeight ? (
+          <View className="mt-[22px] flex-row items-center" style={{ gap: GAP }}>
+            <StepCircle
+              label={formatStep(-weightStep)}
+              fontSize={13}
+              onPress={() => nudge('weight', -weightStep)}
+              accessibilityLabel={t('{step} {unit}', {
+                step: formatStep(-weightStep),
+                unit: unitLabel(unitSystem, lang),
+              })}
+            />
+            <Pressable
+              onPress={onToggleNudge}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: nudgeOpen }}
+              accessibilityLabel={spoken}
+              className="flex-row items-end"
+            >
+              <RollingNumber
+                value={lines[0].value}
+                lineHeight={lineHeight}
+                duration={450}
+                style={[
+                  {
+                    fontSize: numeral,
+                    fontWeight: '600',
+                    letterSpacing: -3,
+                    color: palette.greenBright,
+                  },
+                  focusGlow,
+                ]}
+              />
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontSize: UNIT,
+                  lineHeight: UNIT_LINE,
+                  marginLeft: 6,
+                  marginBottom: unitDrop(numeral, lineHeight),
+                  color: palette.green,
+                }}
+                className="font-semibold"
+              >
+                {lines[0].unit}
+              </Text>
+            </Pressable>
+            <StepCircle
+              label={formatStep(weightStep)}
+              fontSize={13}
+              onPress={() => nudge('weight', weightStep)}
+              accessibilityLabel={t('{step} {unit}', {
+                step: formatStep(weightStep),
+                unit: unitLabel(unitSystem, lang),
+              })}
             />
           </View>
-          {/* The ± never gives way: it is a 44 dp target and half a target is
-              worse than none. The numbers shrink instead, and they do it by the
-              width they are actually given rather than by an ellipsis. */}
-          <View className="h-hit w-hit shrink-0 items-center justify-center">
-            <Text className="text-title text-ink-faint">±</Text>
-          </View>
-        </Pressable>
+        ) : null}
+
+        <View
+          className={
+            exercise.requiresWeight
+              ? 'mt-[6px] flex-row items-center'
+              : 'mt-[22px] flex-row items-center'
+          }
+          style={{ gap: GAP }}
+        >
+          <StepCircle
+            label={formatStep(-countStep)}
+            fontSize={15}
+            onPress={() => nudge('count', -countStep)}
+            accessibilityLabel={t('{step} {unit}', {
+              step: formatStep(-countStep),
+              unit: countUnitLabel(exercise.countUnit, lang),
+            })}
+          />
+          <Pressable
+            onPress={onToggleNudge}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: nudgeOpen }}
+            accessibilityLabel={spoken}
+            className="flex-row items-end"
+          >
+            {exercise.requiresWeight ? (
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontSize: 24,
+                  lineHeight: 28,
+                  marginRight: 6,
+                  marginBottom: unitDrop(numeral, lineHeight, 24, 28),
+                  color: palette.inkFaint,
+                }}
+              >
+                ×
+              </Text>
+            ) : null}
+            <RollingNumber
+              value={lines[lines.length - 1].value}
+              lineHeight={lineHeight}
+              duration={450}
+              style={{
+                fontSize: numeral,
+                fontWeight: '600',
+                letterSpacing: -3,
+                color: palette.ink,
+              }}
+            />
+            {lines[lines.length - 1].unit ? (
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontSize: UNIT,
+                  lineHeight: UNIT_LINE,
+                  marginLeft: 6,
+                  marginBottom: unitDrop(numeral, lineHeight),
+                  color: palette.inkFaint,
+                }}
+                className="font-semibold"
+              >
+                {lines[lines.length - 1].unit}
+              </Text>
+            ) : null}
+          </Pressable>
+          <StepCircle
+            label={formatStep(countStep)}
+            fontSize={15}
+            onPress={() => nudge('count', countStep)}
+            accessibilityLabel={t('{step} {unit}', {
+              step: formatStep(countStep),
+              unit: countUnitLabel(exercise.countUnit, lang),
+            })}
+          />
+        </View>
 
         {nudgeOpen ? (
           <FocusNudge
@@ -594,21 +719,134 @@ function Lift({
             unitSystem={unitSystem}
             onChange={onPatch}
           />
-        ) : (
-          /* What this exercise did last time. Reference, not instruction — the
-             same `ink-faint` clause the expanded card carries. */
-          <Text numberOfLines={1} className="mt-sm px-lg text-label tabular-nums text-ink-faint">
-            {target.entry.lastSessionShort
-              ? t('last: {what}', { what: target.entry.lastSessionShort })
-              : ' '}
-          </Text>
-        )}
+        ) : null}
       </View>
 
       <FocusBottom onUndo={onUndo}>
-        <FocusDone onPress={onDone} label={t('done')} />
+        <FocusDone onPress={onDone} label={t('done')} delayMs={DONE_DELAY_MS} />
       </FocusBottom>
     </>
+  );
+}
+
+/** The work view's numerals, at most; the size the design draws them at. */
+const NUMERAL = 84;
+/** Their units: `KG`, `REPS`. */
+const UNIT = 18;
+const UNIT_LINE = 22;
+/** A ± circle, and the air between it and its number. */
+const CIRCLE = 48;
+const GAP = 14;
+/**
+ * What the work view spends on things that are not the numbers: the top band,
+ * the name and `last:`, their margins, the undo row and the 176 dp DONE with its
+ * padding. The rest is the numbers' to share.
+ */
+const LIFT_FURNITURE = 52 + 28 + 18 + 22 + 6 + 4 + 44 + 8 + 176 + 24 + 24;
+
+/**
+ * How far a unit sits up from the bottom of its numeral's box so the two share a
+ * baseline: the numeral's own baseline offset, less the unit's. Arithmetic rather
+ * than `alignItems: 'baseline'`, because a rolling numeral is a column of views
+ * and has no baseline of its own to align to.
+ */
+function unitDrop(size: number, line: number, unit = UNIT, unitLine = UNIT_LINE): number {
+  const DESCENT = 0.21;
+  const numeralBase = (line - size) / 2 + size * DESCENT;
+  const unitBase = (unitLine - unit) / 2 + unit * DESCENT;
+  return Math.max(0, Math.round(numeralBase - unitBase));
+}
+
+/** `−2`, `+2.5`: a real minus sign, and no trailing zeros. */
+function formatStep(delta: number): string {
+  const body = String(Number(Math.abs(delta).toFixed(2)));
+  return delta < 0 ? `−${body}` : `+${body}`;
+}
+
+/** One 48 dp ± beside a number. Sinks to 0.86 under the thumb. */
+function StepCircle({
+  label,
+  fontSize,
+  onPress,
+  accessibilityLabel,
+}: {
+  label: string;
+  fontSize: number;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  const press = usePressScale(0.86);
+  return (
+    <StylePressable
+      onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      <Animated.View
+        style={{
+          width: CIRCLE,
+          height: CIRCLE,
+          borderRadius: 9999,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 1,
+          borderColor: palette.hairline,
+          backgroundColor: 'rgba(236,241,238,0.03)',
+          transform: press.style.transform,
+        }}
+      >
+        <Text
+          allowFontScaling={false}
+          style={{ fontSize, color: palette.inkMuted }}
+          className="font-semibold tabular-nums"
+        >
+          {label}
+        </Text>
+      </Animated.View>
+    </StylePressable>
+  );
+}
+
+/** The ⌄ in the corner: a 44 dp glass circle, the way out of focus mode. */
+function CloseButton({
+  onPress,
+  label,
+  hint,
+}: {
+  onPress: () => void;
+  label: string;
+  hint: string;
+}) {
+  const press = usePressScale(0.88);
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+    >
+      <Animated.View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 9999,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(236,241,238,0.055)',
+          borderWidth: 1,
+          borderColor: 'rgba(236,241,238,0.07)',
+          transform: press.style.transform,
+        }}
+      >
+        <Icon name="chevron-down" size={20} color={palette.inkMuted} />
+      </Animated.View>
+    </Pressable>
   );
 }
 

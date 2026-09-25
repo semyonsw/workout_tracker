@@ -324,6 +324,23 @@ export function historyByExerciseId(
 }
 
 /**
+ * When each routine was last trained — the hero's `LAST · 6 Sep`.
+ *
+ * Newest-first input, so the first sighting of a routine is its latest. A workout
+ * with no routine behind it (an ad-hoc session) says nothing about any routine,
+ * and a routine that has never been trained is simply absent — the hero then
+ * leaves the stat out rather than printing a dash in a row of numbers.
+ */
+export function lastTrainedByRoutine(workouts: readonly CompletedWorkout[]): Record<ID, string> {
+  const out: Record<ID, string> = {};
+  for (const workout of workouts) {
+    if (workout.routineId && !(workout.routineId in out))
+      out[workout.routineId] = workout.startedAt;
+  }
+  return out;
+}
+
+/**
  * Exercise ids in the order they were last trained, newest first — the library's
  * `RECENTLY USED` card.
  *

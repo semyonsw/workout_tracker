@@ -24,23 +24,25 @@
  * to undo, so it must not be pressable by muscle memory alone.
  */
 
-import type { ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Animated, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable } from './Pressable';
 
 import { commit, tap, undo as undoFeedback } from '../lib/feedback';
+import { useMotionScale } from '../hooks/useMotionScale';
 import { glow as GLOW, palette } from '../theme/tokens';
+import { COMMIT_GRADIENT, SpecularEdge } from './glass';
 import { Icon, type IconName } from './Icon';
+import { Ripple, usePressScale } from './motion';
 import { useT } from '../hooks/useT';
 
 /**
- * How far a large target sinks under a finger.
- *
- * 4-5% is the whole range the design allows: enough to see at arm's length,
- * not enough to look like the button is falling over. Declared here so the
- * circle, the finish pill and the action row all sink by the same amount.
+ * How far the wide targets sink under a finger — the finish pill and the action
+ * row. Enough to see at arm's length, not enough to look like the button is
+ * falling over. DONE is the exception and sinks to 0.92 on the overshoot curve:
+ * it is the one control on the screen whose press has to read from two metres.
  */
-const PRESS_SCALE = 0.955;
 const PRESS_SCALE_LARGE = 0.975;
 
 /** The one glow, spread behind the one control that is always the answer. */
@@ -55,25 +57,106 @@ const DONE_GLOW = {
  * same thing everywhere it appears (state A, all four timed-set phases) and the
  * haptic is half of the acknowledgement: the visual flash the sheet paints is the
  * other half, and neither may travel alone. See `lib/feedback.ts`.
+ *
+ * ── THE PRESS, AND THE RIPPLE ─────────────────────────────────────────────
+ *
+ * It sinks to 0.92 under the thumb and settles back on the overshoot curve, and a
+ * 3 dp ring leaves it — scale 1 → 1.9, fading — so the press is visible from two
+ * metres away, which is where focus mode is read from. `delayMs` is the one place
+ * a commit waits for an animation: the design logs the set 180 ms after the press
+ * so the ripple is seen leaving THIS button before the rest screen replaces it.
+ * The haptic still fires on the press itself, a second press inside the wait is
+ * ignored (it would log the NEXT set), and with reduced motion there is no wait.
  */
-export function FocusDone({ onPress, label }: { onPress: () => void; label: string }) {
+export function FocusDone({
+  onPress,
+  label,
+  delayMs = 0,
+}: {
+  onPress: () => void;
+  label: string;
+  /** Log this long after the press, so the ripple is seen. 0 = at once. */
+  delayMs?: number;
+}) {
+  const motionScale = useMotionScale();
+  const press = usePressScale(0.92);
+  const [rippleKey, setRippleKey] = useState<number | null>(null);
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (pending.current) clearTimeout(pending.current);
+    },
+    [],
+  );
+
+  const handlePress = () => {
+    if (pending.current) return;
+    commit();
+    setRippleKey(Date.now());
+    const wait = delayMs * motionScale;
+    if (wait <= 0) {
+      onPress();
+      return;
+    }
+    pending.current = setTimeout(() => {
+      pending.current = null;
+      onPress();
+    }, wait);
+  };
+
   return (
-    <Pressable
-      onPress={() => {
-        commit();
-        onPress();
-      }}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={({ pressed }) => [DONE_GLOW, pressed ? { transform: [{ scale: PRESS_SCALE }] } : null]}
-      className="h-focus-done w-focus-done items-center justify-center self-center rounded-pill bg-green"
-    >
-      {/* 72 dp of checkmark. The check never changes meaning anywhere in this
-          app; this is the same mark the set row carries, at the size a thumb
-          aiming from above needs. */}
-      <Icon name="check" size={72} color={palette.ink} />
-      <Text className="mt-xs text-micro font-semibold uppercase text-ink">{label}</Text>
-    </Pressable>
+    <View className="h-focus-done w-focus-done self-center">
+      {rippleKey != null ? <Ripple key={rippleKey} size={176} /> : null}
+      <Pressable
+        onPress={handlePress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        <Animated.View
+          style={{
+            width: 176,
+            height: 176,
+            borderRadius: 9999,
+            transform: press.style.transform,
+            boxShadow: [
+              { offsetX: 0, offsetY: 0, blurRadius: 44, color: 'rgba(63,169,108,0.45)' },
+              { offsetX: 0, offsetY: 18, blurRadius: 44, color: 'rgba(0,0,0,0.6)' },
+            ],
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              borderRadius: 9999,
+              overflow: 'hidden',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(63,169,108,0.5)',
+            }}
+          >
+            <LinearGradient
+              colors={[...COMMIT_GRADIENT]}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            />
+            <SpecularEdge color="rgba(236,241,238,0.22)" radius={9999} height={2} />
+            {/* The check never changes meaning anywhere in this app; this is the
+                same mark the set row carries, at the size a thumb aiming from
+                above needs. */}
+            <Icon name="check" size={56} color={palette.ink} />
+            <Text
+              allowFontScaling={false}
+              style={{ marginTop: 6, fontSize: 15, letterSpacing: 2 }}
+              className="font-bold uppercase text-ink"
+            >
+              {label}
+            </Text>
+          </View>
+        </Animated.View>
+      </Pressable>
+    </View>
   );
 }
 

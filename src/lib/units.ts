@@ -210,6 +210,22 @@ export function formatClock(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+/**
+ * A workout's running clock: `12:04`, or `1:12:04` past an hour.
+ *
+ * Not `formatClock`, which is a COUNTDOWN's format — it rounds, because a rest
+ * reading 1:30 at 89.6 s is honest — and has no hours, because nobody rests for
+ * one. A session does run past an hour, and it counts UP, so it floors: `0:59`
+ * becomes `1:00` when a minute has actually gone.
+ */
+export function formatElapsed(ms: number): string {
+  const total = Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 1000)) : 0;
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const ss = String(total % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**

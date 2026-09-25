@@ -33,16 +33,18 @@
  * control here.
  */
 
-import type { ReactNode } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Animated, Text, TextInput, View } from 'react-native';
 import { Pressable } from './Pressable';
 
 import { useT } from '../hooks/useT';
 import { tap } from '../lib/feedback';
-import { glass, palette } from '../theme/tokens';
+import { useMotionScale } from '../hooks/useMotionScale';
+import { curve, glass, motion, palette } from '../theme/tokens';
 import { BubblePressable } from './bubbles';
 import { Icon } from './Icon';
 import { pressedStyle } from './motion';
+import { FADE_ON, RunningText } from './RunningText';
 
 /* ------------------------------------------------------------------ */
 /* Structure                                                           */
@@ -245,16 +247,18 @@ export function SettingRow({
           {label}
         </Text>
         {value ? (
-          <Text
-            numberOfLines={1}
-            style={{ maxWidth: '52%' }}
+          /* The value RUNS inside its half of the row rather than ellipsising:
+             `Every 7 days · Downloads/Backups` is two facts, and the second one is
+             the half that gets cut. */
+          <RunningText
+            text={value}
+            fadeColor={FADE_ON.card}
+            containerStyle={{ maxWidth: '52%' }}
             className={[
-              'shrink text-body font-medium tabular-nums',
+              'text-body font-medium tabular-nums',
               valueTone === 'faint' ? 'text-ink-faint' : 'text-ink-muted',
             ].join(' ')}
-          >
-            {value}
-          </Text>
+          />
         ) : null}
       </View>
     );
@@ -743,6 +747,27 @@ export function Toggle({
   onChange: (value: boolean) => void;
   accessibilityLabel: string;
 }) {
+  /*
+   * THE KNOB SLIDES, 20 dp on the overshoot curve over 260 ms, and the track and
+   * the knob cross-fade to their other colours as it goes. The write happens on
+   * the press; the slide follows it — the switch is never the thing holding up
+   * the setting it controls.
+   *
+   * Colours cross-fade as stacked layers because a colour cannot animate on the
+   * native driver and an opacity can; the whole switch stays off the JS thread.
+   */
+  const scale = useMotionScale();
+  const on = useRef(new Animated.Value(value ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(on, {
+      toValue: value ? 1 : 0,
+      duration: 260 * scale,
+      easing: curve(motion.pop),
+      useNativeDriver: true,
+    }).start();
+  }, [on, scale, value]);
+  const fade = on.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' });
+
   return (
     <Pressable
       onPress={() => onChange(!value)}
@@ -751,15 +776,67 @@ export function Toggle({
       accessibilityLabel={accessibilityLabel}
       hitSlop={8}
       style={pressedStyle}
-      className={[
-        'h-[32px] w-[52px] justify-center rounded-pill px-xs',
-        value ? 'items-end bg-green' : 'items-start bg-hairline',
-      ].join(' ')}
+      className="h-[32px] w-[52px] justify-center rounded-pill"
     >
       <View
-        className="h-[24px] w-[24px] rounded-pill"
-        style={{ backgroundColor: value ? palette.ink : palette.inkFaint }}
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: 9999,
+          backgroundColor: palette.hairline,
+        }}
       />
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: 9999,
+          backgroundColor: palette.green,
+          opacity: fade,
+        }}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          width: 24,
+          height: 24,
+          marginLeft: 4,
+          borderRadius: 9999,
+          transform: [{ translateX: on.interpolate({ inputRange: [0, 1], outputRange: [0, 20] }) }],
+        }}
+      >
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderRadius: 9999,
+            backgroundColor: palette.inkFaint,
+          }}
+        />
+        <Animated.View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderRadius: 9999,
+            backgroundColor: palette.ink,
+            opacity: fade,
+          }}
+        />
+      </Animated.View>
     </Pressable>
   );
 }

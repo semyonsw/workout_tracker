@@ -87,14 +87,32 @@
  * its tile. Hiding it would make the grid rearrange itself every time the window
  * moved, and the empty categories are half the information: `Entertainment 0`
  * this month is a thing you want to see.
+ *
+ * ── THE MOTION PASS ───────────────────────────────────────────────────────
+ *
+ *   • THE NUMBERS ROLL — the balance, both direction totals and every category
+ *     total — so saving an amount is seen arriving where it landed.
+ *   • EXPENSES / INCOMES is one control now, with one lit thumb that slides
+ *     between the halves (380 ms, a slight overshoot) instead of two tiles
+ *     lighting in turn. The words' colours follow it.
+ *   • THE RINGS TRAVEL to their new share on a month step, a direction change or
+ *     a save (`ProgressRing`), and the tiles arrive 40 ms apart.
+ *   • THE BALANCE BUBBLE. Scroll the balance card away and every account's
+ *     balance follows you at the top (`BalanceBubble`), while the card steps back.
  */
 
-import { useMemo, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, ScrollView, Text, View } from 'react-native';
 import { Pressable } from '../components/Pressable';
 import { StatusBar } from 'expo-status-bar';
 
+import { BalanceBubble } from '../components/BalanceBubble';
 import { BalanceSheet } from '../components/BalanceSheet';
+import { useHeroRecede } from '../components/FloatingBubble';
+import { RollingNumber } from '../components/RollingNumber';
+import { SlidingThumb } from '../components/SlidingThumb';
+import { useBubbleOnScroll } from '../hooks/useBubbleOnScroll';
+import { useMotionScale } from '../hooks/useMotionScale';
 import { CategoryEditorSheet } from '../components/CategoryEditorSheet';
 import { BubblePressable } from '../components/bubbles';
 import { Icon } from '../components/Icon';
@@ -107,7 +125,7 @@ import {
 } from '../components/glass';
 import { SectionTopBar } from '../components/SectionTopBar';
 import { Sheet } from '../components/Sheet';
-import { pressedStyle } from '../components/motion';
+import { Stagger, pressedStyle } from '../components/motion';
 import { DashedAdd, Kicker, Separator, TextButton } from '../components/primitives';
 import { ProgressRing } from '../components/ProgressRing';
 import { dayKey } from '../lib/days';
@@ -132,7 +150,7 @@ import {
 } from '../lib/money';
 import { useMoney } from '../state/moneyStore';
 import { useSettings } from '../state/settingsStore';
-import { focalType, palette, radius, textGlow } from '../theme/tokens';
+import { curve, focalType, motion, palette, radius, textGlow } from '../theme/tokens';
 import type { ID } from '../types/models';
 
 interface MoneyScreenProps {
@@ -275,6 +293,21 @@ export function MoneyScreen({
    */
   const onDay = dayInWindow(interval, anchor, dayKey(new Date()));
 
+  /* The bubble, and the balance card stepping back while it is up. */
+  const { visible: bubbleUp, onScroll, scrollRef, scrollToTop } = useBubbleOnScroll();
+  const heroRecede = useHeroRecede(bubbleUp);
+  /* Every live account's balance, for the bubble — one pill each, never a sum. */
+  const bubbleAccounts = useMemo(
+    () =>
+      liveAccounts.map((row) => ({
+        id: row.id,
+        name: row.name,
+        glyph: row.glyph,
+        balance: balanceOfAccount(row, amounts),
+      })),
+    [amounts, liveAccounts],
+  );
+
   return (
     <View className="flex-1 bg-bg">
       <StatusBar style="light" />
@@ -290,6 +323,9 @@ export function MoneyScreen({
       />
 
       <ScrollView
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         className="flex-1"
         contentContainerStyle={{ paddingTop: bars.top + 8, paddingBottom: bars.bottom }}
         showsVerticalScrollIndicator={false}
@@ -337,61 +373,58 @@ export function MoneyScreen({
             tabular numeral with the app's hero glow behind it. Nothing else on
             the screen comes near it, which is the rule the focal steps exist
             for. */}
-        <GlassSurface
-          tier="lit"
-          radius={radius.hero}
-          shadow="e2"
-          glow="hero"
-          className="mx-lg mt-lg"
-        >
-          <View className="p-[20px]">
-            <View className="flex-row items-center">
-              <Kicker tone="green" className="flex-1">
-                {`${account.name} · ${t('All time')}`}
-              </Kicker>
-              <Kicker tone="green">{currency}</Kicker>
+        <Animated.View style={[{ marginHorizontal: 16, marginTop: 16 }, heroRecede]}>
+          <GlassSurface tier="lit" radius={radius.hero} shadow="e2" glow="hero">
+            <View className="p-[20px]">
+              <View className="flex-row items-center">
+                <Kicker tone="green" className="flex-1">
+                  {`${account.name} · ${t('All time')}`}
+                </Kicker>
+                <Kicker tone="green">{currency}</Kicker>
+              </View>
+              <Pressable
+                onPress={() => setSettingBalance(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`${account.name}. ${formatMoney(balance, currency)}. ${t('Set what you have here.')}`}
+                style={pressedStyle}
+                className="mt-sm flex-row items-end"
+              >
+                {/* It ROLLS: a saved amount is seen landing on the number it moved. */}
+                <RollingNumber
+                  value={formatValue(balance)}
+                  lineHeight={focalType.balance.lineHeight}
+                  duration={900}
+                  style={[
+                    {
+                      fontSize: focalType.balance.fontSize,
+                      letterSpacing: focalType.balance.letterSpacing,
+                    },
+                    textGlow.hero,
+                  ]}
+                  className="font-semibold text-ink"
+                />
+                <Text
+                  allowFontScaling={false}
+                  style={{ fontSize: 20, lineHeight: 24, marginBottom: 6 }}
+                  className="ml-sm font-semibold text-ink-muted"
+                >
+                  {currency}
+                </Text>
+              </Pressable>
+              <Text className="mt-xs text-label text-ink-faint">
+                {t('Tap to set what you actually have here')}
+              </Text>
             </View>
-            <Pressable
-              onPress={() => setSettingBalance(true)}
-              accessibilityRole="button"
-              accessibilityLabel={`${account.name}. ${formatMoney(balance, currency)}. ${t('Set what you have here.')}`}
-              style={pressedStyle}
-              className="mt-sm flex-row items-baseline"
-            >
-              <Text
-                allowFontScaling={false}
-                numberOfLines={1}
-                style={[focalType.balance, textGlow.hero]}
-                className="font-semibold tabular-nums text-ink"
-              >
-                {formatValue(balance)}
-              </Text>
-              <Text
-                allowFontScaling={false}
-                style={{ fontSize: 20 }}
-                className="ml-sm font-semibold text-ink-muted"
-              >
-                {currency}
-              </Text>
-            </Pressable>
-            <Text className="mt-xs text-label text-ink-faint">
-              {t('Tap to set what you actually have here')}
-            </Text>
-          </View>
-        </GlassSurface>
+          </GlassSurface>
+        </Animated.View>
 
         <View className="mx-lg mt-lg flex-row items-center justify-center">
-          <Pressable
-            onPress={() => setAnchor(shiftAnchor(interval, anchor, -1))}
+          <NudgeChevron
+            direction={-1}
             disabled={!steppable}
-            hitSlop={12}
-            accessibilityRole="button"
+            onPress={() => setAnchor(shiftAnchor(interval, anchor, -1))}
             accessibilityLabel={t('The window before')}
-            style={pressedStyle}
-            className="h-hit w-[32px] items-center justify-center"
-          >
-            {steppable ? <Icon name="chevron-left" size={20} color={palette.inkMuted} /> : null}
-          </Pressable>
+          />
 
           <BubblePressable
             onPress={() => setPicking(true)}
@@ -422,42 +455,32 @@ export function MoneyScreen({
             <Icon name="chevron-down" size={13} color={palette.inkMuted} />
           </BubblePressable>
 
-          <Pressable
-            onPress={() => setAnchor(shiftAnchor(interval, anchor, 1))}
+          <NudgeChevron
+            direction={1}
             disabled={!steppable}
-            hitSlop={12}
-            accessibilityRole="button"
+            onPress={() => setAnchor(shiftAnchor(interval, anchor, 1))}
             accessibilityLabel={t('The window after')}
-            style={pressedStyle}
-            className="h-hit w-[32px] items-center justify-center"
-          >
-            {steppable ? <Icon name="chevron-right" size={20} color={palette.inkMuted} /> : null}
-          </Pressable>
+          />
         </View>
 
-        {/* Two tiles with air between them rather than one card split by a
-            hairline: the selected one is a lit surface, and a lit half of a
-            shared box reads as a highlight rather than as a choice. */}
-        <View className="mx-lg mt-md flex-row gap-sm">
-          <DirectionTile
-            label={t('Expenses')}
-            value={totals.expenses}
-            currency={currency}
-            selected={direction === 'expense'}
-            onPress={() => setDirection('expense')}
-          />
-          <DirectionTile
-            label={t('Incomes')}
-            value={totals.incomes}
-            currency={currency}
-            selected={direction === 'income'}
-            onPress={() => setDirection('income')}
-          />
-        </View>
+        {/* ONE control: a sunken track, and a lit thumb that slides to the
+            direction every tile below is counting. See the file header. */}
+        <DirectionSelector
+          direction={direction}
+          expenses={totals.expenses}
+          incomes={totals.incomes}
+          currency={currency}
+          onChange={setDirection}
+        />
 
         <View className="mx-lg mt-xl flex-row flex-wrap">
-          {live.map((category) => (
-            <View key={category.id} className="w-1/2 p-[5px]">
+          {live.map((category, index) => (
+            <Stagger
+              key={category.id}
+              delay={index * 40}
+              duration={360}
+              style={{ width: '50%', padding: 5 }}
+            >
               <CategoryTile
                 category={category}
                 total={perCategory[category.id] ?? 0}
@@ -469,7 +492,7 @@ export function MoneyScreen({
                   setHolding(category);
                 }}
               />
-            </View>
+            </Stagger>
           ))}
           <View className="w-1/2 p-[5px]">
             <DashedAdd
@@ -487,6 +510,16 @@ export function MoneyScreen({
             action this screen exists for stopped existing the moment you looked
             at your categories. */}
       </ScrollView>
+
+      {/* The balance, carried along once the card has scrolled away. */}
+      <BalanceBubble
+        visible={bubbleUp}
+        accounts={bubbleAccounts}
+        selectedId={account.id}
+        currency={currency}
+        onSelect={(id) => setAccountId(id)}
+        onTop={scrollToTop}
+      />
 
       <FloatingAction
         label={direction === 'expense' ? t('Add expense') : t('Add income')}
@@ -649,7 +682,89 @@ export function MoneyScreen({
 
 /* ------------------------------------------------------------------ */
 
-function DirectionTile({
+/**
+ * EXPENSES / INCOMES — one sunken track, one lit thumb.
+ *
+ * The thumb is half the track less its padding, and it slides between the
+ * halves over 380 ms on `bezier(.34,1.3,.64,1)`. The words stay put; their
+ * colours follow the thumb — the label to ink, the figure to green on the lit
+ * side — so the selected half is readable without the pane as well as with it.
+ */
+function DirectionSelector({
+  direction,
+  expenses,
+  incomes,
+  currency,
+  onChange,
+}: {
+  direction: Direction;
+  expenses: number;
+  incomes: number;
+  currency: string;
+  onChange: (next: Direction) => void;
+}) {
+  const t = useT();
+  const [width, setWidth] = useState(0);
+  return (
+    <View
+      accessibilityRole="radiogroup"
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      style={{
+        marginHorizontal: 16,
+        marginTop: 12,
+        flexDirection: 'row',
+        padding: 4,
+        gap: 8,
+        borderRadius: 22,
+        borderWidth: 1,
+        backgroundColor: 'rgba(236,241,238,0.028)',
+        borderColor: 'rgba(236,241,238,0.045)',
+      }}
+    >
+      <SlidingThumb
+        index={direction === 'expense' ? 0 : 1}
+        count={2}
+        trackWidth={width - 2}
+        inset={4}
+        gap={8}
+        duration={380}
+        bezier={[0.34, 1.3, 0.64, 1]}
+        style={{
+          borderRadius: 18,
+          overflow: 'hidden',
+          borderWidth: 1,
+          borderColor: 'rgba(63,169,108,0.30)',
+          backgroundColor: 'rgba(63,169,108,0.14)',
+          boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 16, color: 'rgba(63,169,108,0.18)' }],
+        }}
+      >
+        <SpecularEdge color="rgba(236,241,238,0.12)" radius={18} />
+      </SlidingThumb>
+      <DirectionHalf
+        label={t('Expenses')}
+        value={expenses}
+        currency={currency}
+        selected={direction === 'expense'}
+        onPress={() => onChange('expense')}
+      />
+      <DirectionHalf
+        label={t('Incomes')}
+        value={incomes}
+        currency={currency}
+        selected={direction === 'income'}
+        onPress={() => onChange('income')}
+      />
+    </View>
+  );
+}
+
+/**
+ * One half of the selector. The colours cross-fade over 250 ms: the lit and the
+ * quiet version of each line are drawn on top of each other and the lit one's
+ * opacity follows the selection — a colour cannot animate on the native driver,
+ * and an opacity can.
+ */
+function DirectionHalf({
   label,
   value,
   currency,
@@ -663,53 +778,111 @@ function DirectionTile({
   selected: boolean;
   onPress: () => void;
 }) {
+  const scale = useMotionScale();
+  const lit = useRef(new Animated.Value(selected ? 1 : 0)).current;
+  const figure = formatMoney(value, currency);
+  useEffect(() => {
+    Animated.timing(lit, {
+      toValue: selected ? 1 : 0,
+      duration: 250 * scale,
+      easing: curve(motion.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [lit, scale, selected]);
+
   return (
-    <BubblePressable
+    <Pressable
       onPress={onPress}
-      radius={radius.row}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
-      accessibilityLabel={`${label} ${formatMoney(value, currency)}`}
-      style={(state) => [
-        pressedStyle(state),
-        {
-          flex: 1,
-          padding: 15,
-          borderRadius: radius.row,
-          overflow: 'hidden',
-          borderWidth: 1,
-          backgroundColor: selected ? 'rgba(63,169,108,0.13)' : 'rgba(236,241,238,0.035)',
-          borderColor: selected ? 'rgba(63,169,108,0.30)' : 'rgba(236,241,238,0.055)',
-          ...(selected
-            ? {
-                boxShadow: [
-                  { offsetX: 0, offsetY: 0, blurRadius: 16, color: 'rgba(63,169,108,0.18)' },
-                ],
-              }
-            : {}),
-        },
-      ]}
+      accessibilityLabel={`${label} ${figure}`}
+      style={{ flex: 1, paddingVertical: 13, paddingHorizontal: 14 }}
     >
-      {selected ? <SpecularEdge color="rgba(236,241,238,0.12)" radius={radius.row} /> : null}
-      <Text
-        allowFontScaling={false}
-        style={{ fontSize: 10, letterSpacing: 1.1 }}
-        className={['font-semibold uppercase', selected ? 'text-ink' : 'text-ink-muted'].join(' ')}
-      >
-        {label}
-      </Text>
-      <Text
-        numberOfLines={1}
-        allowFontScaling={false}
-        style={{ fontSize: 21, letterSpacing: -0.5 }}
-        className={[
-          'mt-xs tabular-nums',
-          selected ? 'font-semibold text-green-bright' : 'font-medium text-ink-muted',
-        ].join(' ')}
-      >
-        {formatMoney(value, currency)}
-      </Text>
-    </BubblePressable>
+      <View>
+        <Text
+          allowFontScaling={false}
+          style={{ fontSize: 10, letterSpacing: 1.1 }}
+          className="font-semibold uppercase text-ink-muted"
+        >
+          {label}
+        </Text>
+        <Animated.View style={{ position: 'absolute', top: 0, left: 0, opacity: lit }}>
+          <Text
+            allowFontScaling={false}
+            style={{ fontSize: 10, letterSpacing: 1.1 }}
+            className="font-semibold uppercase text-ink"
+          >
+            {label}
+          </Text>
+        </Animated.View>
+      </View>
+      <View style={{ marginTop: 4 }}>
+        <RollingNumber
+          value={figure}
+          lineHeight={26}
+          duration={800}
+          style={{ fontSize: 21, letterSpacing: -0.5 }}
+          className="font-semibold text-ink-muted"
+        />
+        <Animated.View style={{ position: 'absolute', top: 0, left: 0, opacity: lit }}>
+          <RollingNumber
+            value={figure}
+            lineHeight={26}
+            duration={800}
+            style={{ fontSize: 21, letterSpacing: -0.5 }}
+            className="font-semibold text-green-bright"
+          />
+        </Animated.View>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * A month chevron that nudges 3 dp in the direction it steps, under the finger —
+ * the smallest possible "this moves the window that way".
+ */
+function NudgeChevron({
+  direction,
+  disabled,
+  onPress,
+  accessibilityLabel,
+}: {
+  direction: -1 | 1;
+  disabled: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  const scale = useMotionScale();
+  const nudge = useRef(new Animated.Value(0)).current;
+  const to = (value: number) =>
+    Animated.timing(nudge, {
+      toValue: value,
+      duration: motion.press * scale,
+      easing: curve(motion.ease),
+      useNativeDriver: true,
+    }).start();
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => to(direction * 3)}
+      onPressOut={() => to(0)}
+      disabled={disabled}
+      hitSlop={12}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      className="h-hit w-[40px] items-center justify-center"
+    >
+      <Animated.View style={{ transform: [{ translateX: nudge }] }}>
+        {disabled ? null : (
+          <Icon
+            name={direction < 0 ? 'chevron-left' : 'chevron-right'}
+            size={20}
+            color={palette.inkMuted}
+          />
+        )}
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -858,17 +1031,15 @@ function CategoryTile({
       >
         {category.name}
       </Text>
-      <Text
-        numberOfLines={1}
-        allowFontScaling={false}
+      {/* The total ROLLS to a new month's figure, with the ring beside it. */}
+      <RollingNumber
+        value={formatMoney(total, currency)}
+        lineHeight={17}
+        duration={700}
+        containerStyle={{ marginTop: 2 }}
         style={{ fontSize: 13 }}
-        className={[
-          'mt-[2px] w-full text-center font-semibold tabular-nums',
-          total > 0 ? 'text-green-bright' : 'text-ink-faint',
-        ].join(' ')}
-      >
-        {formatMoney(total, currency)}
-      </Text>
+        className={['font-semibold', total > 0 ? 'text-green-bright' : 'text-ink-faint'].join(' ')}
+      />
       <Text
         allowFontScaling={false}
         style={{ fontSize: 10, letterSpacing: 1.1 }}

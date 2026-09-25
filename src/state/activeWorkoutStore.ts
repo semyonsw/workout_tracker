@@ -141,6 +141,16 @@ interface ActiveWorkoutState {
   addEntry: (entry: DraftEntry) => void;
   /** Drop an exercise from the session. Nothing logged against it is kept. */
   removeEntry: (entryId: ID) => void;
+  /**
+   * Put an exercise back at `index` — the Undo on `Removed Barbell row`.
+   *
+   * The removal no longer asks first (see `ActiveWorkoutScreen`), so this is the
+   * safety net that replaced the sheet: the entry the screen snapshotted before
+   * removing it goes back exactly where it was, sets and all, and becomes the
+   * open card again. An id already in the session is ignored, so a double tap on
+   * Undo cannot make two of it.
+   */
+  insertEntry: (entry: DraftEntry, index: number) => void;
   /** Reorder: put `entryId` at `toIndex`, closing the gap it left behind. */
   moveEntry: (entryId: ID, toIndex: number) => void;
   /**
@@ -349,6 +359,15 @@ export const useActiveWorkout = create<ActiveWorkoutState>()(
           // next entry's rows the moment rest ran out. Same rule as the cursor.
           roundsAuto: get().roundsAuto === entryId ? null : get().roundsAuto,
         });
+      },
+
+      insertEntry: (entry, index) => {
+        const { session } = get();
+        if (!session) return;
+        if (session.entries.some((e) => e.localId === entry.localId)) return;
+        const at = Math.max(0, Math.min(session.entries.length, Math.trunc(index)));
+        const entries = [...session.entries.slice(0, at), entry, ...session.entries.slice(at)];
+        set({ session: { ...session, entries }, activeEntryId: entry.localId });
       },
 
       /**

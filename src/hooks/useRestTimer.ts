@@ -73,6 +73,8 @@ export interface RestTimerApi {
   totalSeconds: number;
   /** The user's ± step, so the pill and Settings can never disagree. */
   stepSeconds: number;
+  /** The deadline, or null while paused — what a continuous drain re-anchors on. */
+  endsAt: number | null;
   /**
    * Move the running rest by ±`seconds`, and make that the rest length from here
    * on. See the file header — this is not a one-off nudge.
@@ -223,6 +225,7 @@ export function useRestTimer(): RestTimerApi {
     source: rest.source,
     totalSeconds: rest.totalSeconds,
     stepSeconds,
+    endsAt: rest.endsAt,
     add,
     pause,
     resume,

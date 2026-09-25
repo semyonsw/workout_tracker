@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCompletedWorkout,
   historyByExerciseId,
+  lastTrainedByRoutine,
   monthKey,
   recentlyUsedExerciseIds,
   recomputeWorkout,
@@ -542,5 +543,25 @@ describe('workoutNumbers', () => {
 
   it('has nothing to say about an empty log', () => {
     expect(workoutNumbers([], { workoutId: 'w1', number: 5 })).toEqual({});
+  });
+});
+
+describe('lastTrainedByRoutine', () => {
+  const at = (id: string, startedAt: string, routineId?: string) =>
+    ({ id, title: 'Session', routineId, startedAt }) as unknown as Parameters<
+      typeof lastTrainedByRoutine
+    >[0][number];
+
+  it('takes the newest workout of each routine', () => {
+    const last = lastTrainedByRoutine([
+      at('w3', '2026-09-06T17:00:00.000Z', 'pull'),
+      at('w2', '2026-09-04T17:00:00.000Z', 'push'),
+      at('w1', '2026-09-01T17:00:00.000Z', 'pull'),
+    ]);
+    expect(last).toEqual({ pull: '2026-09-06T17:00:00.000Z', push: '2026-09-04T17:00:00.000Z' });
+  });
+
+  it('ignores a workout with no routine behind it', () => {
+    expect(lastTrainedByRoutine([at('w1', '2026-09-06T17:00:00.000Z')])).toEqual({});
   });
 });

@@ -948,6 +948,71 @@ describe('editing the session while it runs', () => {
     expect(isResting(useActiveWorkout.getState().rest)).toBe(true);
   });
 
+  /* --- putting a removed exercise back -------------------------------- */
+
+  it('insertEntry puts a removed exercise back at the same index, sets and all', () => {
+    const session = startRoutine();
+    const removed = session.entries[1];
+    useActiveWorkout.getState().completeSet(removed.localId, removed.sets[0].localId);
+    const snapshot = selectEntry(removed.localId)(useActiveWorkout.getState());
+    if (!snapshot) throw new Error('the entry vanished before it was removed');
+
+    useActiveWorkout.getState().removeEntry(removed.localId);
+    useActiveWorkout.getState().insertEntry(snapshot, 1);
+
+    const after = useActiveWorkout.getState();
+    expect(after.session?.entries.map((e) => e.localId)).toEqual(
+      session.entries.map((e) => e.localId),
+    );
+    // The logged set came back with it — Undo is not a fresh exercise.
+    expect(selectEntry(removed.localId)(after)?.sets[0].isCompleted).toBe(true);
+    // And it is the open card again.
+    expect(after.activeEntryId).toBe(removed.localId);
+  });
+
+  it('insertEntry clamps an index past either end', () => {
+    const session = startRoutine();
+    const last = session.entries[session.entries.length - 1];
+    useActiveWorkout.getState().removeEntry(last.localId);
+
+    useActiveWorkout.getState().insertEntry(last, 99);
+    expect(useActiveWorkout.getState().session?.entries.at(-1)?.localId).toBe(last.localId);
+
+    const first = session.entries[0];
+    useActiveWorkout.getState().removeEntry(first.localId);
+    useActiveWorkout.getState().insertEntry(first, -3);
+    expect(useActiveWorkout.getState().session?.entries[0].localId).toBe(first.localId);
+  });
+
+  it('insertEntry ignores an exercise that is already in the session', () => {
+    const session = startRoutine();
+
+    useActiveWorkout.getState().insertEntry(session.entries[0], 2);
+
+    expect(useActiveWorkout.getState().session?.entries).toHaveLength(session.entries.length);
+  });
+
+  it('insertEntry does nothing without a session', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+    useActiveWorkout.getState().discardSession();
+
+    expect(() => useActiveWorkout.getState().insertEntry(entry, 0)).not.toThrow();
+    expect(useActiveWorkout.getState().session).toBeNull();
+  });
+
+  it('removeSet takes the row it is given, not the bottom one', () => {
+    const session = startRoutine();
+    const entry = session.entries[0];
+    const ids = entry.sets.map((s) => s.localId);
+
+    useActiveWorkout.getState().removeSet(entry.localId, ids[1]);
+
+    expect(
+      selectEntry(entry.localId)(useActiveWorkout.getState())?.sets.map((s) => s.localId),
+    ).toEqual([ids[0], ...ids.slice(2)]);
+  });
+
   /* --- reordering ------------------------------------------------------ */
 
   it('moves an exercise to a new position and closes the gap behind it', () => {

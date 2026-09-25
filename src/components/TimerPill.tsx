@@ -36,7 +36,15 @@
  *     a room without reading the numerals. Any alert is haptic and audible as well
  *     — never visual-only, because the phone is face-up on a bench.
  *   • The drain line shows time REMAINING, not elapsed: the bar empties as the
- *     phase does.
+ *     phase does — CONTINUOUSLY. It used to step once a tick, which on a 90 s rest
+ *     is a bar that visibly jumps; it is a linear animation now, from where it
+ *     stands to empty over exactly the time that is left, restarted whenever
+ *     that time changes (±15, pause, resume). Native-driven, as a `scaleX`.
+ *   • THE DIGITS ROLL (`RollingNumber`, 320 ms), so a `+15` is seen to add fifteen
+ *     seconds rather than the clock redrawing.
+ *   • IN THE FINAL TEN SECONDS IT ALSO PULSES — scale 1 → 1.03 → 1 each second
+ *     (`SecondPulse`) — the change you notice without reading anything, on top of
+ *     the inversion that says it in colour.
  *   • Only one pill exists at a time. You cannot be resting and holding.
  *
  * ── WHY THE COLOURS ARE INLINE STYLES AND NOT `className` ──────────────────
@@ -64,10 +72,13 @@
  * anybody is actually watching.
  */
 
-import type { ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Animated, Easing, Text, View } from 'react-native';
 
+import { useMotionScale } from '../hooks/useMotionScale';
 import { palette, size, timerShadow } from '../theme/tokens';
+import { SecondPulse } from './motion';
+import { RollingNumber } from './RollingNumber';
 
 /** Below this a countdown inverts. Ten seconds is one deep breath and a re-grip. */
 export const FINAL_SECONDS = 10;
@@ -88,6 +99,8 @@ export interface PillTone {
   primary: string;
   /** The drain line's fill. */
   drain: string;
+  /** The outline of the round controls — a hairline, or a darker green on the slab. */
+  chipBorder: string;
 }
 
 const RESTING: PillTone = {
@@ -98,6 +111,7 @@ const RESTING: PillTone = {
   secondary: palette.inkMuted,
   primary: palette.ink,
   drain: palette.greenBright,
+  chipBorder: palette.hairline,
 };
 
 const FINAL: PillTone = {
@@ -110,6 +124,7 @@ const FINAL: PillTone = {
   secondary: palette.greenWash,
   primary: palette.bg,
   drain: palette.bg,
+  chipBorder: 'rgba(6,8,7,0.28)',
 };
 
 /** The colours for a pill in its normal or its final-ten-seconds state. */
@@ -126,14 +141,33 @@ interface TimerPillProps {
    * would read as a timer that is already finished.
    */
   remainingFraction?: number | null;
+  /**
+   * Milliseconds until the line reaches empty at the current rate — pass it while
+   * the clock is running and the line drains continuously over exactly that long.
+   * Null (paused, or a count that is not a countdown) holds it where it stands.
+   */
+  drainMs?: number | null;
+  /**
+   * Changes whenever the time left changes by anything other than time passing —
+   * a new deadline from `±15`, a pause, a resume. The drain restarts from where it
+   * is on each change. Usually the deadline itself.
+   */
+  drainKey?: string | number | null;
+  /** The final ten seconds, running: the content pulses once a second. */
+  pulse?: boolean;
   children: ReactNode;
 }
 
-export function TimerPill({ inverted = false, remainingFraction, children }: TimerPillProps) {
+export function TimerPill({
+  inverted = false,
+  remainingFraction,
+  drainMs = null,
+  drainKey = null,
+  pulse = false,
+  children,
+}: TimerPillProps) {
   const tone = pillTone(inverted);
   const hasDrain = remainingFraction != null;
-  // Clamped so a "+15" that overshoots the original total can't overflow the bar.
-  const left = hasDrain ? Math.min(100, Math.max(0, remainingFraction * 100)) : 0;
 
   return (
     // Under the header, inset by the page gutter, with air above and below it.
@@ -158,16 +192,24 @@ export function TimerPill({ inverted = false, remainingFraction, children }: Tim
           now the floor that stops a two-control pill reading as a different
           instrument from a four-control one, and the content sets the rest.
         */}
-        <View style={{ minHeight: size.timer }} className="justify-center px-xl py-lg">
-          {children}
-        </View>
+        <SecondPulse active={pulse}>
+          <View
+            style={{ minHeight: size.timer, paddingTop: 16, paddingBottom: 14 }}
+            className="justify-center pl-[26px] pr-[22px]"
+          >
+            {children}
+          </View>
+        </SecondPulse>
 
         {hasDrain ? (
-          /* 2px, always on a green-dim track so the inverted state still reads
+          /* 3 dp, always on a green-dim track so the inverted state still reads
              as the same instrument. */
-          <View className="h-[2px] w-full" style={{ backgroundColor: palette.greenDim }}>
-            <View className="h-full" style={{ width: `${left}%`, backgroundColor: tone.drain }} />
-          </View>
+          <DrainLine
+            fraction={remainingFraction}
+            drainMs={drainMs}
+            drainKey={drainKey}
+            color={tone.drain}
+          />
         ) : null}
       </View>
     </View>
@@ -192,6 +234,25 @@ export function PillClock({
   variant?: 'clock' | 'count';
   accessibilityLabel: string;
 }) {
+  /* The clock ROLLS, 320 ms a column: fast enough to finish inside the second it
+     is showing, slow enough that `+15` reads as fifteen seconds arriving. The
+     get-ready count stays a plain numeral — one digit, replaced, is the count. */
+  if (variant === 'clock') {
+    return (
+      <RollingNumber
+        value={String(value)}
+        lineHeight={88}
+        duration={320}
+        accessibilityLabel={accessibilityLabel}
+        style={{
+          fontSize: 84,
+          letterSpacing: -2.5,
+          fontWeight: '600',
+          color: tone.clock,
+        }}
+      />
+    );
+  }
   return (
     <Text
       accessibilityLabel={accessibilityLabel}
@@ -252,5 +313,72 @@ export function PillLabel({
     >
       {children}
     </Text>
+  );
+}
+
+/**
+ * The drain, as a native-driven `scaleX` from the left edge.
+ *
+ * On every `drainKey` it jumps to where the clock actually is and, while a
+ * `drainMs` is given, runs linearly to empty over exactly that long — so it moves
+ * every frame without the JS thread doing anything, and a `+15` or a pause
+ * re-anchors it instead of letting it drift. Clamped, because a `+15` that
+ * overshoots the original total cannot draw past the end of the bar.
+ *
+ * With reduced motion on it follows the tick instead, which is the old stepped
+ * line — the honest end state of "no animation".
+ */
+function DrainLine({
+  fraction,
+  drainMs,
+  drainKey,
+  color,
+}: {
+  fraction: number;
+  drainMs: number | null;
+  drainKey: string | number | null;
+  color: string;
+}) {
+  const motionScale = useMotionScale();
+  const clamped = Math.min(1, Math.max(0, fraction));
+  const v = useRef(new Animated.Value(clamped)).current;
+  const latest = useRef(clamped);
+  latest.current = clamped;
+
+  useEffect(() => {
+    if (motionScale === 0 || drainMs == null) {
+      v.setValue(latest.current);
+      return undefined;
+    }
+    v.setValue(latest.current);
+    const run = Animated.timing(v, {
+      toValue: 0,
+      duration: Math.max(0, drainMs),
+      easing: Easing.linear,
+      useNativeDriver: true,
+    });
+    run.start();
+    return () => run.stop();
+    // Keyed on the deadline, not on the fraction: see the note above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drainKey, drainMs == null, motionScale]);
+
+  /* Without a running drain, the line is simply where the clock is. */
+  useEffect(() => {
+    if (motionScale === 0 || drainMs == null) v.setValue(clamped);
+  }, [clamped, drainMs, motionScale, v]);
+
+  return (
+    <View className="h-[3px] w-full" style={{ backgroundColor: palette.greenDim }}>
+      <Animated.View
+        style={{
+          height: 3,
+          width: '100%',
+          backgroundColor: color,
+          transformOrigin: 'left',
+          transform: [{ scaleX: v }],
+        }}
+      />
+    </View>
   );
 }

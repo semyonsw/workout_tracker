@@ -37,6 +37,16 @@
  * lit tab also sits on a `lit` pane, which is what gives the thumb a target with
  * an edge rather than four words in a row.
  *
+ * ── THE PANE IS DRAWN ONCE, AND IT SLIDES ─────────────────────────────────
+ *
+ * It used to be four panes, three of them invisible, and a tab change was one
+ * switching off and another switching on. It is ONE absolutely positioned pane
+ * now (`SlidingThumb`), a quarter of the bar wide, that travels to the new tab
+ * over 420 ms on the `spring` curve — a slight overshoot, so it lands rather than
+ * stops. The swipe between sections moves it too, because both go through the
+ * same `active` prop. The dot still grows 4 → 18 under it, and a tab sinks to
+ * 0.92 under the thumb.
+ *
  * ── FOUR SECTIONS, AND THE TWO THAT LEFT ──────────────────────────────────
  *
  * It was Today · Tasks · Money · History · More. `History` was never a section:
@@ -61,18 +71,21 @@
  * both languages and does not truncate at 360 dp inside a 12-inset pill.
  */
 
-import { useEffect, useRef } from 'react';
-import { Animated, Easing, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BubblePressable } from './bubbles';
 import { GlassBar } from './glass';
+import { usePressScale } from './motion';
+import { SlidingThumb } from './SlidingThumb';
+import { useMotionScale } from '../hooks/useMotionScale';
 import { useT } from '../hooks/useT';
 import { SECTIONS, type SectionTab } from '../lib/sectionNav';
-import { halo, palette, radius } from '../theme/tokens';
+import { curve, motion, palette, radius } from '../theme/tokens';
 
-/** The app's one curve, and the same 250ms every other state change takes. */
-const EASING = Easing.bezier(0.2, 0.8, 0.2, 1);
+/** The app's one curve. */
+const EASING = curve(motion.ease);
 
 export const TABS = SECTIONS;
 export type TabName = SectionTab;
@@ -85,6 +98,7 @@ interface TabBarProps {
 export function TabBar({ active, onSelect }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const t = useT();
+  const [rowWidth, setRowWidth] = useState(0);
 
   return (
     <View
@@ -103,7 +117,28 @@ export function TabBar({ active, onSelect }: TabBarProps) {
       }}
     >
       <GlassBar radius={radius.navPill}>
-        <View style={{ height: 64, flexDirection: 'row', alignItems: 'center', padding: 6 }}>
+        <View
+          onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}
+          style={{ height: 64, flexDirection: 'row', alignItems: 'center', padding: 6 }}
+        >
+          {/* The one lit pane, under the four words. See the file header. */}
+          <SlidingThumb
+            index={TABS.indexOf(active)}
+            count={TABS.length}
+            trackWidth={rowWidth}
+            inset={6}
+            duration={420}
+            bezier={motion.spring}
+            style={{
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: 'rgba(63,169,108,0.28)',
+              backgroundColor: 'rgba(63,169,108,0.16)',
+              boxShadow: [
+                { offsetX: 0, offsetY: 0, blurRadius: 16, color: 'rgba(63,169,108,0.22)' },
+              ],
+            }}
+          />
           {TABS.map((tab) => (
             <TabItem
               key={tab}
@@ -127,38 +162,36 @@ function TabItem({
   active: boolean;
   onPress: () => void;
 }) {
+  const press = usePressScale(0.92);
   return (
     <BubblePressable
       onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       radius={20}
       accessibilityRole="tab"
       accessibilityState={{ selected: active }}
       accessibilityLabel={label}
-      style={{
-        flex: 1,
-        height: 52,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: active ? 'rgba(63,169,108,0.28)' : 'transparent',
-        backgroundColor: active ? 'rgba(63,169,108,0.16)' : 'transparent',
-        ...(active
-          ? {
-              boxShadow: [{ ...halo.repeating[0], blurRadius: 16, color: 'rgba(63,169,108,0.22)' }],
-            }
-          : {}),
-      }}
+      style={{ flex: 1, height: 52, borderRadius: 20 }}
     >
-      <TabDot active={active} />
-      <Text
-        numberOfLines={1}
-        allowFontScaling={false}
-        style={{ marginTop: 6, fontSize: 12, lineHeight: 15 }}
-        className={active ? 'font-semibold text-green-bright' : 'font-medium text-ink-muted'}
+      <Animated.View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: press.style.transform,
+        }}
       >
-        {label}
-      </Text>
+        <TabDot active={active} />
+        <Text
+          numberOfLines={1}
+          allowFontScaling={false}
+          style={{ marginTop: 6, fontSize: 12, lineHeight: 15 }}
+          className={active ? 'font-semibold text-green-bright' : 'font-medium text-ink-muted'}
+        >
+          {label}
+        </Text>
+      </Animated.View>
     </BubblePressable>
   );
 }
@@ -169,18 +202,19 @@ function TabItem({
  */
 function TabDot({ active }: { active: boolean }) {
   const grow = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const scale = useMotionScale();
 
   useEffect(() => {
     Animated.timing(grow, {
       toValue: active ? 1 : 0,
-      duration: 250,
+      duration: 300 * scale,
       easing: EASING,
       // Width is layout, so this one cannot run on the UI thread. It is four
       // pixels of a 64-high bar moving once per tab change, which is the one
       // place in the app that can afford it.
       useNativeDriver: false,
     }).start();
-  }, [active, grow]);
+  }, [active, grow, scale]);
 
   return (
     <Animated.View

@@ -45,6 +45,17 @@
  * None of them are load-bearing: the on-screen pill derives from a stored
  * deadline and is correct whether or not any of this works, and the log already on
  * disk is read synchronously before the first render whatever the migration does.
+ *
+ * ── AND THE LAUNCH SCREEN ─────────────────────────────────────────────────
+ *
+ * `components/LaunchScreen.tsx`, drawn OVER everything else on a cold start: it
+ * opens on the native splash's own picture — the green ✓ on the page colour — so
+ * the handover from Android's splash to JS is not a cut, and it leaves once the
+ * three stores it names have really loaded (2.3 s at the least, 6 s at the most;
+ * `lib/launchReady.ts`). The app renders UNDER it from the first frame, so by
+ * the time it dissolves the screen behind it is already there. It is keyed to
+ * this JS process, not to the app coming to the foreground: a resume never shows
+ * it.
  */
 
 import { useEffect, useState } from 'react';
@@ -54,6 +65,7 @@ import * as Notifications from 'expo-notifications';
 
 import './global.css';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { LaunchScreen } from './src/components/LaunchScreen';
 import { AppShell } from './src/navigation/AppShell';
 import { LanguageChoiceScreen } from './src/screens/LanguageChoiceScreen';
 import { useSettingsHydrated } from './src/hooks/useHydrated';
@@ -97,7 +109,19 @@ try {
   // Alerts will be silent-but-scheduled, or absent. The pill is unaffected.
 }
 
+/**
+ * Whether the launch screen has already played in this JS process. Module scope,
+ * so a remount of `App` — a fast refresh, an error boundary recovering — cannot
+ * replay it; only a cold start, which is a new process, can.
+ */
+let launchPlayed = false;
+
 export default function App() {
+  const [launching, setLaunching] = useState(() => !launchPlayed);
+  useEffect(() => {
+    launchPlayed = true;
+  }, []);
+
   /*
    * Mounted here, at the top, rather than inside a screen: it must run on the
    * launches where the user never opens Settings, which is all of them.
@@ -153,6 +177,7 @@ export default function App() {
         <ErrorBoundary>
           <Root />
         </ErrorBoundary>
+        {launching ? <LaunchScreen onDone={() => setLaunching(false)} /> : null}
       </View>
     </SafeAreaProvider>
   );
